@@ -1,0 +1,33 @@
+# Dependencias
+node_modules/
+web/node_modules/
+mobile/node_modules/
+
+# Variables de entorno
+.env
+.env.local
+.env.development
+.env.production
+web/.env
+mobile/.env
+
+# Build
+dist/
+web/dist/
+build/
+
+# Expo
+.expo/
+mobile/.expo/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Sistema
+.DS_Store
+Thumbs.db
+
+# VS Code
+.vscode/
