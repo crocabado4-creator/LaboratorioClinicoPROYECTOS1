@@ -4,10 +4,12 @@ import { signOut } from "firebase/auth";
 import { auth } from "../firebase/firebase";
 
 import { obtenerPermisosRol } from "../services/rolesService";
+import { obtenerPersonalizacion } from "../services/personalizacionService";
 
 import GestionRoles from "./GestionRoles";
 import GestionLaboratorios from "./GestionLaboratorios";
 import ConfiguracionLaboratorio from "./ConfiguracionLaboratorio";
+import PersonalizacionLaboratorio from "./PersonalizacionLaboratorio";
 
 function Dashboard({
   usuario,
@@ -16,6 +18,12 @@ function Dashboard({
   const [permisos, setPermisos] = useState([]);
   const [cargandoPermisos, setCargandoPermisos] = useState(true);
   const [vista, setVista] = useState("dashboard");
+
+  const [laboratorio, setLaboratorio] = useState(null);
+
+  // =========================================
+  // CARGAR PERMISOS
+  // =========================================
 
   useEffect(() => {
     cargarPermisos();
@@ -26,7 +34,9 @@ function Dashboard({
       setCargandoPermisos(true);
 
       const resultado =
-        await obtenerPermisosRol(usuario.rol);
+        await obtenerPermisosRol(
+          usuario.rol
+        );
 
       setPermisos(resultado);
 
@@ -48,8 +58,55 @@ function Dashboard({
     }
   };
 
-  const tienePermiso = (permiso) => {
-    return permisos.includes(permiso);
+  // =========================================
+  // CARGAR DATOS VISIBLES DEL LABORATORIO
+  // =========================================
+
+  useEffect(() => {
+    const cargarLaboratorio =
+      async () => {
+        if (
+          !usuario.laboratorioId
+        ) {
+          setLaboratorio(null);
+          return;
+        }
+
+        try {
+          const datos =
+            await obtenerPersonalizacion(
+              usuario.laboratorioId
+            );
+
+          setLaboratorio(datos);
+
+        } catch (error) {
+          console.error(
+            "Error al cargar datos visibles del laboratorio:",
+            error
+          );
+
+          setLaboratorio(null);
+        }
+      };
+
+    cargarLaboratorio();
+
+  }, [
+    usuario.laboratorioId,
+    vista,
+  ]);
+
+  // =========================================
+  // VALIDAR PERMISOS
+  // =========================================
+
+  const tienePermiso = (
+    permiso
+  ) => {
+    return permisos.includes(
+      permiso
+    );
   };
 
   const tieneAlgunPermiso = (
@@ -57,15 +114,23 @@ function Dashboard({
   ) => {
     return permisosNecesarios.some(
       (permiso) =>
-        permisos.includes(permiso)
+        permisos.includes(
+          permiso
+        )
     );
   };
+
+  // =========================================
+  // CERRAR SESIÓN
+  // =========================================
 
   const cerrarSesion = async () => {
     try {
       await signOut(auth);
 
-      localStorage.removeItem("usuario");
+      localStorage.removeItem(
+        "usuario"
+      );
 
       onLogout();
 
@@ -77,6 +142,10 @@ function Dashboard({
     }
   };
 
+  // =========================================
+  // CARGANDO
+  // =========================================
+
   if (cargandoPermisos) {
     return (
       <p>
@@ -85,13 +154,15 @@ function Dashboard({
     );
   }
 
-  // ==========================
+  // =========================================
   // VISTA ROLES Y PERMISOS
-  // ==========================
+  // =========================================
 
   if (
     vista === "roles" &&
-    tienePermiso("roles.asignar")
+    tienePermiso(
+      "roles.asignar"
+    )
   ) {
     return (
       <GestionRoles
@@ -103,9 +174,9 @@ function Dashboard({
     );
   }
 
-  // ==========================
+  // =========================================
   // VISTA LABORATORIOS
-  // ==========================
+  // =========================================
 
   if (
     vista === "laboratorios" &&
@@ -126,9 +197,9 @@ function Dashboard({
     );
   }
 
-  // ==========================
+  // =========================================
   // VISTA CONFIGURACIÓN
-  // ==========================
+  // =========================================
 
   if (
     vista === "configuracion" &&
@@ -146,11 +217,54 @@ function Dashboard({
     );
   }
 
+  // =========================================
+  // VISTA PERSONALIZACIÓN
+  // =========================================
+
+  if (
+    vista === "personalizacion" &&
+    tienePermiso(
+      "personalizacion.editar"
+    )
+  ) {
+    return (
+      <PersonalizacionLaboratorio
+        usuario={usuario}
+        volver={() =>
+          setVista("dashboard")
+        }
+      />
+    );
+  }
+
+  // =========================================
+  // DASHBOARD
+  // =========================================
+
   return (
     <div>
 
+      {/* LOGO DEL LABORATORIO */}
+
+      {laboratorio?.logoUrl && (
+        <img
+          src={
+            laboratorio.logoUrl
+          }
+          alt="Logo del laboratorio"
+          width="100"
+          onError={(e) => {
+            e.currentTarget.style.display =
+              "none";
+          }}
+        />
+      )}
+
+      {/* NOMBRE PERSONALIZADO */}
+
       <h1>
-        Laboratorio Clínico
+        {laboratorio?.nombre ||
+          "Laboratorio Clínico"}
       </h1>
 
       <h2>
@@ -164,11 +278,13 @@ function Dashboard({
       </p>
 
       <p>
-        Correo: {usuario.email}
+        Correo:{" "}
+        {usuario.email}
       </p>
 
       <p>
-        Rol: {usuario.rol}
+        Rol:{" "}
+        {usuario.rol}
       </p>
 
       {usuario.laboratorioId && (
@@ -184,7 +300,9 @@ function Dashboard({
         Módulos disponibles
       </h2>
 
-      {/* SUPER ADMIN - LABORATORIOS */}
+      {/* =====================================
+          SUPER ADMIN - LABORATORIOS
+      ===================================== */}
 
       {tieneAlgunPermiso([
         "laboratorios.crear",
@@ -194,42 +312,72 @@ function Dashboard({
       ]) && (
         <button
           onClick={() =>
-            setVista("laboratorios")
+            setVista(
+              "laboratorios"
+            )
           }
         >
           Gestión de laboratorios
         </button>
       )}
 
-      {/* ADMINISTRADOR - CONFIGURACIÓN */}
+      {/* =====================================
+          ADMINISTRADOR - CONFIGURACIÓN
+      ===================================== */}
 
       {tienePermiso(
         "configuracion.editar"
       ) && (
         <button
           onClick={() =>
-            setVista("configuracion")
+            setVista(
+              "configuracion"
+            )
           }
         >
           Configuración del laboratorio
         </button>
       )}
 
-      {/* ADMINISTRADOR - ROLES */}
+      {/* =====================================
+          ADMINISTRADOR - PERSONALIZACIÓN
+      ===================================== */}
+
+      {tienePermiso(
+        "personalizacion.editar"
+      ) && (
+        <button
+          onClick={() =>
+            setVista(
+              "personalizacion"
+            )
+          }
+        >
+          Personalización
+        </button>
+      )}
+
+      {/* =====================================
+          ADMINISTRADOR - ROLES
+      ===================================== */}
 
       {tienePermiso(
         "roles.asignar"
       ) && (
         <button
           onClick={() =>
-            setVista("roles")
+            setVista(
+              "roles"
+            )
           }
         >
           Roles y permisos
         </button>
       )}
 
-      {/* PERSONAL */}
+      {/* =====================================
+          PERSONAL
+      ===================================== */}
 
       {tieneAlgunPermiso([
         "empleados.crear",
@@ -240,7 +388,9 @@ function Dashboard({
         </button>
       )}
 
-      {/* PACIENTES */}
+      {/* =====================================
+          PACIENTES
+      ===================================== */}
 
       {tieneAlgunPermiso([
         "pacientes.crear",
@@ -252,7 +402,9 @@ function Dashboard({
         </button>
       )}
 
-      {/* ANÁLISIS */}
+      {/* =====================================
+          ANÁLISIS
+      ===================================== */}
 
       {tieneAlgunPermiso([
         "analisis.crear",
@@ -264,7 +416,9 @@ function Dashboard({
         </button>
       )}
 
-      {/* VENTAS */}
+      {/* =====================================
+          VENTAS
+      ===================================== */}
 
       {tienePermiso(
         "ventas.ver"
@@ -274,7 +428,9 @@ function Dashboard({
         </button>
       )}
 
-      {/* RESULTADOS */}
+      {/* =====================================
+          RESULTADOS
+      ===================================== */}
 
       {tienePermiso(
         "resultados.ver"
@@ -284,7 +440,9 @@ function Dashboard({
         </button>
       )}
 
-      {/* AUDITORÍA GLOBAL */}
+      {/* =====================================
+          AUDITORÍA GLOBAL
+      ===================================== */}
 
       {tienePermiso(
         "auditoria.ver_global"
@@ -298,7 +456,9 @@ function Dashboard({
       <br />
 
       <button
-        onClick={cerrarSesion}
+        onClick={
+          cerrarSesion
+        }
       >
         Cerrar sesión
       </button>
