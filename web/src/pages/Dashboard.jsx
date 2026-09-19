@@ -7,6 +7,7 @@ import { obtenerPermisosRol } from "../services/rolesService";
 
 import GestionRoles from "./GestionRoles";
 import GestionLaboratorios from "./GestionLaboratorios";
+import ConfiguracionLaboratorio from "./ConfiguracionLaboratorio";
 
 function Dashboard({
   usuario,
@@ -125,6 +126,26 @@ function Dashboard({
     );
   }
 
+  // ==========================
+  // VISTA CONFIGURACIÓN
+  // ==========================
+
+  if (
+    vista === "configuracion" &&
+    tienePermiso(
+      "configuracion.editar"
+    )
+  ) {
+    return (
+      <ConfiguracionLaboratorio
+        usuario={usuario}
+        volver={() =>
+          setVista("dashboard")
+        }
+      />
+    );
+  }
+
   return (
     <div>
 
@@ -177,6 +198,20 @@ function Dashboard({
           }
         >
           Gestión de laboratorios
+        </button>
+      )}
+
+      {/* ADMINISTRADOR - CONFIGURACIÓN */}
+
+      {tienePermiso(
+        "configuracion.editar"
+      ) && (
+        <button
+          onClick={() =>
+            setVista("configuracion")
+          }
+        >
+          Configuración del laboratorio
         </button>
       )}
 
