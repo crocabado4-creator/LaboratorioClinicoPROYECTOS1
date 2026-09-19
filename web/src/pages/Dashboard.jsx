@@ -6,34 +6,26 @@ import { auth } from "../firebase/firebase";
 import { obtenerPermisosRol } from "../services/rolesService";
 
 import GestionRoles from "./GestionRoles";
+import GestionLaboratorios from "./GestionLaboratorios";
 
 function Dashboard({
   usuario,
   onLogout,
 }) {
-  const [permisos, setPermisos] =
-    useState([]);
-
-  const [cargandoPermisos, setCargandoPermisos] =
-    useState(true);
-
-  const [vista, setVista] =
-    useState("dashboard");
-
+  const [permisos, setPermisos] = useState([]);
+  const [cargandoPermisos, setCargandoPermisos] = useState(true);
+  const [vista, setVista] = useState("dashboard");
 
   useEffect(() => {
     cargarPermisos();
   }, [usuario.rol]);
-
 
   const cargarPermisos = async () => {
     try {
       setCargandoPermisos(true);
 
       const resultado =
-        await obtenerPermisosRol(
-          usuario.rol
-        );
+        await obtenerPermisosRol(usuario.rol);
 
       setPermisos(resultado);
 
@@ -55,11 +47,9 @@ function Dashboard({
     }
   };
 
-
   const tienePermiso = (permiso) => {
     return permisos.includes(permiso);
   };
-
 
   const tieneAlgunPermiso = (
     permisosNecesarios
@@ -70,14 +60,11 @@ function Dashboard({
     );
   };
 
-
   const cerrarSesion = async () => {
     try {
       await signOut(auth);
 
-      localStorage.removeItem(
-        "usuario"
-      );
+      localStorage.removeItem("usuario");
 
       onLogout();
 
@@ -89,7 +76,6 @@ function Dashboard({
     }
   };
 
-
   if (cargandoPermisos) {
     return (
       <p>
@@ -98,6 +84,9 @@ function Dashboard({
     );
   }
 
+  // ==========================
+  // VISTA ROLES Y PERMISOS
+  // ==========================
 
   if (
     vista === "roles" &&
@@ -113,6 +102,28 @@ function Dashboard({
     );
   }
 
+  // ==========================
+  // VISTA LABORATORIOS
+  // ==========================
+
+  if (
+    vista === "laboratorios" &&
+    tieneAlgunPermiso([
+      "laboratorios.crear",
+      "laboratorios.ver",
+      "laboratorios.editar",
+      "laboratorios.desactivar",
+    ])
+  ) {
+    return (
+      <GestionLaboratorios
+        permisos={permisos}
+        volver={() =>
+          setVista("dashboard")
+        }
+      />
+    );
+  }
 
   return (
     <div>
@@ -139,10 +150,12 @@ function Dashboard({
         Rol: {usuario.rol}
       </p>
 
-      <p>
-        Laboratorio:{" "}
-        {usuario.laboratorioId}
-      </p>
+      {usuario.laboratorioId && (
+        <p>
+          Laboratorio:{" "}
+          {usuario.laboratorioId}
+        </p>
+      )}
 
       <hr />
 
@@ -150,6 +163,24 @@ function Dashboard({
         Módulos disponibles
       </h2>
 
+      {/* SUPER ADMIN - LABORATORIOS */}
+
+      {tieneAlgunPermiso([
+        "laboratorios.crear",
+        "laboratorios.ver",
+        "laboratorios.editar",
+        "laboratorios.desactivar",
+      ]) && (
+        <button
+          onClick={() =>
+            setVista("laboratorios")
+          }
+        >
+          Gestión de laboratorios
+        </button>
+      )}
+
+      {/* ADMINISTRADOR - ROLES */}
 
       {tienePermiso(
         "roles.asignar"
@@ -163,6 +194,7 @@ function Dashboard({
         </button>
       )}
 
+      {/* PERSONAL */}
 
       {tieneAlgunPermiso([
         "empleados.crear",
@@ -173,6 +205,7 @@ function Dashboard({
         </button>
       )}
 
+      {/* PACIENTES */}
 
       {tieneAlgunPermiso([
         "pacientes.crear",
@@ -184,6 +217,7 @@ function Dashboard({
         </button>
       )}
 
+      {/* ANÁLISIS */}
 
       {tieneAlgunPermiso([
         "analisis.crear",
@@ -195,6 +229,7 @@ function Dashboard({
         </button>
       )}
 
+      {/* VENTAS */}
 
       {tienePermiso(
         "ventas.ver"
@@ -204,6 +239,7 @@ function Dashboard({
         </button>
       )}
 
+      {/* RESULTADOS */}
 
       {tienePermiso(
         "resultados.ver"
@@ -213,6 +249,15 @@ function Dashboard({
         </button>
       )}
 
+      {/* AUDITORÍA GLOBAL */}
+
+      {tienePermiso(
+        "auditoria.ver_global"
+      ) && (
+        <button>
+          Auditoría global
+        </button>
+      )}
 
       <br />
       <br />
