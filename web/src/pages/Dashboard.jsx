@@ -1,25 +1,134 @@
+import { useEffect, useState } from "react";
 import { signOut } from "firebase/auth";
+
 import { auth } from "../firebase/firebase";
 
-function Dashboard({ usuario, onLogout }) {
-  const cerrarSesion = async () => {
+import { obtenerPermisosRol } from "../services/rolesService";
+
+import GestionRoles from "./GestionRoles";
+
+function Dashboard({
+  usuario,
+  onLogout,
+}) {
+  const [permisos, setPermisos] =
+    useState([]);
+
+  const [cargandoPermisos, setCargandoPermisos] =
+    useState(true);
+
+  const [vista, setVista] =
+    useState("dashboard");
+
+
+  useEffect(() => {
+    cargarPermisos();
+  }, [usuario.rol]);
+
+
+  const cargarPermisos = async () => {
     try {
-      await signOut(auth);
-      localStorage.removeItem("usuario");
-      onLogout();
+      setCargandoPermisos(true);
+
+      const resultado =
+        await obtenerPermisosRol(
+          usuario.rol
+        );
+
+      setPermisos(resultado);
+
+      console.log(
+        "Permisos del usuario:",
+        resultado
+      );
+
     } catch (error) {
-      console.error("Error al cerrar sesión:", error);
+      console.error(
+        "Error al cargar permisos:",
+        error
+      );
+
+      setPermisos([]);
+
+    } finally {
+      setCargandoPermisos(false);
     }
   };
 
+
+  const tienePermiso = (permiso) => {
+    return permisos.includes(permiso);
+  };
+
+
+  const tieneAlgunPermiso = (
+    permisosNecesarios
+  ) => {
+    return permisosNecesarios.some(
+      (permiso) =>
+        permisos.includes(permiso)
+    );
+  };
+
+
+  const cerrarSesion = async () => {
+    try {
+      await signOut(auth);
+
+      localStorage.removeItem(
+        "usuario"
+      );
+
+      onLogout();
+
+    } catch (error) {
+      console.error(
+        "Error al cerrar sesión:",
+        error
+      );
+    }
+  };
+
+
+  if (cargandoPermisos) {
+    return (
+      <p>
+        Cargando permisos...
+      </p>
+    );
+  }
+
+
+  if (
+    vista === "roles" &&
+    tienePermiso("roles.asignar")
+  ) {
+    return (
+      <GestionRoles
+        usuario={usuario}
+        volver={() =>
+          setVista("dashboard")
+        }
+      />
+    );
+  }
+
+
   return (
     <div>
-      <h1>Laboratorio Clínico</h1>
 
-      <h2>Dashboard</h2>
+      <h1>
+        Laboratorio Clínico
+      </h1>
+
+      <h2>
+        Dashboard
+      </h2>
 
       <p>
-        Bienvenido: {usuario.nombre} {usuario.apellido}
+        Bienvenido:{" "}
+        {usuario.nombre}{" "}
+        {usuario.apellido}
       </p>
 
       <p>
@@ -31,12 +140,89 @@ function Dashboard({ usuario, onLogout }) {
       </p>
 
       <p>
-        Laboratorio: {usuario.laboratorioId}
+        Laboratorio:{" "}
+        {usuario.laboratorioId}
       </p>
 
-      <button onClick={cerrarSesion}>
+      <hr />
+
+      <h2>
+        Módulos disponibles
+      </h2>
+
+
+      {tienePermiso(
+        "roles.asignar"
+      ) && (
+        <button
+          onClick={() =>
+            setVista("roles")
+          }
+        >
+          Roles y permisos
+        </button>
+      )}
+
+
+      {tieneAlgunPermiso([
+        "empleados.crear",
+        "empleados.editar",
+      ]) && (
+        <button>
+          Gestión de personal
+        </button>
+      )}
+
+
+      {tieneAlgunPermiso([
+        "pacientes.crear",
+        "pacientes.editar",
+        "pacientes.ver",
+      ]) && (
+        <button>
+          Gestión de pacientes
+        </button>
+      )}
+
+
+      {tieneAlgunPermiso([
+        "analisis.crear",
+        "analisis.editar",
+        "analisis.ver",
+      ]) && (
+        <button>
+          Gestión de análisis
+        </button>
+      )}
+
+
+      {tienePermiso(
+        "ventas.ver"
+      ) && (
+        <button>
+          Ventas
+        </button>
+      )}
+
+
+      {tienePermiso(
+        "resultados.ver"
+      ) && (
+        <button>
+          Resultados
+        </button>
+      )}
+
+
+      <br />
+      <br />
+
+      <button
+        onClick={cerrarSesion}
+      >
         Cerrar sesión
       </button>
+
     </div>
   );
 }

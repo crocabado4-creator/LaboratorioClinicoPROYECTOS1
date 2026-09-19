@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { signInWithEmailAndPassword, signOut } from "firebase/auth";
-import { collection, getDocs, query, where } from "firebase/firestore";
+import { doc, getDoc } from "firebase/firestore";
 import { auth, db } from "../firebase/firebase";
 
 function Login({ onLogin }) {
@@ -21,34 +21,31 @@ function Login({ onLogin }) {
     try {
       setCargando(true);
 
+      // 1. Autenticación
       const credencial = await signInWithEmailAndPassword(
         auth,
         email.trim(),
         password
       );
 
-      const correoUsuario = credencial.user.email;
+      const uid = credencial.user.uid;
 
-      const consulta = query(
-        collection(db, "usuarios"),
-        where("email", "==", correoUsuario)
-      );
+      // 2. Buscar directamente usuarios/{UID}
+      const usuarioRef = doc(db, "usuarios", uid);
+      const usuarioSnap = await getDoc(usuarioRef);
 
-      const resultado = await getDocs(consulta);
-
-      if (resultado.empty) {
+      if (!usuarioSnap.exists()) {
         await signOut(auth);
         setMensaje("El usuario no está registrado en el sistema.");
         return;
       }
 
-      const documento = resultado.docs[0];
-
       const usuario = {
-        id: documento.id,
-        ...documento.data(),
+        id: usuarioSnap.id,
+        ...usuarioSnap.data(),
       };
 
+      // 3. Verificar usuario activo
       if (usuario.activo !== true) {
         await signOut(auth);
         setMensaje("El usuario se encuentra inactivo.");
@@ -86,10 +83,8 @@ function Login({ onLogin }) {
         setMensaje("Esta cuenta fue deshabilitada.");
       } else if (error.code === "auth/too-many-requests") {
         setMensaje(
-          "Demasiados intentos fallidos. Intente nuevamente más tarde."
+          "Demasiados intentos. Intente nuevamente más tarde."
         );
-      } else if (error.code === "auth/network-request-failed") {
-        setMensaje("Error de conexión. Verifique su Internet.");
       } else if (error.code === "permission-denied") {
         setMensaje("No tiene permisos para consultar sus datos.");
       } else {
@@ -103,14 +98,11 @@ function Login({ onLogin }) {
   return (
     <div>
       <h1>Laboratorio Clínico</h1>
-
       <h2>Iniciar sesión</h2>
 
       <form onSubmit={iniciarSesion}>
         <div>
-          <label htmlFor="email">
-            Correo electrónico
-          </label>
+          <label htmlFor="email">Correo electrónico</label>
 
           <br />
 
@@ -127,9 +119,7 @@ function Login({ onLogin }) {
         <br />
 
         <div>
-          <label htmlFor="password">
-            Contraseña
-          </label>
+          <label htmlFor="password">Contraseña</label>
 
           <br />
 
