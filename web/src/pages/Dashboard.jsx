@@ -11,6 +11,7 @@ import GestionLaboratorios from "./GestionLaboratorios";
 import ConfiguracionLaboratorio from "./ConfiguracionLaboratorio";
 import PersonalizacionLaboratorio from "./PersonalizacionLaboratorio";
 import GestionAdministradores from "./GestionAdministradores";
+import GestionPersonal from "./GestionPersonal";
 
 function Dashboard({
   usuario,
@@ -22,7 +23,7 @@ function Dashboard({
   const [laboratorio, setLaboratorio] = useState(null);
 
   // =========================================
-  // CARGAR PERMISOS
+  // CARGAR PERMISOS DEL ROL
   // =========================================
 
   useEffect(() => {
@@ -65,7 +66,9 @@ function Dashboard({
   useEffect(() => {
     const cargarLaboratorio =
       async () => {
-        if (!usuario.laboratorioId) {
+        if (
+          !usuario.laboratorioId
+        ) {
           setLaboratorio(null);
           return;
         }
@@ -96,7 +99,7 @@ function Dashboard({
   ]);
 
   // =========================================
-  // VALIDAR PERMISOS
+  // FUNCIONES DE PERMISOS
   // =========================================
 
   const tienePermiso = (
@@ -153,6 +156,7 @@ function Dashboard({
   }
 
   // =========================================
+  // HU-02
   // VISTA ROLES Y PERMISOS
   // =========================================
 
@@ -173,6 +177,7 @@ function Dashboard({
   }
 
   // =========================================
+  // HU-04
   // VISTA GESTIÓN DE LABORATORIOS
   // =========================================
 
@@ -196,6 +201,49 @@ function Dashboard({
   }
 
   // =========================================
+  // HU-05
+  // VISTA CONFIGURACIÓN DEL LABORATORIO
+  // =========================================
+
+  if (
+    vista === "configuracion" &&
+    tienePermiso(
+      "configuracion.editar"
+    )
+  ) {
+    return (
+      <ConfiguracionLaboratorio
+        usuario={usuario}
+        volver={() =>
+          setVista("dashboard")
+        }
+      />
+    );
+  }
+
+  // =========================================
+  // HU-06
+  // VISTA PERSONALIZACIÓN
+  // =========================================
+
+  if (
+    vista === "personalizacion" &&
+    tienePermiso(
+      "personalizacion.editar"
+    )
+  ) {
+    return (
+      <PersonalizacionLaboratorio
+        usuario={usuario}
+        volver={() =>
+          setVista("dashboard")
+        }
+      />
+    );
+  }
+
+  // =========================================
+  // HU-07
   // VISTA GESTIÓN DE ADMINISTRADORES
   // =========================================
 
@@ -219,38 +267,23 @@ function Dashboard({
   }
 
   // =========================================
-  // VISTA CONFIGURACIÓN DEL LABORATORIO
+  // HU-08
+  // VISTA GESTIÓN DE PERSONAL
   // =========================================
 
   if (
-    vista === "configuracion" &&
-    tienePermiso(
-      "configuracion.editar"
-    )
+    vista === "personal" &&
+    tieneAlgunPermiso([
+      "empleados.crear",
+      "empleados.ver",
+      "empleados.editar",
+      "empleados.desactivar",
+    ])
   ) {
     return (
-      <ConfiguracionLaboratorio
+      <GestionPersonal
         usuario={usuario}
-        volver={() =>
-          setVista("dashboard")
-        }
-      />
-    );
-  }
-
-  // =========================================
-  // VISTA PERSONALIZACIÓN
-  // =========================================
-
-  if (
-    vista === "personalizacion" &&
-    tienePermiso(
-      "personalizacion.editar"
-    )
-  ) {
-    return (
-      <PersonalizacionLaboratorio
-        usuario={usuario}
+        permisos={permisos}
         volver={() =>
           setVista("dashboard")
         }
@@ -326,6 +359,7 @@ function Dashboard({
       </h2>
 
       {/* =====================================
+          HU-04
           SUPER ADMIN - LABORATORIOS
       ===================================== */}
 
@@ -347,6 +381,7 @@ function Dashboard({
       )}
 
       {/* =====================================
+          HU-07
           SUPER ADMIN - ADMINISTRADORES
       ===================================== */}
 
@@ -368,7 +403,8 @@ function Dashboard({
       )}
 
       {/* =====================================
-          ADMINISTRADOR - CONFIGURACIÓN
+          HU-05
+          CONFIGURACIÓN
       ===================================== */}
 
       {tienePermiso(
@@ -386,7 +422,8 @@ function Dashboard({
       )}
 
       {/* =====================================
-          ADMINISTRADOR - PERSONALIZACIÓN
+          HU-06
+          PERSONALIZACIÓN
       ===================================== */}
 
       {tienePermiso(
@@ -404,7 +441,8 @@ function Dashboard({
       )}
 
       {/* =====================================
-          ADMINISTRADOR - ROLES
+          HU-02
+          ROLES Y PERMISOS
       ===================================== */}
 
       {tienePermiso(
@@ -422,14 +460,23 @@ function Dashboard({
       )}
 
       {/* =====================================
+          HU-08
           GESTIÓN DE PERSONAL
       ===================================== */}
 
       {tieneAlgunPermiso([
         "empleados.crear",
+        "empleados.ver",
         "empleados.editar",
+        "empleados.desactivar",
       ]) && (
-        <button>
+        <button
+          onClick={() =>
+            setVista(
+              "personal"
+            )
+          }
+        >
           Gestión de personal
         </button>
       )}
