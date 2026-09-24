@@ -7,7 +7,6 @@ import {
 
 import {
   ActivityIndicator,
-  Image,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -27,17 +26,18 @@ import {
 } from "expo-router";
 
 import {
-  actualizarLaboratorio,
-  cambiarEstadoLaboratorio,
-  crearLaboratorio,
-  obtenerLaboratorios,
-  type Laboratorio,
-} from "../services/laboratoriosService";
+  actualizarPaciente,
+  crearPaciente,
+  obtenerPacientes,
+  type DatosPaciente,
+  type PacienteSistema,
+} from "../services/pacientesService";
 
-type FiltroEstado =
+type SexoFiltro =
   | "todos"
-  | "activo"
-  | "inactivo";
+  | "masculino"
+  | "femenino"
+  | "otro";
 
 type ModoFormulario =
   | "crear"
@@ -48,28 +48,49 @@ type Mensaje = {
   tipo:
     | "exito"
     | "error";
-
-  texto:
-    string;
+  texto: string;
 } | null;
 
-const formularioInicial = {
-  nombre: "",
-  direccion: "",
-  telefono: "",
-  email: "",
+type FormularioPaciente = {
+  nombres: string;
+  apellidos: string;
+  ci: string;
+  fechaNacimiento: string;
+  sexo: string;
+  telefono: string;
+  email: string;
+  direccion: string;
+  ciudad: string;
+  alergias: string;
+  enfermedadesPrevias: string;
 };
 
-export default function LaboratoriosScreen() {
+const formularioInicial:
+  FormularioPaciente = {
+  nombres: "",
+  apellidos: "",
+  ci: "",
+  fechaNacimiento: "",
+  sexo: "",
+  telefono: "",
+  email: "",
+  direccion: "",
+  ciudad: "",
+  alergias: "",
+  enfermedadesPrevias: "",
+};
+
+export default function PacientesScreen() {
   const router =
     useRouter();
 
   const [
-    laboratorios,
-    setLaboratorios,
-  ] = useState<Laboratorio[]>(
-    []
-  );
+    pacientes,
+    setPacientes,
+  ] =
+    useState<PacienteSistema[]>(
+      []
+    );
 
   const [
     cargando,
@@ -89,9 +110,10 @@ export default function LaboratoriosScreen() {
   const [
     mensaje,
     setMensaje,
-  ] = useState<Mensaje>(
-    null
-  );
+  ] =
+    useState<Mensaje>(
+      null
+    );
 
   const [
     busqueda,
@@ -99,10 +121,15 @@ export default function LaboratoriosScreen() {
   ] = useState("");
 
   const [
-    filtroEstado,
-    setFiltroEstado,
+    fechaFiltro,
+    setFechaFiltro,
+  ] = useState("");
+
+  const [
+    sexoFiltro,
+    setSexoFiltro,
   ] =
-    useState<FiltroEstado>(
+    useState<SexoFiltro>(
       "todos"
     );
 
@@ -122,39 +149,32 @@ export default function LaboratoriosScreen() {
   const [
     formulario,
     setFormulario,
-  ] = useState(
-    formularioInicial
-  );
+  ] =
+    useState<FormularioPaciente>(
+      formularioInicial
+    );
 
   const [
-    laboratorioEditar,
-    setLaboratorioEditar,
+    pacienteEditar,
+    setPacienteEditar,
   ] =
-    useState<Laboratorio | null>(
+    useState<PacienteSistema | null>(
       null
     );
 
   const [
-    laboratorioVer,
-    setLaboratorioVer,
+    pacienteVer,
+    setPacienteVer,
   ] =
-    useState<Laboratorio | null>(
+    useState<PacienteSistema | null>(
       null
     );
 
   const [
-    laboratorioDetalle,
-    setLaboratorioDetalle,
+    pacienteDetalle,
+    setPacienteDetalle,
   ] =
-    useState<Laboratorio | null>(
-      null
-    );
-
-  const [
-    laboratorioEstado,
-    setLaboratorioEstado,
-  ] =
-    useState<Laboratorio | null>(
+    useState<PacienteSistema | null>(
       null
     );
 
@@ -190,7 +210,9 @@ export default function LaboratoriosScreen() {
         temporizador
       );
     };
-  }, [mensaje]);
+  }, [
+    mensaje,
+  ]);
 
   const cargarDatos =
     useCallback(
@@ -207,14 +229,15 @@ export default function LaboratoriosScreen() {
           }
 
           const resultado =
-            await obtenerLaboratorios();
+            await obtenerPacientes();
 
-          setLaboratorios(
+          setPacientes(
             resultado
           );
+
         } catch (error) {
           console.error(
-            "Error cargando laboratorios:",
+            "Error cargando pacientes:",
             error
           );
 
@@ -223,8 +246,9 @@ export default function LaboratoriosScreen() {
             error instanceof
             Error
               ? error.message
-              : "No se pudieron cargar los laboratorios."
+              : "No se pudieron cargar los pacientes."
           );
+
         } finally {
           setCargando(
             false
@@ -240,7 +264,9 @@ export default function LaboratoriosScreen() {
 
   useEffect(() => {
     cargarDatos();
-  }, [cargarDatos]);
+  }, [
+    cargarDatos,
+  ]);
 
   const refrescar =
     async () => {
@@ -253,28 +279,33 @@ export default function LaboratoriosScreen() {
       );
     };
 
-  const laboratoriosFiltrados =
+  const pacientesFiltrados =
     useMemo(() => {
       const texto =
         busqueda
           .trim()
           .toLowerCase();
 
-      return laboratorios.filter(
-        (laboratorio) => {
+      return pacientes.filter(
+        (
+          paciente
+        ) => {
           const coincideBusqueda =
             texto === "" ||
             [
-              laboratorio.nombre,
-              laboratorio.nombreVisible,
-              laboratorio.email,
-              laboratorio.telefono,
-              laboratorio.direccion,
-              laboratorio.laboratorioId,
+              paciente.nombres,
+              paciente.apellidos,
+              paciente.ci,
+              paciente.telefono,
+              paciente.email,
+              paciente.ciudad,
             ].some(
-              (valor) =>
+              (
+                valor
+              ) =>
                 String(
-                  valor || ""
+                  valor ||
+                    ""
                 )
                   .toLowerCase()
                   .includes(
@@ -282,115 +313,169 @@ export default function LaboratoriosScreen() {
                   )
             );
 
-          let coincideEstado =
-            true;
+          const coincideFecha =
+            fechaFiltro.trim() ===
+              "" ||
+            paciente.fechaNacimiento ===
+              fechaFiltro.trim();
 
-          if (
-            filtroEstado ===
-            "activo"
-          ) {
-            coincideEstado =
-              laboratorio.activo ===
-              true;
-          }
-
-          if (
-            filtroEstado ===
-            "inactivo"
-          ) {
-            coincideEstado =
-              laboratorio.activo ===
-              false;
-          }
+          const coincideSexo =
+            sexoFiltro ===
+              "todos" ||
+            paciente.sexo.toLowerCase() ===
+              sexoFiltro;
 
           return (
             coincideBusqueda &&
-            coincideEstado
+            coincideFecha &&
+            coincideSexo
           );
         }
       );
     }, [
-      laboratorios,
+      pacientes,
       busqueda,
-      filtroEstado,
+      fechaFiltro,
+      sexoFiltro,
     ]);
 
-  const cantidadActivos =
-    laboratorios.filter(
-      (item) =>
-        item.activo
+  const masculino =
+    pacientes.filter(
+      (
+        paciente
+      ) =>
+        paciente.sexo ===
+        "masculino"
     ).length;
 
-  const cantidadInactivos =
-    laboratorios.filter(
-      (item) =>
-        !item.activo
-    ).length;
-
-  const cantidadPersonalizados =
-    laboratorios.filter(
-      (item) =>
-        Boolean(
-          item.nombreVisible ||
-            item.logoUrl
-        )
+  const femenino =
+    pacientes.filter(
+      (
+        paciente
+      ) =>
+        paciente.sexo ===
+        "femenino"
     ).length;
 
   const limpiarFiltros =
     () => {
       setBusqueda("");
-      setFiltroEstado(
+      setFechaFiltro("");
+      setSexoFiltro(
         "todos"
       );
     };
 
+  const convertirTextoArray = (
+    texto: string
+  ): string[] => {
+    return texto
+      .split(",")
+      .map(
+        (
+          item
+        ) =>
+          item.trim()
+      )
+      .filter(Boolean);
+  };
+
+  const convertirArrayTexto = (
+    lista: string[]
+  ): string => {
+    return lista.join(
+      ", "
+    );
+  };
+
+  const actualizarCampo = (
+    campo:
+      keyof FormularioPaciente,
+    valor: string
+  ) => {
+    setFormulario(
+      (
+        anterior
+      ) => ({
+        ...anterior,
+        [campo]:
+          valor,
+      })
+    );
+  };
+
   const abrirCrear =
     () => {
-      setFormulario(
-        formularioInicial
+      setFormulario({
+        ...formularioInicial,
+      });
+
+      setPacienteEditar(
+        null
       );
 
-      setLaboratorioEditar(
+      setMensaje(
         null
       );
 
       setModoFormulario(
         "crear"
       );
-
-      setMensaje(
-        null
-      );
     };
 
   const abrirEditar = (
-    laboratorio:
-      Laboratorio
+    paciente:
+      PacienteSistema
   ) => {
-    setLaboratorioEditar(
-      laboratorio
+    setPacienteEditar(
+      paciente
     );
 
     setFormulario({
-      nombre:
-        laboratorio.nombre,
+      nombres:
+        paciente.nombres,
 
-      direccion:
-        laboratorio.direccion,
+      apellidos:
+        paciente.apellidos,
+
+      ci:
+        paciente.ci,
+
+      fechaNacimiento:
+        paciente.fechaNacimiento,
+
+      sexo:
+        paciente.sexo,
 
       telefono:
-        laboratorio.telefono,
+        paciente.telefono,
 
       email:
-        laboratorio.email,
-    });
+        paciente.email,
 
-    setModoFormulario(
-      "editar"
-    );
+      direccion:
+        paciente.direccion,
+
+      ciudad:
+        paciente.ciudad,
+
+      alergias:
+        convertirArrayTexto(
+          paciente.alergias
+        ),
+
+      enfermedadesPrevias:
+        convertirArrayTexto(
+          paciente.enfermedadesPrevias
+        ),
+    });
 
     setMensaje(
       null
+    );
+
+    setModoFormulario(
+      "editar"
     );
   };
 
@@ -406,74 +491,131 @@ export default function LaboratoriosScreen() {
         null
       );
 
-      setLaboratorioEditar(
+      setPacienteEditar(
         null
       );
 
-      setFormulario(
-        formularioInicial
-      );
+      setFormulario({
+        ...formularioInicial,
+      });
     };
-
-  const actualizarCampo = (
-    campo:
-      keyof typeof formularioInicial,
-    valor: string
-  ) => {
-    setFormulario(
-      (anterior) => ({
-        ...anterior,
-        [campo]:
-          valor,
-      })
-    );
-  };
 
   const validarFormulario =
     (): string => {
       if (
-        formulario.nombre
+        formulario.nombres
           .trim()
           .length < 2
       ) {
-        return "Ingresa un nombre válido.";
+        return "Ingresa los nombres del paciente.";
+      }
+
+      if (
+        formulario.apellidos
+          .trim()
+          .length < 2
+      ) {
+        return "Ingresa los apellidos del paciente.";
+      }
+
+      if (
+        formulario.ci
+          .trim()
+          .length < 4
+      ) {
+        return "Ingresa un CI o carnet válido.";
+      }
+
+      if (
+        !/^\d{4}-\d{2}-\d{2}$/.test(
+          formulario.fechaNacimiento
+            .trim()
+        )
+      ) {
+        return "La fecha debe utilizar el formato AAAA-MM-DD.";
+      }
+
+      if (
+        ![
+          "masculino",
+          "femenino",
+          "otro",
+        ].includes(
+          formulario.sexo
+        )
+      ) {
+        return "Selecciona el sexo.";
       }
 
       if (
         formulario.direccion
           .trim()
-          .length < 4
+          .length < 3
       ) {
-        return "Ingresa una dirección válida.";
+        return "Ingresa la dirección del paciente.";
       }
 
       if (
-        !/^[0-9+\-\s()]{6,20}$/.test(
-          formulario.telefono.trim()
-        )
+        formulario.ciudad
+          .trim()
+          .length < 2
       ) {
-        return "Ingresa un teléfono válido.";
-      }
-
-      if (
-        !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(
-          formulario.email
-            .trim()
-            .toLowerCase()
-        )
-      ) {
-        return "Ingresa un correo electrónico válido.";
+        return "Ingresa la ciudad del paciente.";
       }
 
       return "";
     };
 
-  const guardar =
+  const prepararDatos =
+    (): DatosPaciente => {
+      return {
+        nombres:
+          formulario.nombres,
+
+        apellidos:
+          formulario.apellidos,
+
+        ci:
+          formulario.ci,
+
+        fechaNacimiento:
+          formulario.fechaNacimiento,
+
+        sexo:
+          formulario.sexo,
+
+        telefono:
+          formulario.telefono,
+
+        email:
+          formulario.email,
+
+        direccion:
+          formulario.direccion,
+
+        ciudad:
+          formulario.ciudad,
+
+        alergias:
+          convertirTextoArray(
+            formulario.alergias
+          ),
+
+        enfermedadesPrevias:
+          convertirTextoArray(
+            formulario.enfermedadesPrevias
+          ),
+      };
+    };
+
+  const guardarPaciente =
     async () => {
       const validacion =
         validarFormulario();
 
-      if (validacion) {
+      if (
+        validacion
+      ) {
         mostrarMensaje(
           "error",
           validacion
@@ -487,31 +629,35 @@ export default function LaboratoriosScreen() {
           true
         );
 
+        const datos =
+          prepararDatos();
+
         if (
           modoFormulario ===
           "crear"
         ) {
-          await crearLaboratorio(
-            formulario
+          await crearPaciente(
+            datos
           );
 
           mostrarMensaje(
             "exito",
-            "Laboratorio registrado correctamente."
+            "Paciente registrado correctamente."
           );
+
         } else if (
           modoFormulario ===
             "editar" &&
-          laboratorioEditar
+          pacienteEditar
         ) {
-          await actualizarLaboratorio(
-            laboratorioEditar.id,
-            formulario
+          await actualizarPaciente(
+            pacienteEditar.id,
+            datos
           );
 
           mostrarMensaje(
             "exito",
-            "Laboratorio actualizado correctamente."
+            "Paciente actualizado correctamente."
           );
         }
 
@@ -519,20 +665,21 @@ export default function LaboratoriosScreen() {
           null
         );
 
-        setLaboratorioEditar(
+        setPacienteEditar(
           null
         );
 
-        setFormulario(
-          formularioInicial
-        );
+        setFormulario({
+          ...formularioInicial,
+        });
 
         await cargarDatos(
           false
         );
+
       } catch (error) {
         console.error(
-          "Error guardando laboratorio:",
+          "Error guardando paciente:",
           error
         );
 
@@ -541,8 +688,9 @@ export default function LaboratoriosScreen() {
           error instanceof
           Error
             ? error.message
-            : "No se pudo guardar el laboratorio."
+            : "No se pudo guardar el paciente."
         );
+
       } finally {
         setGuardando(
           false
@@ -550,71 +698,35 @@ export default function LaboratoriosScreen() {
       }
     };
 
-  const confirmarEstado = (
-    laboratorio:
-      Laboratorio
-  ) => {
-    setLaboratorioEstado(
-      laboratorio
-    );
+  const nombreSexo = (
+    sexo: string
+  ): string => {
+    if (
+      sexo ===
+      "masculino"
+    ) {
+      return "Masculino";
+    }
+
+    if (
+      sexo ===
+      "femenino"
+    ) {
+      return "Femenino";
+    }
+
+    if (
+      sexo ===
+      "otro"
+    ) {
+      return "Otro";
+    }
+
+    return sexo ||
+      "No registrado";
   };
 
-  const ejecutarCambioEstado =
-    async () => {
-      if (
-        !laboratorioEstado
-      ) {
-        return;
-      }
-
-      try {
-        setGuardando(
-          true
-        );
-
-        const nuevoEstado =
-          !laboratorioEstado.activo;
-
-        await cambiarEstadoLaboratorio(
-          laboratorioEstado.id,
-          nuevoEstado
-        );
-
-        setLaboratorioEstado(
-          null
-        );
-
-        await cargarDatos(
-          false
-        );
-
-        mostrarMensaje(
-          "exito",
-          nuevoEstado
-            ? "Laboratorio activado correctamente."
-            : "Laboratorio desactivado correctamente."
-        );
-      } catch (error) {
-        console.error(
-          "Error cambiando estado:",
-          error
-        );
-
-        mostrarMensaje(
-          "error",
-          error instanceof
-          Error
-            ? error.message
-            : "No se pudo cambiar el estado."
-        );
-      } finally {
-        setGuardando(
-          false
-        );
-      }
-    };
-
-  const formatearFecha = (
+  const formatearFechaRegistro = (
     fecha: unknown
   ): string => {
     if (!fecha) {
@@ -634,78 +746,37 @@ export default function LaboratoriosScreen() {
         ).toDate ===
           "function"
       ) {
-        const convertir =
+        return (
           fecha as {
             toDate:
               () => Date;
-          };
-
-        return convertir
+          }
+        )
           .toDate()
           .toLocaleString(
             "es-BO"
           );
       }
 
-      if (
-        typeof fecha ===
-          "object" &&
-        fecha !== null &&
-        "seconds" in fecha
-      ) {
-        const segundos =
-          Number(
-            (
-              fecha as {
-                seconds:
-                  number;
-              }
-            ).seconds
-          );
-
-        return new Date(
-          segundos *
-            1000
-        ).toLocaleString(
-          "es-BO"
-        );
-      }
-
       return "No registrada";
+
     } catch {
       return "No registrada";
     }
   };
 
-  if (cargando) {
+  if (
+    cargando
+  ) {
     return (
       <SafeAreaView
         style={
           styles.loadingPage
         }
       >
-        <StatusBar
-          barStyle="dark-content"
-          backgroundColor="#f8fafc"
-        />
-
-        <View
-          style={
-            styles.loadingIcon
-          }
-        >
-          <Text
-            style={
-              styles.loadingEmoji
-            }
-          >
-            🏥
-          </Text>
-        </View>
-
         <ActivityIndicator
           size="large"
-          color="#2563eb"
+          color="#15803D"
         />
 
         <Text
@@ -713,7 +784,7 @@ export default function LaboratoriosScreen() {
             styles.loadingTitle
           }
         >
-          Laboratorios
+          Pacientes
         </Text>
 
         <Text
@@ -721,7 +792,7 @@ export default function LaboratoriosScreen() {
             styles.loadingText
           }
         >
-          Cargando establecimientos...
+          Cargando pacientes del laboratorio...
         </Text>
       </SafeAreaView>
     );
@@ -735,7 +806,7 @@ export default function LaboratoriosScreen() {
     >
       <StatusBar
         barStyle="light-content"
-        backgroundColor="#1e3a8a"
+        backgroundColor="#166534"
       />
 
       <ScrollView
@@ -754,7 +825,7 @@ export default function LaboratoriosScreen() {
             onRefresh={
               refrescar
             }
-            tintColor="#2563eb"
+            tintColor="#15803D"
           />
         }
       >
@@ -765,7 +836,7 @@ export default function LaboratoriosScreen() {
         >
           <View
             style={
-              styles.headerTop
+              styles.headerRow
             }
           >
             <Pressable
@@ -787,15 +858,15 @@ export default function LaboratoriosScreen() {
 
             <View
               style={
-                styles.headerText
+                styles.headerData
               }
             >
               <Text
                 style={
-                  styles.headerEyebrow
+                  styles.headerSmall
                 }
               >
-                ADMINISTRACIÓN
+                ATENCIÓN DEL LABORATORIO
               </Text>
 
               <Text
@@ -803,7 +874,7 @@ export default function LaboratoriosScreen() {
                   styles.headerTitle
                 }
               >
-                Laboratorios
+                Pacientes
               </Text>
 
               <Text
@@ -811,7 +882,7 @@ export default function LaboratoriosScreen() {
                   styles.headerDescription
                 }
               >
-                Administra los establecimientos registrados en la plataforma.
+                Registra, consulta y actualiza los pacientes del laboratorio.
               </Text>
             </View>
 
@@ -825,7 +896,7 @@ export default function LaboratoriosScreen() {
                   styles.headerEmoji
                 }
               >
-                🏥
+                🧑‍⚕️
               </Text>
             </View>
           </View>
@@ -843,7 +914,7 @@ export default function LaboratoriosScreen() {
                 styles.newButtonText
               }
             >
-              + Nuevo laboratorio
+              + Nuevo paciente
             </Text>
           </Pressable>
         </View>
@@ -860,14 +931,12 @@ export default function LaboratoriosScreen() {
             ]}
           >
             <Text
-              style={[
-                styles.messageSymbol,
-
+              style={
                 mensaje.tipo ===
-                  "exito"
-                  ? styles.messageSuccessText
-                  : styles.messageErrorText,
-              ]}
+                "exito"
+                  ? styles.successText
+                  : styles.errorText
+              }
             >
               {mensaje.tipo ===
               "exito"
@@ -881,8 +950,8 @@ export default function LaboratoriosScreen() {
 
                 mensaje.tipo ===
                   "exito"
-                  ? styles.messageSuccessText
-                  : styles.messageErrorText,
+                  ? styles.successText
+                  : styles.errorText,
               ]}
             >
               {mensaje.texto}
@@ -896,43 +965,33 @@ export default function LaboratoriosScreen() {
           }
         >
           <Stat
-            icono="🏥"
-            titulo="Laboratorios"
+            titulo="Pacientes"
             valor={
-              laboratorios.length
+              pacientes.length
             }
-            fondo="#dbeafe"
-            color="#1d4ed8"
+            icono="🧑‍⚕️"
+            fondo="#DCFCE7"
+            color="#15803D"
           />
 
           <Stat
-            icono="✓"
-            titulo="Activos"
+            titulo="Masculino"
             valor={
-              cantidadActivos
+              masculino
             }
-            fondo="#dcfce7"
-            color="#15803d"
+            icono="♂"
+            fondo="#DBEAFE"
+            color="#1D4ED8"
           />
 
           <Stat
-            icono="○"
-            titulo="Inactivos"
+            titulo="Femenino"
             valor={
-              cantidadInactivos
+              femenino
             }
-            fondo="#fee2e2"
-            color="#b91c1c"
-          />
-
-          <Stat
-            icono="🎨"
-            titulo="Personalizados"
-            valor={
-              cantidadPersonalizados
-            }
-            fondo="#ede9fe"
-            color="#6d28d9"
+            icono="♀"
+            fondo="#FCE7F3"
+            color="#BE185D"
           />
         </View>
 
@@ -943,7 +1002,7 @@ export default function LaboratoriosScreen() {
         >
           <View
             style={
-              styles.search
+              styles.searchBox
             }
           >
             <Text>
@@ -960,12 +1019,8 @@ export default function LaboratoriosScreen() {
               onChangeText={
                 setBusqueda
               }
-              placeholder="Buscar nombre, correo, teléfono..."
-              placeholderTextColor="#94a3b8"
-              autoCapitalize="none"
-              autoCorrect={
-                false
-              }
+              placeholder="Nombre, apellido, CI, teléfono, correo..."
+              placeholderTextColor="#94A3B8"
             />
           </View>
 
@@ -983,12 +1038,9 @@ export default function LaboratoriosScreen() {
             }
           >
             <Text
-              style={[
-                styles.filterButtonText,
-
-                mostrarFiltros &&
-                  styles.filterButtonTextActive,
-              ]}
+              style={
+                styles.filterButtonText
+              }
             >
               ⚙ Filtros
             </Text>
@@ -1011,7 +1063,7 @@ export default function LaboratoriosScreen() {
                   styles.filtersTitle
                 }
               >
-                Filtrar resultados
+                Filtros de pacientes
               </Text>
 
               <Pressable
@@ -1021,7 +1073,7 @@ export default function LaboratoriosScreen() {
               >
                 <Text
                   style={
-                    styles.clearFilters
+                    styles.clearText
                   }
                 >
                   Limpiar
@@ -1031,10 +1083,36 @@ export default function LaboratoriosScreen() {
 
             <Text
               style={
-                styles.filterLabel
+                styles.label
               }
             >
-              Estado
+              Fecha de nacimiento
+            </Text>
+
+            <TextInput
+              style={
+                styles.input
+              }
+              value={
+                fechaFiltro
+              }
+              onChangeText={
+                setFechaFiltro
+              }
+              placeholder="AAAA-MM-DD"
+              placeholderTextColor="#94A3B8"
+              maxLength={
+                10
+              }
+            />
+
+            <Text
+              style={[
+                styles.label,
+                styles.spacingTop,
+              ]}
+            >
+              Sexo
             </Text>
 
             <View
@@ -1042,41 +1120,54 @@ export default function LaboratoriosScreen() {
                 styles.chips
               }
             >
-              <Filtro
+              <Chip
                 titulo="Todos"
                 activo={
-                  filtroEstado ===
+                  sexoFiltro ===
                   "todos"
                 }
                 onPress={() =>
-                  setFiltroEstado(
+                  setSexoFiltro(
                     "todos"
                   )
                 }
               />
 
-              <Filtro
-                titulo="Activos"
+              <Chip
+                titulo="Masculino"
                 activo={
-                  filtroEstado ===
-                  "activo"
+                  sexoFiltro ===
+                  "masculino"
                 }
                 onPress={() =>
-                  setFiltroEstado(
-                    "activo"
+                  setSexoFiltro(
+                    "masculino"
                   )
                 }
               />
 
-              <Filtro
-                titulo="Inactivos"
+              <Chip
+                titulo="Femenino"
                 activo={
-                  filtroEstado ===
-                  "inactivo"
+                  sexoFiltro ===
+                  "femenino"
                 }
                 onPress={() =>
-                  setFiltroEstado(
-                    "inactivo"
+                  setSexoFiltro(
+                    "femenino"
+                  )
+                }
+              />
+
+              <Chip
+                titulo="Otro"
+                activo={
+                  sexoFiltro ===
+                  "otro"
+                }
+                onPress={() =>
+                  setSexoFiltro(
+                    "otro"
                   )
                 }
               />
@@ -1089,13 +1180,17 @@ export default function LaboratoriosScreen() {
             styles.listHeader
           }
         >
-          <View>
+          <View
+            style={{
+              flex: 1,
+            }}
+          >
             <Text
               style={
                 styles.listTitle
               }
             >
-              Establecimientos registrados
+              Pacientes registrados
             </Text>
 
             <Text
@@ -1103,7 +1198,7 @@ export default function LaboratoriosScreen() {
                 styles.listSubtitle
               }
             >
-              Consulta y administra los laboratorios de la plataforma.
+              Se muestran únicamente los datos principales.
             </Text>
           </View>
 
@@ -1117,12 +1212,14 @@ export default function LaboratoriosScreen() {
                 styles.resultText
               }
             >
-              {laboratoriosFiltrados.length}
+              {
+                pacientesFiltrados.length
+              }
             </Text>
           </View>
         </View>
 
-        {laboratoriosFiltrados.length ===
+        {pacientesFiltrados.length ===
         0 ? (
           <View
             style={
@@ -1142,7 +1239,7 @@ export default function LaboratoriosScreen() {
                 styles.emptyTitle
               }
             >
-              No se encontraron laboratorios
+              No se encontraron pacientes
             </Text>
 
             <Text
@@ -1167,12 +1264,15 @@ export default function LaboratoriosScreen() {
               </Text>
             </Pressable>
           </View>
+
         ) : (
-          laboratoriosFiltrados.map(
-            (laboratorio) => (
+          pacientesFiltrados.map(
+            (
+              paciente
+            ) => (
               <View
                 key={
-                  laboratorio.id
+                  paciente.id
                 }
                 style={
                   styles.card
@@ -1185,106 +1285,55 @@ export default function LaboratoriosScreen() {
                 >
                   <View
                     style={
-                      styles.labLogo
+                      styles.avatar
                     }
                   >
-                    {laboratorio.logoUrl ? (
-                      <Image
-                        source={{
-                          uri:
-                            laboratorio.logoUrl,
-                        }}
-                        style={
-                          styles.labLogoImage
-                        }
-                        resizeMode="contain"
-                      />
-                    ) : (
-                      <Text
-                        style={
-                          styles.labEmoji
-                        }
-                      >
-                        🧪
-                      </Text>
-                    )}
+                    <Text
+                      style={
+                        styles.avatarText
+                      }
+                    >
+                      {(
+                        paciente.nombres ||
+                        "P"
+                      )
+                        .charAt(0)
+                        .toUpperCase()}
+                    </Text>
                   </View>
 
                   <View
                     style={
-                      styles.labInfo
+                      styles.cardData
                     }
                   >
                     <Text
                       style={
-                        styles.labName
+                        styles.patientName
                       }
                     >
-                      {laboratorio.nombre}
+                      {paciente.nombres}{" "}
+                      {paciente.apellidos}
                     </Text>
 
                     <Text
                       style={
-                        styles.labEmail
+                        styles.patientSecondary
                       }
                     >
-                      {laboratorio.email ||
-                        "Sin correo"}
+                      CI:{" "}
+                      {paciente.ci}
                     </Text>
 
-                    <View
+                    <Text
                       style={
-                        styles.cardBadges
+                        styles.patientSecondary
                       }
                     >
-                      <View
-                        style={
-                          laboratorio.activo
-                            ? styles.activeBadge
-                            : styles.inactiveBadge
-                        }
-                      >
-                        <Text
-                          style={
-                            laboratorio.activo
-                              ? styles.activeText
-                              : styles.inactiveText
-                          }
-                        >
-                          ●{" "}
-                          {laboratorio.activo
-                            ? "Activo"
-                            : "Inactivo"}
-                        </Text>
-                      </View>
-                    </View>
+                      Nacimiento:{" "}
+                      {paciente.fechaNacimiento}
+                    </Text>
                   </View>
-                </View>
-
-                <View
-                  style={
-                    styles.shortInfo
-                  }
-                >
-                  <Text
-                    style={
-                      styles.shortInfoText
-                    }
-                  >
-                    📍{" "}
-                    {laboratorio.direccion ||
-                      "Sin dirección"}
-                  </Text>
-
-                  <Text
-                    style={
-                      styles.shortInfoText
-                    }
-                  >
-                    ☎{" "}
-                    {laboratorio.telefono ||
-                      "Sin teléfono"}
-                  </Text>
                 </View>
 
                 <View
@@ -1298,14 +1347,14 @@ export default function LaboratoriosScreen() {
                       styles.viewAction,
                     ]}
                     onPress={() =>
-                      setLaboratorioVer(
-                        laboratorio
+                      setPacienteVer(
+                        paciente
                       )
                     }
                   >
                     <Text
                       style={
-                        styles.viewActionText
+                        styles.viewText
                       }
                     >
                       👁 Ver
@@ -1318,14 +1367,14 @@ export default function LaboratoriosScreen() {
                       styles.detailAction,
                     ]}
                     onPress={() =>
-                      setLaboratorioDetalle(
-                        laboratorio
+                      setPacienteDetalle(
+                        paciente
                       )
                     }
                   >
                     <Text
                       style={
-                        styles.detailActionText
+                        styles.detailText
                       }
                     >
                       📄 Ver detalle
@@ -1333,58 +1382,24 @@ export default function LaboratoriosScreen() {
                   </Pressable>
                 </View>
 
-                <View
+                <Pressable
                   style={
-                    styles.actions
+                    styles.editButton
+                  }
+                  onPress={() =>
+                    abrirEditar(
+                      paciente
+                    )
                   }
                 >
-                  <Pressable
-                    style={[
-                      styles.action,
-                      styles.editAction,
-                    ]}
-                    onPress={() =>
-                      abrirEditar(
-                        laboratorio
-                      )
+                  <Text
+                    style={
+                      styles.editText
                     }
                   >
-                    <Text
-                      style={
-                        styles.editActionText
-                      }
-                    >
-                      ✎ Editar
-                    </Text>
-                  </Pressable>
-
-                  <Pressable
-                    style={[
-                      styles.action,
-
-                      laboratorio.activo
-                        ? styles.disableAction
-                        : styles.enableAction,
-                    ]}
-                    onPress={() =>
-                      confirmarEstado(
-                        laboratorio
-                      )
-                    }
-                  >
-                    <Text
-                      style={
-                        laboratorio.activo
-                          ? styles.disableActionText
-                          : styles.enableActionText
-                      }
-                    >
-                      {laboratorio.activo
-                        ? "Desactivar"
-                        : "Activar"}
-                    </Text>
-                  </Pressable>
-                </View>
+                    ✎ Editar paciente
+                  </Text>
+                </Pressable>
               </View>
             )
           )
@@ -1428,34 +1443,170 @@ export default function LaboratoriosScreen() {
                 titulo={
                   modoFormulario ===
                   "crear"
-                    ? "Nuevo laboratorio"
-                    : "Editar laboratorio"
+                    ? "Nuevo paciente"
+                    : "Editar paciente"
                 }
-                subtitulo={
-                  modoFormulario ===
-                  "crear"
-                    ? "Registra un nuevo establecimiento."
-                    : "Actualiza la información del laboratorio."
-                }
+                subtitulo="Completa la información clínica y de contacto."
                 cerrar={
                   cerrarFormulario
                 }
               />
 
               <Campo
-                titulo="Nombre *"
+                titulo="Nombres *"
                 valor={
-                  formulario.nombre
+                  formulario.nombres
                 }
                 onChange={(
                   valor
                 ) =>
                   actualizarCampo(
-                    "nombre",
+                    "nombres",
                     valor
                   )
                 }
-                placeholder="Nombre del laboratorio"
+                placeholder="Nombres"
+              />
+
+              <Campo
+                titulo="Apellidos *"
+                valor={
+                  formulario.apellidos
+                }
+                onChange={(
+                  valor
+                ) =>
+                  actualizarCampo(
+                    "apellidos",
+                    valor
+                  )
+                }
+                placeholder="Apellidos"
+              />
+
+              <Campo
+                titulo="CI / Carnet *"
+                valor={
+                  formulario.ci
+                }
+                onChange={(
+                  valor
+                ) =>
+                  actualizarCampo(
+                    "ci",
+                    valor
+                  )
+                }
+                placeholder="Documento de identidad"
+              />
+
+              <Campo
+                titulo="Fecha de nacimiento *"
+                valor={
+                  formulario.fechaNacimiento
+                }
+                onChange={(
+                  valor
+                ) =>
+                  actualizarCampo(
+                    "fechaNacimiento",
+                    valor
+                  )
+                }
+                placeholder="AAAA-MM-DD"
+                maxLength={
+                  10
+                }
+              />
+
+              <Text
+                style={
+                  styles.label
+                }
+              >
+                Sexo *
+              </Text>
+
+              <View
+                style={
+                  styles.sexOptions
+                }
+              >
+                <Option
+                  titulo="Masculino"
+                  seleccionado={
+                    formulario.sexo ===
+                    "masculino"
+                  }
+                  onPress={() =>
+                    actualizarCampo(
+                      "sexo",
+                      "masculino"
+                    )
+                  }
+                />
+
+                <Option
+                  titulo="Femenino"
+                  seleccionado={
+                    formulario.sexo ===
+                    "femenino"
+                  }
+                  onPress={() =>
+                    actualizarCampo(
+                      "sexo",
+                      "femenino"
+                    )
+                  }
+                />
+
+                <Option
+                  titulo="Otro"
+                  seleccionado={
+                    formulario.sexo ===
+                    "otro"
+                  }
+                  onPress={() =>
+                    actualizarCampo(
+                      "sexo",
+                      "otro"
+                    )
+                  }
+                />
+              </View>
+
+              <Campo
+                titulo="Teléfono"
+                valor={
+                  formulario.telefono
+                }
+                onChange={(
+                  valor
+                ) =>
+                  actualizarCampo(
+                    "telefono",
+                    valor
+                  )
+                }
+                placeholder="Número de teléfono"
+                keyboardType="phone-pad"
+              />
+
+              <Campo
+                titulo="Correo electrónico"
+                valor={
+                  formulario.email
+                }
+                onChange={(
+                  valor
+                ) =>
+                  actualizarCampo(
+                    "email",
+                    valor
+                  )
+                }
+                placeholder="paciente@correo.com"
+                keyboardType="email-address"
               />
 
               <Campo
@@ -1476,66 +1627,70 @@ export default function LaboratoriosScreen() {
               />
 
               <Campo
-                titulo="Teléfono *"
+                titulo="Ciudad *"
                 valor={
-                  formulario.telefono
+                  formulario.ciudad
                 }
                 onChange={(
                   valor
                 ) =>
                   actualizarCampo(
-                    "telefono",
+                    "ciudad",
                     valor
                   )
                 }
-                placeholder="Teléfono"
-                keyboardType="phone-pad"
+                placeholder="Ciudad"
               />
 
               <Campo
-                titulo="Correo electrónico *"
+                titulo="Alergias"
                 valor={
-                  formulario.email
+                  formulario.alergias
                 }
                 onChange={(
                   valor
                 ) =>
                   actualizarCampo(
-                    "email",
+                    "alergias",
                     valor
                   )
                 }
-                placeholder="correo@laboratorio.com"
-                keyboardType="email-address"
+                placeholder="Ej.: Penicilina, látex"
+                multiline
               />
 
-              {modoFormulario ===
-                "editar" &&
-                laboratorioEditar && (
-                  <View
-                    style={
-                      styles.lockedBox
-                    }
-                  >
-                    <Text
-                      style={
-                        styles.lockedLabel
-                      }
-                    >
-                      Identificador
-                    </Text>
+              <Text
+                style={
+                  styles.help
+                }
+              >
+                Separa varias alergias con comas.
+              </Text>
 
-                    <Text
-                      style={
-                        styles.lockedValue
-                      }
-                    >
-                      {
-                        laboratorioEditar.laboratorioId
-                      }
-                    </Text>
-                  </View>
-                )}
+              <Campo
+                titulo="Enfermedades previas"
+                valor={
+                  formulario.enfermedadesPrevias
+                }
+                onChange={(
+                  valor
+                ) =>
+                  actualizarCampo(
+                    "enfermedadesPrevias",
+                    valor
+                  )
+                }
+                placeholder="Ej.: Diabetes, hipertensión"
+                multiline
+              />
+
+              <Text
+                style={
+                  styles.help
+                }
+              >
+                Separa varios antecedentes con comas.
+              </Text>
 
               <View
                 style={
@@ -1548,9 +1703,6 @@ export default function LaboratoriosScreen() {
                   }
                   onPress={
                     cerrarFormulario
-                  }
-                  disabled={
-                    guardando
                   }
                 >
                   <Text
@@ -1570,7 +1722,7 @@ export default function LaboratoriosScreen() {
                       styles.disabled,
                   ]}
                   onPress={
-                    guardar
+                    guardarPaciente
                   }
                   disabled={
                     guardando
@@ -1578,8 +1730,7 @@ export default function LaboratoriosScreen() {
                 >
                   {guardando ? (
                     <ActivityIndicator
-                      size="small"
-                      color="#ffffff"
+                      color="#FFFFFF"
                     />
                   ) : (
                     <Text
@@ -1602,13 +1753,13 @@ export default function LaboratoriosScreen() {
 
       <Modal
         visible={
-          laboratorioVer !==
+          pacienteVer !==
           null
         }
         transparent
         animationType="fade"
         onRequestClose={() =>
-          setLaboratorioVer(
+          setPacienteVer(
             null
           )
         }
@@ -1624,13 +1775,13 @@ export default function LaboratoriosScreen() {
               styles.smallModal,
             ]}
           >
-            {laboratorioVer && (
+            {pacienteVer && (
               <>
                 <ModalHeader
-                  titulo="Laboratorio"
+                  titulo="Paciente"
                   subtitulo="Vista rápida"
                   cerrar={() =>
-                    setLaboratorioVer(
+                    setPacienteVer(
                       null
                     )
                   }
@@ -1643,29 +1794,18 @@ export default function LaboratoriosScreen() {
                 >
                   <View
                     style={
-                      styles.profileLogo
+                      styles.profileAvatar
                     }
                   >
-                    {laboratorioVer.logoUrl ? (
-                      <Image
-                        source={{
-                          uri:
-                            laboratorioVer.logoUrl,
-                        }}
-                        style={
-                          styles.profileImage
-                        }
-                        resizeMode="contain"
-                      />
-                    ) : (
-                      <Text
-                        style={
-                          styles.profileEmoji
-                        }
-                      >
-                        🧪
-                      </Text>
-                    )}
+                    <Text
+                      style={
+                        styles.profileAvatarText
+                      }
+                    >
+                      {pacienteVer.nombres
+                        .charAt(0)
+                        .toUpperCase()}
+                    </Text>
                   </View>
 
                   <Text
@@ -1673,37 +1813,37 @@ export default function LaboratoriosScreen() {
                       styles.profileName
                     }
                   >
-                    {laboratorioVer.nombre}
+                    {pacienteVer.nombres}{" "}
+                    {pacienteVer.apellidos}
                   </Text>
 
                   <Text
                     style={
-                      styles.profileEmail
+                      styles.profileInfo
                     }
                   >
-                    {laboratorioVer.email}
+                    CI:{" "}
+                    {pacienteVer.ci}
                   </Text>
 
-                  <View
+                  <Text
                     style={
-                      laboratorioVer.activo
-                        ? styles.activeBadge
-                        : styles.inactiveBadge
+                      styles.profileInfo
                     }
                   >
-                    <Text
-                      style={
-                        laboratorioVer.activo
-                          ? styles.activeText
-                          : styles.inactiveText
-                      }
-                    >
-                      ●{" "}
-                      {laboratorioVer.activo
-                        ? "Activo"
-                        : "Inactivo"}
-                    </Text>
-                  </View>
+                    {nombreSexo(
+                      pacienteVer.sexo
+                    )}
+                  </Text>
+
+                  <Text
+                    style={
+                      styles.profileInfo
+                    }
+                  >
+                    {pacienteVer.telefono ||
+                      "Sin teléfono"}
+                  </Text>
                 </View>
 
                 <Pressable
@@ -1711,7 +1851,7 @@ export default function LaboratoriosScreen() {
                     styles.fullButton
                   }
                   onPress={() =>
-                    setLaboratorioVer(
+                    setPacienteVer(
                       null
                     )
                   }
@@ -1732,13 +1872,13 @@ export default function LaboratoriosScreen() {
 
       <Modal
         visible={
-          laboratorioDetalle !==
+          pacienteDetalle !==
           null
         }
         transparent
         animationType="fade"
         onRequestClose={() =>
-          setLaboratorioDetalle(
+          setPacienteDetalle(
             null
           )
         }
@@ -1758,140 +1898,120 @@ export default function LaboratoriosScreen() {
                 styles.modal
               }
             >
-              {laboratorioDetalle && (
+              {pacienteDetalle && (
                 <>
                   <ModalHeader
-                    titulo="Detalle del laboratorio"
-                    subtitulo="Información completa del establecimiento."
+                    titulo="Detalle del paciente"
+                    subtitulo="Información completa registrada"
                     cerrar={() =>
-                      setLaboratorioDetalle(
+                      setPacienteDetalle(
                         null
                       )
                     }
                   />
 
-                  <View
-                    style={
-                      styles.detailGrid
+                  <Detalle
+                    titulo="Nombres"
+                    valor={
+                      pacienteDetalle.nombres
                     }
-                  >
-                    <Detalle
-                      titulo="Nombre"
-                      valor={
-                        laboratorioDetalle.nombre
-                      }
-                    />
+                  />
 
-                    <Detalle
-                      titulo="Estado"
-                      valor={
-                        laboratorioDetalle.activo
-                          ? "Activo"
-                          : "Inactivo"
-                      }
-                    />
-
-                    <Detalle
-                      titulo="Correo"
-                      valor={
-                        laboratorioDetalle.email
-                      }
-                    />
-
-                    <Detalle
-                      titulo="Teléfono"
-                      valor={
-                        laboratorioDetalle.telefono
-                      }
-                    />
-
-                    <Detalle
-                      titulo="Dirección"
-                      valor={
-                        laboratorioDetalle.direccion
-                      }
-                    />
-
-                    <Detalle
-                      titulo="Nombre visible"
-                      valor={
-                        laboratorioDetalle.nombreVisible ||
-                        "No configurado"
-                      }
-                    />
-
-                    <Detalle
-                      titulo="Color principal"
-                      valor={
-                        laboratorioDetalle.colorPrimario
-                      }
-                    />
-
-                    <Detalle
-                      titulo="Color secundario"
-                      valor={
-                        laboratorioDetalle.colorSecundario
-                      }
-                    />
-
-                    <Detalle
-                      titulo="Fecha de registro"
-                      valor={
-                        formatearFecha(
-                          laboratorioDetalle.fechaRegistro
-                        )
-                      }
-                    />
-
-                    <Detalle
-                      titulo="Laboratorio ID"
-                      valor={
-                        laboratorioDetalle.laboratorioId
-                      }
-                    />
-                  </View>
-
-                  <View
-                    style={
-                      styles.identityPreview
+                  <Detalle
+                    titulo="Apellidos"
+                    valor={
+                      pacienteDetalle.apellidos
                     }
-                  >
-                    <View
-                      style={[
-                        styles.identityHeader,
-                        {
-                          backgroundColor:
-                            laboratorioDetalle.colorPrimario,
-                        },
-                      ]}
-                    >
-                      <View
-                        style={[
-                          styles.identityCircle,
-                          {
-                            backgroundColor:
-                              laboratorioDetalle.colorSecundario,
-                          },
-                        ]}
-                      />
+                  />
 
-                      <Text
-                        style={
-                          styles.identityTitle
-                        }
-                      >
-                        {laboratorioDetalle.nombreVisible ||
-                          laboratorioDetalle.nombre}
-                      </Text>
-                    </View>
-                  </View>
+                  <Detalle
+                    titulo="CI / Carnet"
+                    valor={
+                      pacienteDetalle.ci
+                    }
+                  />
+
+                  <Detalle
+                    titulo="Fecha de nacimiento"
+                    valor={
+                      pacienteDetalle.fechaNacimiento
+                    }
+                  />
+
+                  <Detalle
+                    titulo="Sexo"
+                    valor={
+                      nombreSexo(
+                        pacienteDetalle.sexo
+                      )
+                    }
+                  />
+
+                  <Detalle
+                    titulo="Teléfono"
+                    valor={
+                      pacienteDetalle.telefono
+                    }
+                  />
+
+                  <Detalle
+                    titulo="Correo"
+                    valor={
+                      pacienteDetalle.email
+                    }
+                  />
+
+                  <Detalle
+                    titulo="Dirección"
+                    valor={
+                      pacienteDetalle.direccion
+                    }
+                  />
+
+                  <Detalle
+                    titulo="Ciudad"
+                    valor={
+                      pacienteDetalle.ciudad
+                    }
+                  />
+
+                  <Detalle
+                    titulo="Alergias"
+                    valor={
+                      pacienteDetalle.alergias.length
+                        ? pacienteDetalle.alergias.join(
+                            ", "
+                          )
+                        : "Ninguna registrada"
+                    }
+                  />
+
+                  <Detalle
+                    titulo="Enfermedades previas"
+                    valor={
+                      pacienteDetalle.enfermedadesPrevias.length
+                        ? pacienteDetalle.enfermedadesPrevias.join(
+                            ", "
+                          )
+                        : "Ninguna registrada"
+                    }
+                  />
+
+                  <Detalle
+                    titulo="Fecha de registro"
+                    valor={
+                      formatearFechaRegistro(
+                        pacienteDetalle.fechaRegistro
+                      )
+                    }
+                  />
 
                   <Pressable
                     style={
                       styles.fullButton
                     }
                     onPress={() =>
-                      setLaboratorioDetalle(
+                      setPacienteDetalle(
                         null
                       )
                     }
@@ -1910,149 +2030,20 @@ export default function LaboratoriosScreen() {
           </ScrollView>
         </View>
       </Modal>
-
-      <Modal
-        visible={
-          laboratorioEstado !==
-          null
-        }
-        transparent
-        animationType="fade"
-        onRequestClose={() =>
-          setLaboratorioEstado(
-            null
-          )
-        }
-      >
-        <View
-          style={
-            styles.modalOverlay
-          }
-        >
-          <View
-            style={[
-              styles.modal,
-              styles.confirmModal,
-            ]}
-          >
-            {laboratorioEstado && (
-              <>
-                <View
-                  style={
-                    laboratorioEstado.activo
-                      ? styles.confirmIconDanger
-                      : styles.confirmIconSuccess
-                  }
-                >
-                  <Text
-                    style={
-                      styles.confirmEmoji
-                    }
-                  >
-                    {laboratorioEstado.activo
-                      ? "!"
-                      : "✓"}
-                  </Text>
-                </View>
-
-                <Text
-                  style={
-                    styles.confirmTitle
-                  }
-                >
-                  {laboratorioEstado.activo
-                    ? "Desactivar laboratorio"
-                    : "Activar laboratorio"}
-                </Text>
-
-                <Text
-                  style={
-                    styles.confirmText
-                  }
-                >
-                  {laboratorioEstado.activo
-                    ? `¿Deseas desactivar ${laboratorioEstado.nombre}?`
-                    : `¿Deseas activar ${laboratorioEstado.nombre}?`}
-                </Text>
-
-                <View
-                  style={
-                    styles.modalActions
-                  }
-                >
-                  <Pressable
-                    style={
-                      styles.cancelButton
-                    }
-                    onPress={() =>
-                      setLaboratorioEstado(
-                        null
-                      )
-                    }
-                    disabled={
-                      guardando
-                    }
-                  >
-                    <Text
-                      style={
-                        styles.cancelText
-                      }
-                    >
-                      Cancelar
-                    </Text>
-                  </Pressable>
-
-                  <Pressable
-                    style={[
-                      laboratorioEstado.activo
-                        ? styles.confirmDangerButton
-                        : styles.confirmSuccessButton,
-
-                      guardando &&
-                        styles.disabled,
-                    ]}
-                    onPress={
-                      ejecutarCambioEstado
-                    }
-                    disabled={
-                      guardando
-                    }
-                  >
-                    {guardando ? (
-                      <ActivityIndicator
-                        color="#ffffff"
-                        size="small"
-                      />
-                    ) : (
-                      <Text
-                        style={
-                          styles.confirmButtonText
-                        }
-                      >
-                        Confirmar
-                      </Text>
-                    )}
-                  </Pressable>
-                </View>
-              </>
-            )}
-          </View>
-        </View>
-      </Modal>
     </SafeAreaView>
   );
 }
 
 function Stat({
-  icono,
   titulo,
   valor,
+  icono,
   fondo,
   color,
 }: {
-  icono: string;
   titulo: string;
   valor: number;
+  icono: string;
   fondo: string;
   color: string;
 }) {
@@ -2098,21 +2089,19 @@ function Stat({
   );
 }
 
-function Filtro({
+function Chip({
   titulo,
   activo,
   onPress,
 }: {
   titulo: string;
   activo: boolean;
-  onPress:
-    () => void;
+  onPress: () => void;
 }) {
   return (
     <Pressable
       style={[
         styles.chip,
-
         activo &&
           styles.chipActive,
       ]}
@@ -2123,9 +2112,57 @@ function Filtro({
       <Text
         style={[
           styles.chipText,
-
           activo &&
             styles.chipTextActive,
+        ]}
+      >
+        {titulo}
+      </Text>
+    </Pressable>
+  );
+}
+
+function Option({
+  titulo,
+  seleccionado,
+  onPress,
+}: {
+  titulo: string;
+  seleccionado: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      style={[
+        styles.option,
+        seleccionado &&
+          styles.optionSelected,
+      ]}
+      onPress={
+        onPress
+      }
+    >
+      <View
+        style={[
+          styles.radio,
+          seleccionado &&
+            styles.radioSelected,
+        ]}
+      >
+        {seleccionado && (
+          <View
+            style={
+              styles.radioInner
+            }
+          />
+        )}
+      </View>
+
+      <Text
+        style={[
+          styles.optionText,
+          seleccionado &&
+            styles.optionTextSelected,
         ]}
       >
         {titulo}
@@ -2141,22 +2178,20 @@ function Campo({
   placeholder,
   multiline = false,
   keyboardType = "default",
+  maxLength,
 }: {
   titulo: string;
   valor: string;
-  onChange:
-    (
-      valor:
-        string
-    ) => void;
-  placeholder:
-    string;
-  multiline?:
-    boolean;
+  onChange: (
+    valor: string
+  ) => void;
+  placeholder: string;
+  multiline?: boolean;
   keyboardType?:
     | "default"
     | "email-address"
     | "phone-pad";
+  maxLength?: number;
 }) {
   return (
     <View
@@ -2166,7 +2201,7 @@ function Campo({
     >
       <Text
         style={
-          styles.fieldLabel
+          styles.label
         }
       >
         {titulo}
@@ -2174,10 +2209,10 @@ function Campo({
 
       <TextInput
         style={[
-          styles.fieldInput,
+          styles.input,
 
           multiline &&
-            styles.fieldMultiline,
+            styles.multiline,
         ]}
         value={
           valor
@@ -2188,12 +2223,15 @@ function Campo({
         placeholder={
           placeholder
         }
-        placeholderTextColor="#94a3b8"
+        placeholderTextColor="#94A3B8"
         multiline={
           multiline
         }
         keyboardType={
           keyboardType
+        }
+        maxLength={
+          maxLength
         }
         autoCapitalize={
           keyboardType ===
@@ -2213,8 +2251,7 @@ function ModalHeader({
 }: {
   titulo: string;
   subtitulo: string;
-  cerrar:
-    () => void;
+  cerrar: () => void;
 }) {
   return (
     <View
@@ -2223,9 +2260,9 @@ function ModalHeader({
       }
     >
       <View
-        style={
-          styles.modalHeaderText
-        }
+        style={{
+          flex: 1,
+        }}
       >
         <Text
           style={
@@ -2302,7 +2339,7 @@ const styles =
     page: {
       flex: 1,
       backgroundColor:
-        "#f1f5f9",
+        "#F1F5F9",
     },
 
     scroll: {
@@ -2311,13 +2348,13 @@ const styles =
 
     header: {
       paddingHorizontal: 17,
-      paddingTop: 24,
-      paddingBottom: 29,
+      paddingTop: 25,
+      paddingBottom: 28,
       backgroundColor:
-        "#1e3a8a",
+        "#166534",
     },
 
-    headerTop: {
+    headerRow: {
       flexDirection:
         "row",
       alignItems:
@@ -2340,17 +2377,17 @@ const styles =
     backText: {
       marginTop: -4,
       color:
-        "#ffffff",
+        "#FFFFFF",
       fontSize: 33,
     },
 
-    headerText: {
+    headerData: {
       flex: 1,
     },
 
-    headerEyebrow: {
+    headerSmall: {
       color:
-        "#bfdbfe",
+        "#BBF7D0",
       fontSize: 8,
       fontWeight:
         "900",
@@ -2360,7 +2397,7 @@ const styles =
     headerTitle: {
       marginTop: 4,
       color:
-        "#ffffff",
+        "#FFFFFF",
       fontSize: 27,
       fontWeight:
         "900",
@@ -2369,26 +2406,25 @@ const styles =
     headerDescription: {
       marginTop: 4,
       color:
-        "#dbeafe",
+        "#DCFCE7",
       fontSize: 9,
       lineHeight: 14,
     },
 
     headerIcon: {
-      width: 53,
-      height: 53,
+      width: 54,
+      height: 54,
       alignItems:
         "center",
       justifyContent:
         "center",
-      marginLeft: 8,
-      borderRadius: 16,
+      borderRadius: 17,
       backgroundColor:
         "rgba(255,255,255,.12)",
     },
 
     headerEmoji: {
-      fontSize: 24,
+      fontSize: 25,
     },
 
     newButton: {
@@ -2397,15 +2433,15 @@ const styles =
         "center",
       justifyContent:
         "center",
-      marginTop: 19,
+      marginTop: 18,
       borderRadius: 12,
       backgroundColor:
-        "#ffffff",
+        "#FFFFFF",
     },
 
     newButtonText: {
       color:
-        "#1d4ed8",
+        "#15803D",
       fontSize: 10,
       fontWeight:
         "900",
@@ -2414,95 +2450,89 @@ const styles =
     message: {
       flexDirection:
         "row",
-      alignItems:
-        "center",
-      gap: 8,
       marginHorizontal: 14,
-      marginTop: 13,
+      marginTop: 12,
       padding: 12,
       borderWidth: 1,
       borderRadius: 11,
     },
 
     messageSuccess: {
-      backgroundColor:
-        "#ecfdf5",
       borderColor:
-        "#a7f3d0",
+        "#A7F3D0",
+      backgroundColor:
+        "#ECFDF5",
     },
 
     messageError: {
-      backgroundColor:
-        "#fff1f2",
       borderColor:
-        "#fecaca",
-    },
-
-    messageSymbol: {
-      fontWeight:
-        "900",
+        "#FECACA",
+      backgroundColor:
+        "#FFF1F2",
     },
 
     messageText: {
       flex: 1,
+      marginLeft: 8,
       fontSize: 9,
       fontWeight:
         "700",
     },
 
-    messageSuccessText: {
+    successText: {
       color:
         "#047857",
+      fontWeight:
+        "900",
     },
 
-    messageErrorText: {
+    errorText: {
       color:
-        "#b91c1c",
+        "#B91C1C",
+      fontWeight:
+        "900",
     },
 
     stats: {
       flexDirection:
         "row",
-      flexWrap:
-        "wrap",
-      gap: 9,
       paddingHorizontal: 14,
       marginTop: 15,
     },
 
     stat: {
-      width:
-        "48.5%",
-      padding: 13,
+      flex: 1,
+      marginHorizontal: 3,
+      padding: 11,
       borderWidth: 1,
       borderColor:
-        "#e2e8f0",
-      borderRadius: 15,
+        "#E2E8F0",
+      borderRadius: 14,
       backgroundColor:
-        "#ffffff",
+        "#FFFFFF",
     },
 
     statIcon: {
-      width: 35,
-      height: 35,
+      width: 32,
+      height: 32,
       alignItems:
         "center",
       justifyContent:
         "center",
-      borderRadius: 10,
+      borderRadius: 9,
     },
 
     statValue: {
-      marginTop: 8,
-      fontSize: 21,
+      marginTop: 7,
+      fontSize: 19,
       fontWeight:
         "900",
     },
 
     statTitle: {
       color:
-        "#64748b",
-      fontSize: 8,
+        "#64748B",
+      fontSize: 7,
       fontWeight:
         "700",
     },
@@ -2510,33 +2540,33 @@ const styles =
     toolbar: {
       flexDirection:
         "row",
-      gap: 8,
       paddingHorizontal: 14,
-      marginTop: 19,
+      marginTop: 18,
     },
 
-    search: {
+    searchBox: {
       minHeight: 48,
       flex: 1,
       flexDirection:
         "row",
       alignItems:
         "center",
-      gap: 8,
+      marginRight: 8,
       paddingHorizontal: 12,
       borderWidth: 1,
       borderColor:
-        "#e2e8f0",
+        "#E2E8F0",
       borderRadius: 12,
       backgroundColor:
-        "#ffffff",
+        "#FFFFFF",
     },
 
     searchInput: {
       flex: 1,
-      fontSize: 10,
+      marginLeft: 7,
       color:
-        "#0f172a",
+        "#0F172A",
+      fontSize: 9,
     },
 
     filterButton: {
@@ -2545,17 +2575,17 @@ const styles =
       paddingHorizontal: 12,
       borderWidth: 1,
       borderColor:
-        "#cbd5e1",
+        "#CBD5E1",
       borderRadius: 12,
       backgroundColor:
-        "#ffffff",
+        "#FFFFFF",
     },
 
     filterButtonActive: {
       borderColor:
-        "#2563eb",
+        "#16A34A",
       backgroundColor:
-        "#eff6ff",
+        "#F0FDF4",
     },
 
     filterButtonText: {
@@ -2563,12 +2593,7 @@ const styles =
         "#475569",
       fontSize: 8,
       fontWeight:
-        "800",
-    },
-
-    filterButtonTextActive: {
-      color:
-        "#1d4ed8",
+        "900",
     },
 
     filters: {
@@ -2577,10 +2602,10 @@ const styles =
       padding: 14,
       borderWidth: 1,
       borderColor:
-        "#dbeafe",
+        "#BBF7D0",
       borderRadius: 13,
       backgroundColor:
-        "#ffffff",
+        "#FFFFFF",
     },
 
     filtersHeader: {
@@ -2592,28 +2617,19 @@ const styles =
     },
 
     filtersTitle: {
+      color:
+        "#0F172A",
       fontSize: 11,
       fontWeight:
         "900",
-      color:
-        "#0f172a",
     },
 
-    clearFilters: {
+    clearText: {
       color:
-        "#2563eb",
+        "#15803D",
       fontSize: 8,
       fontWeight:
-        "800",
-    },
-
-    filterLabel: {
-      marginBottom: 7,
-      color:
-        "#64748b",
-      fontSize: 8,
-      fontWeight:
-        "800",
+        "900",
     },
 
     chips: {
@@ -2621,28 +2637,29 @@ const styles =
         "row",
       flexWrap:
         "wrap",
-      gap: 7,
     },
 
     chip: {
+      marginRight: 7,
+      marginBottom: 7,
       paddingHorizontal: 11,
       paddingVertical: 8,
       borderWidth: 1,
       borderColor:
-        "#e2e8f0",
+        "#E2E8F0",
       borderRadius: 20,
     },
 
     chipActive: {
       borderColor:
-        "#2563eb",
+        "#16A34A",
       backgroundColor:
-        "#eff6ff",
+        "#F0FDF4",
     },
 
     chipText: {
       color:
-        "#64748b",
+        "#64748B",
       fontSize: 8,
       fontWeight:
         "700",
@@ -2650,7 +2667,11 @@ const styles =
 
     chipTextActive: {
       color:
-        "#1d4ed8",
+        "#15803D",
+    },
+
+    spacingTop: {
+      marginTop: 12,
     },
 
     listHeader: {
@@ -2658,26 +2679,23 @@ const styles =
         "row",
       alignItems:
         "center",
-      justifyContent:
-        "space-between",
-      paddingHorizontal: 15,
-      marginTop: 23,
+      marginHorizontal: 15,
+      marginTop: 22,
       marginBottom: 11,
     },
 
     listTitle: {
       color:
-        "#0f172a",
+        "#0F172A",
       fontSize: 16,
       fontWeight:
         "900",
     },
 
     listSubtitle: {
-      maxWidth: 270,
       marginTop: 3,
       color:
-        "#64748b",
+        "#64748B",
       fontSize: 8,
     },
 
@@ -2690,12 +2708,12 @@ const styles =
         "center",
       borderRadius: 16,
       backgroundColor:
-        "#dbeafe",
+        "#DCFCE7",
     },
 
     resultText: {
       color:
-        "#1d4ed8",
+        "#15803D",
       fontSize: 9,
       fontWeight:
         "900",
@@ -2707,10 +2725,10 @@ const styles =
       padding: 14,
       borderWidth: 1,
       borderColor:
-        "#e2e8f0",
+        "#E2E8F0",
       borderRadius: 16,
       backgroundColor:
-        "#ffffff",
+        "#FFFFFF",
     },
 
     cardTop: {
@@ -2718,111 +2736,50 @@ const styles =
         "row",
     },
 
-    labLogo: {
+    avatar: {
       width: 51,
       height: 51,
       alignItems:
         "center",
       justifyContent:
         "center",
-      overflow:
-        "hidden",
       marginRight: 11,
       borderRadius: 14,
       backgroundColor:
-        "#eff6ff",
+        "#DCFCE7",
     },
 
-    labLogoImage: {
-      width: 45,
-      height: 45,
+    avatarText: {
+      color:
+        "#15803D",
+      fontSize: 19,
+      fontWeight:
+        "900",
     },
 
-    labEmoji: {
-      fontSize: 23,
-    },
-
-    labInfo: {
+    cardData: {
       flex: 1,
     },
 
-    labName: {
+    patientName: {
       color:
-        "#0f172a",
+        "#0F172A",
       fontSize: 13,
       fontWeight:
         "900",
     },
 
-    labEmail: {
-      marginTop: 3,
+    patientSecondary: {
+      marginTop: 4,
       color:
-        "#64748b",
-      fontSize: 8,
-    },
-
-    cardBadges: {
-      flexDirection:
-        "row",
-      marginTop: 7,
-    },
-
-    activeBadge: {
-      alignSelf:
-        "flex-start",
-      paddingHorizontal: 8,
-      paddingVertical: 5,
-      borderRadius: 14,
-      backgroundColor:
-        "#dcfce7",
-    },
-
-    inactiveBadge: {
-      alignSelf:
-        "flex-start",
-      paddingHorizontal: 8,
-      paddingVertical: 5,
-      borderRadius: 14,
-      backgroundColor:
-        "#fee2e2",
-    },
-
-    activeText: {
-      color:
-        "#15803d",
-      fontSize: 8,
-      fontWeight:
-        "800",
-    },
-
-    inactiveText: {
-      color:
-        "#b91c1c",
-      fontSize: 8,
-      fontWeight:
-        "800",
-    },
-
-    shortInfo: {
-      gap: 5,
-      marginTop: 12,
-      padding: 10,
-      borderRadius: 10,
-      backgroundColor:
-        "#f8fafc",
-    },
-
-    shortInfoText: {
-      color:
-        "#475569",
+        "#64748B",
       fontSize: 8,
     },
 
     actions: {
       flexDirection:
         "row",
-      gap: 7,
-      marginTop: 9,
+      marginTop: 10,
     },
 
     action: {
@@ -2836,13 +2793,14 @@ const styles =
     },
 
     viewAction: {
+      marginRight: 7,
       backgroundColor:
-        "#e0f2fe",
+        "#E0F2FE",
     },
 
-    viewActionText: {
+    viewText: {
       color:
-        "#0369a1",
+        "#0369A1",
       fontSize: 8,
       fontWeight:
         "900",
@@ -2850,51 +2808,32 @@ const styles =
 
     detailAction: {
       backgroundColor:
-        "#ede9fe",
+        "#EDE9FE",
     },
 
-    detailActionText: {
+    detailText: {
       color:
-        "#6d28d9",
+        "#6D28D9",
       fontSize: 8,
       fontWeight:
         "900",
     },
 
-    editAction: {
+    editButton: {
+      minHeight: 39,
+      alignItems:
+        "center",
+      justifyContent:
+        "center",
+      marginTop: 7,
+      borderRadius: 9,
       backgroundColor:
-        "#fef3c7",
+        "#FEF3C7",
     },
 
-    editActionText: {
+    editText: {
       color:
-        "#a16207",
-      fontSize: 8,
-      fontWeight:
-        "900",
-    },
-
-    disableAction: {
-      backgroundColor:
-        "#fee2e2",
-    },
-
-    disableActionText: {
-      color:
-        "#b91c1c",
-      fontSize: 8,
-      fontWeight:
-        "900",
-    },
-
-    enableAction: {
-      backgroundColor:
-        "#dcfce7",
-    },
-
-    enableActionText: {
-      color:
-        "#15803d",
+        "#A16207",
       fontSize: 8,
       fontWeight:
         "900",
@@ -2905,16 +2844,13 @@ const styles =
         "center",
       marginHorizontal: 14,
       padding: 35,
-      borderWidth: 1,
-      borderColor:
-        "#e2e8f0",
       borderRadius: 15,
       backgroundColor:
-        "#ffffff",
+        "#FFFFFF",
     },
 
     emptyEmoji: {
-      fontSize: 35,
+      fontSize: 34,
     },
 
     emptyTitle: {
@@ -2929,16 +2865,14 @@ const styles =
     emptyText: {
       marginTop: 4,
       color:
-        "#64748b",
+        "#64748B",
       fontSize: 8,
-      textAlign:
-        "center",
     },
 
     emptyAction: {
-      marginTop: 11,
+      marginTop: 10,
       color:
-        "#2563eb",
+        "#15803D",
       fontSize: 8,
       fontWeight:
         "900",
@@ -2951,30 +2885,13 @@ const styles =
       justifyContent:
         "center",
       backgroundColor:
-        "#f8fafc",
-    },
-
-    loadingIcon: {
-      width: 68,
-      height: 68,
-      alignItems:
-        "center",
-      justifyContent:
-        "center",
-      marginBottom: 17,
-      borderRadius: 20,
-      backgroundColor:
-        "#dbeafe",
-    },
-
-    loadingEmoji: {
-      fontSize: 31,
+        "#F8FAFC",
     },
 
     loadingTitle: {
-      marginTop: 14,
+      marginTop: 15,
       color:
-        "#0f172a",
+        "#0F172A",
       fontSize: 18,
       fontWeight:
         "900",
@@ -2983,7 +2900,7 @@ const styles =
     loadingText: {
       marginTop: 4,
       color:
-        "#64748b",
+        "#64748B",
       fontSize: 9,
     },
 
@@ -2993,7 +2910,7 @@ const styles =
         "center",
       padding: 17,
       backgroundColor:
-        "rgba(15,23,42,.7)",
+        "rgba(15,23,42,.72)",
     },
 
     modalScroll: {
@@ -3006,45 +2923,32 @@ const styles =
     modal: {
       width:
         "100%",
-      maxWidth: 520,
+      maxWidth: 530,
       alignSelf:
         "center",
       padding: 19,
       borderRadius: 20,
       backgroundColor:
-        "#ffffff",
+        "#FFFFFF",
     },
 
     smallModal: {
       maxWidth: 420,
     },
 
-    confirmModal: {
-      maxWidth: 400,
-      alignItems:
-        "stretch",
-    },
-
     modalHeader: {
       flexDirection:
         "row",
-      justifyContent:
-        "space-between",
       marginBottom: 18,
       paddingBottom: 14,
       borderBottomWidth: 1,
       borderBottomColor:
-        "#e2e8f0",
-    },
-
-    modalHeaderText: {
-      flex: 1,
-      paddingRight: 10,
+        "#E2E8F0",
     },
 
     modalTitle: {
       color:
-        "#0f172a",
+        "#0F172A",
       fontSize: 18,
       fontWeight:
         "900",
@@ -3053,9 +2957,8 @@ const styles =
     modalSubtitle: {
       marginTop: 4,
       color:
-        "#64748b",
+        "#64748B",
       fontSize: 8,
-      lineHeight: 13,
     },
 
     modalClose: {
@@ -3067,7 +2970,7 @@ const styles =
         "center",
       borderRadius: 10,
       backgroundColor:
-        "#f1f5f9",
+        "#F1F5F9",
     },
 
     modalCloseText: {
@@ -3080,7 +2983,7 @@ const styles =
       marginBottom: 13,
     },
 
-    fieldLabel: {
+    label: {
       marginBottom: 6,
       color:
         "#334155",
@@ -3089,54 +2992,108 @@ const styles =
         "800",
     },
 
-    fieldInput: {
+    input: {
       minHeight: 49,
       paddingHorizontal: 12,
       borderWidth: 1,
       borderColor:
-        "#cbd5e1",
+        "#CBD5E1",
       borderRadius: 10,
       color:
-        "#0f172a",
+        "#0F172A",
       fontSize: 10,
       backgroundColor:
-        "#ffffff",
+        "#FFFFFF",
     },
 
-    fieldMultiline: {
+    multiline: {
       minHeight: 80,
       paddingTop: 12,
       textAlignVertical:
         "top",
     },
 
-    lockedBox: {
-      padding: 11,
-      borderRadius: 10,
-      backgroundColor:
-        "#f8fafc",
+    help: {
+      marginTop: -7,
+      marginBottom: 12,
+      color:
+        "#94A3B8",
+      fontSize: 7,
     },
 
-    lockedLabel: {
+    sexOptions: {
+      flexDirection:
+        "row",
+      flexWrap:
+        "wrap",
+      marginBottom: 13,
+    },
+
+    option: {
+      flexDirection:
+        "row",
+      alignItems:
+        "center",
+      marginRight: 7,
+      marginBottom: 7,
+      padding: 9,
+      borderWidth: 1,
+      borderColor:
+        "#E2E8F0",
+      borderRadius: 10,
+    },
+
+    optionSelected: {
+      borderColor:
+        "#16A34A",
+      backgroundColor:
+        "#F0FDF4",
+    },
+
+    radio: {
+      width: 17,
+      height: 17,
+      alignItems:
+        "center",
+      justifyContent:
+        "center",
+      marginRight: 6,
+      borderWidth: 2,
+      borderColor:
+        "#CBD5E1",
+      borderRadius: 9,
+    },
+
+    radioSelected: {
+      borderColor:
+        "#15803D",
+    },
+
+    radioInner: {
+      width: 7,
+      height: 7,
+      borderRadius: 4,
+      backgroundColor:
+        "#15803D",
+    },
+
+    optionText: {
       color:
-        "#64748b",
+        "#64748B",
       fontSize: 8,
       fontWeight:
-        "800",
+        "700",
     },
 
-    lockedValue: {
-      marginTop: 3,
+    optionTextSelected: {
       color:
-        "#334155",
-      fontSize: 8,
+        "#15803D",
     },
 
     modalActions: {
       flexDirection:
         "row",
-      gap: 8,
-      marginTop: 16,
+      marginTop: 17,
     },
 
     cancelButton: {
@@ -3146,12 +3103,11 @@ const styles =
         "center",
       justifyContent:
         "center",
+      marginRight: 8,
       borderWidth: 1,
       borderColor:
-        "#cbd5e1",
+        "#CBD5E1",
       borderRadius: 10,
-      backgroundColor:
-        "#ffffff",
     },
 
     cancelText: {
@@ -3171,12 +3127,12 @@ const styles =
         "center",
       borderRadius: 10,
       backgroundColor:
-        "#2563eb",
+        "#15803D",
     },
 
     saveText: {
       color:
-        "#ffffff",
+        "#FFFFFF",
       fontSize: 9,
       fontWeight:
         "900",
@@ -3189,36 +3145,33 @@ const styles =
     profile: {
       alignItems:
         "center",
-      paddingVertical: 15,
+      paddingVertical: 13,
     },
 
-    profileLogo: {
-      width: 78,
-      height: 78,
+    profileAvatar: {
+      width: 75,
+      height: 75,
       alignItems:
         "center",
       justifyContent:
         "center",
-      overflow:
-        "hidden",
       borderRadius: 22,
       backgroundColor:
-        "#eff6ff",
+        "#DCFCE7",
     },
 
-    profileImage: {
-      width: 68,
-      height: 68,
-    },
-
-    profileEmoji: {
-      fontSize: 35,
+    profileAvatarText: {
+      color:
+        "#15803D",
+      fontSize: 29,
+      fontWeight:
+        "900",
     },
 
     profileName: {
       marginTop: 12,
       color:
-        "#0f172a",
+        "#0F172A",
       fontSize: 17,
       fontWeight:
         "900",
@@ -3226,48 +3179,24 @@ const styles =
         "center",
     },
 
-    profileEmail: {
+    profileInfo: {
       marginTop: 4,
-      marginBottom: 9,
       color:
-        "#64748b",
+        "#64748B",
       fontSize: 9,
-    },
-
-    fullButton: {
-      minHeight: 45,
-      alignItems:
-        "center",
-      justifyContent:
-        "center",
-      marginTop: 10,
-      borderRadius: 10,
-      backgroundColor:
-        "#2563eb",
-    },
-
-    fullButtonText: {
-      color:
-        "#ffffff",
-      fontSize: 9,
-      fontWeight:
-        "900",
-    },
-
-    detailGrid: {
-      gap: 8,
     },
 
     detailItem: {
+      marginBottom: 8,
       padding: 11,
       borderRadius: 10,
       backgroundColor:
-        "#f8fafc",
+        "#F8FAFC",
     },
 
     detailLabel: {
       color:
-        "#64748b",
+        "#64748B",
       fontSize: 7,
       fontWeight:
         "800",
@@ -3278,132 +3207,27 @@ const styles =
     detailValue: {
       marginTop: 3,
       color:
-        "#0f172a",
+        "#0F172A",
       fontSize: 9,
       fontWeight:
         "700",
     },
 
-    identityPreview: {
-      overflow:
-        "hidden",
-      marginTop: 13,
-      borderRadius: 12,
-    },
-
-    identityHeader: {
-      position:
-        "relative",
-      overflow:
-        "hidden",
-      minHeight: 80,
-      justifyContent:
-        "center",
-      padding: 15,
-    },
-
-    identityCircle: {
-      position:
-        "absolute",
-      width: 100,
-      height: 100,
-      right: -30,
-      top: -30,
-      borderRadius: 50,
-      opacity: 0.55,
-    },
-
-    identityTitle: {
-      color:
-        "#ffffff",
-      fontSize: 14,
-      fontWeight:
-        "900",
-    },
-
-    confirmIconDanger: {
-      width: 58,
-      height: 58,
-      alignSelf:
-        "center",
+    fullButton: {
+      minHeight: 44,
       alignItems:
         "center",
       justifyContent:
         "center",
-      marginBottom: 13,
-      borderRadius: 18,
-      backgroundColor:
-        "#fee2e2",
-    },
-
-    confirmIconSuccess: {
-      width: 58,
-      height: 58,
-      alignSelf:
-        "center",
-      alignItems:
-        "center",
-      justifyContent:
-        "center",
-      marginBottom: 13,
-      borderRadius: 18,
-      backgroundColor:
-        "#dcfce7",
-    },
-
-    confirmEmoji: {
-      fontSize: 23,
-      fontWeight:
-        "900",
-    },
-
-    confirmTitle: {
-      color:
-        "#0f172a",
-      fontSize: 17,
-      fontWeight:
-        "900",
-      textAlign:
-        "center",
-    },
-
-    confirmText: {
-      marginTop: 6,
-      color:
-        "#64748b",
-      fontSize: 9,
-      lineHeight: 14,
-      textAlign:
-        "center",
-    },
-
-    confirmDangerButton: {
-      minHeight: 45,
-      flex: 1,
-      alignItems:
-        "center",
-      justifyContent:
-        "center",
+      marginTop: 14,
       borderRadius: 10,
       backgroundColor:
-        "#dc2626",
+        "#15803D",
     },
 
-    confirmSuccessButton: {
-      minHeight: 45,
-      flex: 1,
-      alignItems:
-        "center",
-      justifyContent:
-        "center",
-      borderRadius: 10,
-      backgroundColor:
-        "#16a34a",
-    },
-
-    confirmButtonText: {
+    fullButtonText: {
       color:
-        "#ffffff",
+        "#FFFFFF",
       fontSize: 9,
       fontWeight:
         "900",
