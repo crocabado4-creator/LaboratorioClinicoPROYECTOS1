@@ -1,0 +1,1076 @@
+/* =====================================================
+   HU-05 - CONFIGURACIÓN DEL LABORATORIO
+===================================================== */
+
+* {
+  box-sizing: border-box;
+}
+
+.config-page {
+  min-height: 100vh;
+
+  padding:
+    34px
+    clamp(16px, 4vw, 55px)
+    60px;
+
+  background:
+    radial-gradient(
+      circle at 100% 0%,
+      rgba(14, 165, 233, 0.08),
+      transparent 25%
+    ),
+    linear-gradient(
+      180deg,
+      #f8fafc,
+      #f1f5f9
+    );
+
+  color: #0f172a;
+
+  font-family:
+    Inter,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+}
+
+
+/* =====================================================
+   HEADER
+===================================================== */
+
+.config-header {
+  width: 100%;
+  max-width: 1400px;
+
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+
+  gap: 25px;
+
+  margin:
+    0 auto
+    25px;
+}
+
+.config-back {
+  margin-bottom: 20px;
+
+  padding: 9px 14px;
+
+  border: 1px solid #dbe3ef;
+  border-radius: 10px;
+
+  background: #ffffff;
+
+  color: #475569;
+
+  font-size: 11px;
+  font-weight: 800;
+
+  cursor: pointer;
+}
+
+.config-back:hover {
+  border-color: #93c5fd;
+
+  color: #2563eb;
+}
+
+.config-eyebrow {
+  display: block;
+
+  margin-bottom: 7px;
+
+  color: #2563eb;
+
+  font-size: 9px;
+  font-weight: 900;
+
+  letter-spacing: 1.5px;
+}
+
+.config-header h1 {
+  margin: 0;
+
+  font-size:
+    clamp(28px, 4vw, 38px);
+
+  letter-spacing: -1px;
+}
+
+.config-header p {
+  max-width: 700px;
+
+  margin: 8px 0 0;
+
+  color: #64748b;
+
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+
+/* =====================================================
+   BOTONES
+===================================================== */
+
+.config-primary,
+.config-secondary {
+  padding: 11px 17px;
+
+  border: none;
+  border-radius: 10px;
+
+  font-size: 10px;
+  font-weight: 900;
+
+  cursor: pointer;
+}
+
+.config-primary {
+  background:
+    linear-gradient(
+      135deg,
+      #2563eb,
+      #1d4ed8
+    );
+
+  color: #ffffff;
+
+  box-shadow:
+    0 8px 22px
+    rgba(37, 99, 235, 0.22);
+}
+
+.config-primary.full {
+  width: 100%;
+}
+
+.config-secondary {
+  border: 1px solid #cbd5e1;
+
+  background: #ffffff;
+
+  color: #475569;
+}
+
+.config-primary:disabled,
+.config-secondary:disabled {
+  opacity: 0.6;
+
+  cursor: not-allowed;
+}
+
+
+/* =====================================================
+   MENSAJES
+===================================================== */
+
+.config-message {
+  width: 100%;
+  max-width: 1400px;
+
+  display: flex;
+  align-items: center;
+
+  gap: 10px;
+
+  margin:
+    0 auto
+    20px;
+
+  padding: 13px 16px;
+
+  border-radius: 11px;
+
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.config-message > span {
+  width: 25px;
+  height: 25px;
+
+  display: grid;
+  place-items: center;
+
+  border-radius: 8px;
+}
+
+.config-message.exito {
+  border: 1px solid #a7f3d0;
+
+  background: #ecfdf5;
+
+  color: #047857;
+}
+
+.config-message.error {
+  border: 1px solid #fecaca;
+
+  background: #fff1f2;
+
+  color: #b91c1c;
+}
+
+
+/* =====================================================
+   SEGURIDAD
+===================================================== */
+
+.config-security {
+  width: 100%;
+  max-width: 1400px;
+
+  display: flex;
+  align-items: center;
+
+  gap: 13px;
+
+  margin:
+    0 auto
+    20px;
+
+  padding: 15px 17px;
+
+  border: 1px solid #bfdbfe;
+  border-radius: 14px;
+
+  background: #eff6ff;
+}
+
+.config-security-icon {
+  width: 43px;
+  height: 43px;
+
+  flex-shrink: 0;
+
+  display: grid;
+  place-items: center;
+
+  border-radius: 12px;
+
+  background: #dbeafe;
+
+  font-size: 20px;
+}
+
+.config-security strong {
+  font-size: 11px;
+}
+
+.config-security p {
+  margin:
+    3px 0 0;
+
+  color: #475569;
+
+  font-size: 9px;
+  line-height: 1.5;
+}
+
+
+/* =====================================================
+   TARJETA PRINCIPAL
+===================================================== */
+
+.config-card {
+  width: 100%;
+  max-width: 1400px;
+
+  margin:
+    0 auto
+    22px;
+
+  overflow: hidden;
+
+  border: 1px solid #e2e8f0;
+  border-radius: 18px;
+
+  background: #ffffff;
+
+  box-shadow:
+    0 8px 30px
+    rgba(15, 23, 42, 0.05);
+}
+
+.config-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+
+  gap: 20px;
+
+  padding: 22px;
+
+  border-bottom:
+    1px solid #e2e8f0;
+
+  background:
+    linear-gradient(
+      135deg,
+      #ffffff,
+      #f8fbff
+    );
+}
+
+.config-lab-title {
+  display: flex;
+  align-items: center;
+
+  gap: 14px;
+}
+
+.config-lab-icon {
+  width: 58px;
+  height: 58px;
+
+  flex-shrink: 0;
+
+  display: grid;
+  place-items: center;
+
+  overflow: hidden;
+
+  border-radius: 15px;
+
+  background: #dbeafe;
+
+  font-size: 27px;
+}
+
+.config-lab-icon img {
+  width: 100%;
+  height: 100%;
+
+  object-fit: contain;
+
+  padding: 5px;
+}
+
+.config-lab-title span {
+  color: #2563eb;
+
+  font-size: 8px;
+  font-weight: 900;
+
+  letter-spacing: 1.3px;
+}
+
+.config-lab-title h2 {
+  margin:
+    4px 0;
+
+  font-size: 19px;
+}
+
+.config-lab-title small {
+  color: #94a3b8;
+
+  font-size: 8px;
+}
+
+
+/* =====================================================
+   ESTADO
+===================================================== */
+
+.config-status {
+  display: inline-flex;
+
+  padding: 6px 10px;
+
+  border-radius: 30px;
+
+  font-size: 9px;
+  font-weight: 800;
+}
+
+.config-status.active {
+  background: #dcfce7;
+
+  color: #15803d;
+}
+
+.config-status.inactive {
+  background: #fee2e2;
+
+  color: #b91c1c;
+}
+
+
+/* =====================================================
+   ACCIONES
+===================================================== */
+
+.config-actions-bar {
+  display: flex;
+  flex-wrap: wrap;
+
+  gap: 7px;
+
+  padding:
+    13px
+    22px;
+
+  border-bottom:
+    1px solid #e2e8f0;
+
+  background: #f8fafc;
+}
+
+.config-action {
+  padding: 8px 11px;
+
+  border: none;
+  border-radius: 8px;
+
+  font-size: 9px;
+  font-weight: 800;
+
+  cursor: pointer;
+}
+
+.config-action.view {
+  background: #e0f2fe;
+
+  color: #0369a1;
+}
+
+.config-action.detail {
+  background: #ede9fe;
+
+  color: #6d28d9;
+}
+
+.config-action.edit {
+  background: #fef3c7;
+
+  color: #a16207;
+}
+
+
+/* =====================================================
+   FORMULARIO
+===================================================== */
+
+.config-form {
+  display: grid;
+
+  grid-template-columns:
+    repeat(2, minmax(0, 1fr));
+
+  gap: 16px;
+
+  padding: 22px;
+}
+
+.config-field {
+  display: flex;
+  flex-direction: column;
+
+  gap: 7px;
+}
+
+.config-field label {
+  color: #334155;
+
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.config-field input {
+  width: 100%;
+
+  padding: 12px 13px;
+
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+
+  outline: none;
+
+  background: #ffffff;
+
+  color: #0f172a;
+}
+
+.config-field input:focus {
+  border-color: #2563eb;
+
+  box-shadow:
+    0 0 0 3px
+    rgba(37, 99, 235, 0.1);
+}
+
+.config-field input:disabled {
+  border-color: #e2e8f0;
+
+  background: #f8fafc;
+
+  color: #475569;
+}
+
+.config-field small {
+  color: #94a3b8;
+
+  font-size: 8px;
+}
+
+.config-full {
+  grid-column:
+    1 / -1;
+}
+
+.config-readonly {
+  padding: 12px 13px;
+
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+
+  background: #f8fafc;
+
+  color: #64748b;
+
+  font-family: monospace;
+
+  font-size: 10px;
+
+  overflow-wrap: anywhere;
+}
+
+.config-form-actions {
+  grid-column:
+    1 / -1;
+
+  display: flex;
+  justify-content: flex-end;
+
+  gap: 9px;
+
+  padding-top: 5px;
+}
+
+
+/* =====================================================
+   PERSONALIZACIÓN SOLO LECTURA
+===================================================== */
+
+.config-visual-card {
+  width: 100%;
+  max-width: 1400px;
+
+  margin: auto;
+
+  padding: 21px;
+
+  border: 1px solid #e2e8f0;
+  border-radius: 17px;
+
+  background: #ffffff;
+
+  box-shadow:
+    0 7px 25px
+    rgba(15, 23, 42, 0.04);
+}
+
+.config-visual-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+
+  gap: 20px;
+
+  padding-bottom: 17px;
+
+  border-bottom:
+    1px solid #e2e8f0;
+}
+
+.config-visual-header span {
+  color: #7c3aed;
+
+  font-size: 8px;
+  font-weight: 900;
+
+  letter-spacing: 1.4px;
+}
+
+.config-visual-header h2 {
+  margin:
+    4px 0 5px;
+
+  font-size: 18px;
+}
+
+.config-visual-header p {
+  max-width: 700px;
+
+  margin: 0;
+
+  color: #64748b;
+
+  font-size: 9px;
+  line-height: 1.5;
+}
+
+.config-lock {
+  width: 45px;
+  height: 45px;
+
+  flex-shrink: 0;
+
+  display: grid;
+  place-items: center;
+
+  border-radius: 13px;
+
+  background: #ede9fe;
+
+  font-size: 20px;
+}
+
+.config-visual-grid {
+  display: grid;
+
+  grid-template-columns:
+    repeat(4, minmax(0, 1fr));
+
+  gap: 12px;
+
+  margin-top: 17px;
+}
+
+.config-visual-item {
+  display: flex;
+  flex-direction: column;
+
+  gap: 4px;
+
+  padding: 13px;
+
+  border: 1px solid #e2e8f0;
+  border-radius: 11px;
+
+  background: #f8fafc;
+}
+
+.config-visual-item span {
+  color: #64748b;
+
+  font-size: 8px;
+  font-weight: 800;
+}
+
+.config-visual-item strong {
+  color: #0f172a;
+
+  font-size: 10px;
+
+  overflow-wrap: anywhere;
+}
+
+
+/* =====================================================
+   MODAL
+===================================================== */
+
+.config-modal-overlay {
+  position: fixed;
+
+  inset: 0;
+
+  z-index: 9999;
+
+  display: grid;
+  place-items: center;
+
+  padding: 20px;
+
+  background:
+    rgba(15, 23, 42, 0.6);
+
+  backdrop-filter:
+    blur(5px);
+}
+
+.config-modal {
+  width:
+    min(680px, 100%);
+
+  max-height:
+    calc(100vh - 40px);
+
+  overflow-y: auto;
+
+  padding: 23px;
+
+  border-radius: 19px;
+
+  background: #ffffff;
+
+  box-shadow:
+    0 30px 80px
+    rgba(15, 23, 42, 0.3);
+}
+
+.config-modal.small {
+  width:
+    min(440px, 100%);
+}
+
+.config-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+
+  gap: 15px;
+
+  padding-bottom: 16px;
+
+  border-bottom:
+    1px solid #e2e8f0;
+}
+
+.config-modal-header span {
+  color: #2563eb;
+
+  font-size: 8px;
+  font-weight: 900;
+
+  letter-spacing: 1.4px;
+}
+
+.config-modal-header h2 {
+  margin:
+    3px 0 0;
+
+  font-size: 20px;
+}
+
+.config-close {
+  width: 37px;
+  height: 37px;
+
+  border: none;
+  border-radius: 10px;
+
+  background: #f1f5f9;
+
+  color: #475569;
+
+  font-size: 20px;
+
+  cursor: pointer;
+}
+
+
+/* =====================================================
+   VISTA RÁPIDA
+===================================================== */
+
+.config-quick {
+  display: flex;
+  flex-direction: column;
+
+  align-items: center;
+
+  padding: 26px 0;
+
+  text-align: center;
+}
+
+.config-quick-icon {
+  width: 72px;
+  height: 72px;
+
+  display: grid;
+  place-items: center;
+
+  margin-bottom: 12px;
+
+  border-radius: 20px;
+
+  background:
+    linear-gradient(
+      135deg,
+      #dbeafe,
+      #bfdbfe
+    );
+
+  font-size: 34px;
+}
+
+.config-quick h3 {
+  margin: 0;
+}
+
+.config-quick > p {
+  color: #64748b;
+
+  font-size: 10px;
+}
+
+.config-quick-data {
+  width: 100%;
+
+  margin-top: 15px;
+
+  padding: 13px;
+
+  border-radius: 11px;
+
+  background: #f8fafc;
+
+  text-align: left;
+}
+
+.config-quick-data p {
+  margin: 6px 0;
+
+  color: #475569;
+
+  font-size: 10px;
+}
+
+
+/* =====================================================
+   DETALLE
+===================================================== */
+
+.config-detail-grid {
+  display: grid;
+
+  grid-template-columns:
+    repeat(2, minmax(0, 1fr));
+
+  gap: 11px;
+
+  margin-top: 18px;
+}
+
+.config-detail-item {
+  display: flex;
+  flex-direction: column;
+
+  gap: 4px;
+
+  padding: 12px;
+
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+
+  background: #f8fafc;
+}
+
+.config-detail-item.full {
+  grid-column:
+    1 / -1;
+}
+
+.config-detail-item span {
+  color: #64748b;
+
+  font-size: 8px;
+  font-weight: 800;
+}
+
+.config-detail-item strong {
+  color: #0f172a;
+
+  font-size: 10px;
+
+  overflow-wrap: anywhere;
+}
+
+.config-detail-visual {
+  margin-top: 18px;
+
+  padding: 16px;
+
+  border: 1px solid #ddd6fe;
+  border-radius: 13px;
+
+  background: #faf5ff;
+}
+
+.config-detail-visual > span {
+  color: #7c3aed;
+
+  font-size: 8px;
+  font-weight: 900;
+
+  letter-spacing: 1.3px;
+}
+
+.config-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+
+  margin-top: 20px;
+
+  padding-top: 15px;
+
+  border-top:
+    1px solid #e2e8f0;
+}
+
+
+/* =====================================================
+   LOADING / ACCESO
+===================================================== */
+
+.config-loading,
+.config-access {
+  width:
+    min(500px, 100%);
+
+  margin:
+    100px auto;
+
+  padding: 40px;
+
+  border: 1px solid #e2e8f0;
+  border-radius: 20px;
+
+  background: #ffffff;
+
+  text-align: center;
+
+  box-shadow:
+    0 15px 40px
+    rgba(15, 23, 42, 0.07);
+}
+
+.config-access-icon {
+  width: 70px;
+  height: 70px;
+
+  display: grid;
+  place-items: center;
+
+  margin:
+    0 auto
+    15px;
+
+  border-radius: 20px;
+
+  background: #fee2e2;
+
+  font-size: 30px;
+}
+
+.config-access-icon.warning {
+  background: #fef3c7;
+}
+
+.config-access p,
+.config-loading p {
+  color: #64748b;
+
+  font-size: 10px;
+  line-height: 1.6;
+}
+
+.config-spinner {
+  width: 38px;
+  height: 38px;
+
+  margin:
+    0 auto
+    15px;
+
+  border:
+    3px solid #dbeafe;
+
+  border-top-color:
+    #2563eb;
+
+  border-radius: 50%;
+
+  animation:
+    config-spin
+    0.7s linear
+    infinite;
+}
+
+@keyframes config-spin {
+  to {
+    transform:
+      rotate(360deg);
+  }
+}
+
+
+/* =====================================================
+   RESPONSIVE
+===================================================== */
+
+@media (max-width: 950px) {
+  .config-visual-grid {
+    grid-template-columns:
+      repeat(2, minmax(0, 1fr));
+  }
+}
+
+
+@media (max-width: 700px) {
+  .config-page {
+    padding:
+      22px
+      13px
+      40px;
+  }
+
+  .config-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .config-header .config-primary {
+    width: 100%;
+  }
+
+  .config-card-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .config-form {
+    grid-template-columns: 1fr;
+  }
+
+  .config-full,
+  .config-form-actions {
+    grid-column: auto;
+  }
+
+  .config-form-actions {
+    flex-direction:
+      column-reverse;
+  }
+
+  .config-form-actions button {
+    width: 100%;
+  }
+
+  .config-visual-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .config-visual-header {
+    align-items: flex-start;
+  }
+
+  .config-detail-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .config-detail-item.full {
+    grid-column: auto;
+  }
+}

@@ -6,150 +6,97 @@ import {
 } from "react";
 
 import {
-  actualizarPersonal,
-  cambiarEstadoPersonal,
-  crearPersonal,
-  obtenerLaboratorioPersonal,
-  obtenerPersonal,
+  actualizarAdministrador,
+  cambiarEstadoAdministrador,
+  crearAdministrador,
+  obtenerAdministradores,
+  obtenerLaboratoriosAdministradores,
   passwordSeguro,
-} from "../services/personalService";
+} from "../services/administradoresService";
 
-import "./GestionPersonal.css";
+import "./SuperAdminAdministradores.css";
 
 
 const formularioInicial = {
   nombre: "",
   apellido: "",
   email: "",
-  rol: "",
+  laboratorioId: "",
   password: "",
   confirmarPassword: "",
   requiereVerificacionEmail: true,
 };
 
 
-function nombreRol(rol) {
-  if (
-    rol ===
-    "bioquimico"
-  ) {
-    return "Bioquímico";
-  }
-
-  if (
-    rol ===
-    "recepcionista"
-  ) {
-    return "Recepcionista";
-  }
-
-  return rol || "Sin rol";
-}
-
-
-function GestionPersonal({
-  usuario,
+function SuperAdminAdministradores({
   permisos = [],
   volver,
 }) {
   const puedeVer =
     permisos.includes(
-      "empleados.ver"
+      "administradores.ver"
     );
 
   const puedeCrear =
     permisos.includes(
-      "empleados.crear"
+      "administradores.crear"
     );
 
   const puedeEditar =
     permisos.includes(
-      "empleados.editar"
+      "administradores.editar"
     );
 
   const puedeCambiarEstado =
     permisos.includes(
-      "empleados.desactivar"
+      "administradores.desactivar"
     );
 
 
   const [
-    personal,
-    setPersonal,
+    administradores,
+    setAdministradores,
   ] = useState([]);
 
-
   const [
-    laboratorio,
-    setLaboratorio,
-  ] = useState(null);
-
+    laboratorios,
+    setLaboratorios,
+  ] = useState([]);
 
   const [
     cargando,
     setCargando,
   ] = useState(true);
 
-
   const [
     guardando,
     setGuardando,
   ] = useState(false);
-
 
   const [
     mensaje,
     setMensaje,
   ] = useState(null);
 
-
   const [
     busqueda,
     setBusqueda,
   ] = useState("");
-
 
   const [
     mostrarFiltros,
     setMostrarFiltros,
   ] = useState(false);
 
-
   const [
-    filtroRol,
-    setFiltroRol,
+    filtroLaboratorio,
+    setFiltroLaboratorio,
   ] = useState("todos");
-
 
   const [
     filtroEstado,
     setFiltroEstado,
   ] = useState("todos");
-
-
-  const [
-    modoFormulario,
-    setModoFormulario,
-  ] = useState(null);
-
-
-  const [
-    empleadoEditar,
-    setEmpleadoEditar,
-  ] = useState(null);
-
-
-  const [
-    empleadoVer,
-    setEmpleadoVer,
-  ] = useState(null);
-
-
-  const [
-    empleadoDetalle,
-    setEmpleadoDetalle,
-  ] = useState(null);
-
 
   const [
     formulario,
@@ -158,28 +105,35 @@ function GestionPersonal({
     formularioInicial
   );
 
+  const [
+    modoFormulario,
+    setModoFormulario,
+  ] = useState(null);
+
+  const [
+    administradorEditar,
+    setAdministradorEditar,
+  ] = useState(null);
+
+  const [
+    administradorVer,
+    setAdministradorVer,
+  ] = useState(null);
+
+  const [
+    administradorDetalle,
+    setAdministradorDetalle,
+  ] = useState(null);
 
   const [
     mostrarPassword,
     setMostrarPassword,
   ] = useState(false);
 
-
   const [
     mostrarConfirmacion,
     setMostrarConfirmacion,
   ] = useState(false);
-
-
-  const mostrarMensaje = (
-    tipo,
-    texto
-  ) => {
-    setMensaje({
-      tipo,
-      texto,
-    });
-  };
 
 
   useEffect(() => {
@@ -203,92 +157,69 @@ function GestionPersonal({
   }, [mensaje]);
 
 
+  const mostrarMensaje = (
+    tipo,
+    texto
+  ) => {
+    setMensaje({
+      tipo,
+      texto,
+    });
+  };
+
+
   const cargarDatos =
     useCallback(
       async () => {
-        if (
-          usuario?.rol !==
-          "administrador"
-        ) {
-          setCargando(false);
-          return;
-        }
-
-
-        if (
-          !usuario?.laboratorioId
-        ) {
-          setCargando(false);
-
-          mostrarMensaje(
-            "error",
-            "Tu cuenta no tiene un laboratorio asociado."
-          );
-
-          return;
-        }
-
-
         if (!puedeVer) {
           setCargando(false);
           return;
         }
 
-
         try {
           setCargando(true);
 
-
           const [
-            resultadoPersonal,
-            resultadoLaboratorio,
+            resultadoAdministradores,
+            resultadoLaboratorios,
           ] = await Promise.all([
-            obtenerPersonal(
-              usuario.laboratorioId
-            ),
-
-            obtenerLaboratorioPersonal(),
+            obtenerAdministradores(),
+            obtenerLaboratoriosAdministradores(),
           ]);
 
-
-          setPersonal(
+          setAdministradores(
             Array.isArray(
-              resultadoPersonal
+              resultadoAdministradores
             )
-              ? resultadoPersonal
+              ? resultadoAdministradores
               : []
           );
 
-
-          setLaboratorio(
-            resultadoLaboratorio ||
-            null
+          setLaboratorios(
+            Array.isArray(
+              resultadoLaboratorios
+            )
+              ? resultadoLaboratorios
+              : []
           );
-
 
         } catch (error) {
           console.error(
-            "Error al cargar personal:",
+            "Error cargando administradores:",
             error
           );
-
 
           mostrarMensaje(
             "error",
             error?.message ||
-              "No se pudo cargar el personal."
+              "No se pudo cargar la información."
           );
-
 
         } finally {
           setCargando(false);
         }
       },
-      [
-        puedeVer,
-        usuario?.laboratorioId,
-        usuario?.rol,
-      ]
+      [puedeVer]
     );
 
 
@@ -297,25 +228,59 @@ function GestionPersonal({
   }, [cargarDatos]);
 
 
-  const personalFiltrado =
+  const mapaLaboratorios =
+    useMemo(
+      () => {
+        return new Map(
+          laboratorios.map(
+            (laboratorio) => [
+              laboratorio.id,
+              laboratorio,
+            ]
+          )
+        );
+      },
+      [laboratorios]
+    );
+
+
+  const nombreLaboratorio = (
+    laboratorioId
+  ) => {
+    const laboratorio =
+      mapaLaboratorios.get(
+        laboratorioId
+      );
+
+    return (
+      laboratorio?.nombre ||
+      "Laboratorio no disponible"
+    );
+  };
+
+
+  const administradoresFiltrados =
     useMemo(() => {
       const texto =
         busqueda
           .trim()
           .toLowerCase();
 
+      return administradores.filter(
+        (administrador) => {
+          const laboratorio =
+            mapaLaboratorios.get(
+              administrador.laboratorioId
+            );
 
-      return personal.filter(
-        (empleado) => {
           const coincideBusqueda =
             texto === "" ||
             [
-              empleado.nombre,
-              empleado.apellido,
-              empleado.email,
-              nombreRol(
-                empleado.rol
-              ),
+              administrador.nombre,
+              administrador.apellido,
+              administrador.email,
+              laboratorio?.nombre,
+              laboratorio?.nombreVisible,
             ].some(
               (valor) =>
                 String(
@@ -325,59 +290,58 @@ function GestionPersonal({
                   .includes(texto)
             );
 
-
-          const coincideRol =
-            filtroRol ===
+          const coincideLaboratorio =
+            filtroLaboratorio ===
               "todos" ||
-            empleado.rol ===
-              filtroRol;
-
+            administrador.laboratorioId ===
+              filtroLaboratorio;
 
           let coincideEstado =
             true;
-
 
           if (
             filtroEstado ===
             "activo"
           ) {
             coincideEstado =
-              empleado.activo ===
+              administrador.activo ===
               true;
           }
-
 
           if (
             filtroEstado ===
             "inactivo"
           ) {
             coincideEstado =
-              empleado.activo !==
+              administrador.activo !==
               true;
           }
 
-
           return (
             coincideBusqueda &&
-            coincideRol &&
+            coincideLaboratorio &&
             coincideEstado
           );
         }
       );
-
     }, [
-      personal,
+      administradores,
       busqueda,
-      filtroRol,
+      filtroLaboratorio,
       filtroEstado,
+      mapaLaboratorios,
     ]);
 
 
   const limpiarFiltros =
     () => {
       setBusqueda("");
-      setFiltroRol("todos");
-      setFiltroEstado("todos");
+      setFiltroLaboratorio(
+        "todos"
+      );
+      setFiltroEstado(
+        "todos"
+      );
     };
 
 
@@ -387,43 +351,39 @@ function GestionPersonal({
         formularioInicial
       );
 
-      setEmpleadoEditar(null);
-      setModoFormulario("crear");
+      setAdministradorEditar(
+        null
+      );
 
       setMostrarPassword(false);
       setMostrarConfirmacion(false);
+      setModoFormulario("crear");
       setMensaje(null);
     };
 
 
   const abrirEditar = (
-    empleado
+    administrador
   ) => {
-    if (!puedeEditar) {
-      return;
-    }
-
-
-    setEmpleadoEditar(
-      empleado
+    setAdministradorEditar(
+      administrador
     );
-
 
     setFormulario({
       nombre:
-        empleado.nombre ||
+        administrador.nombre ||
         "",
 
       apellido:
-        empleado.apellido ||
+        administrador.apellido ||
         "",
 
       email:
-        empleado.email ||
+        administrador.email ||
         "",
 
-      rol:
-        empleado.rol ||
+      laboratorioId:
+        administrador.laboratorioId ||
         "",
 
       password:
@@ -433,10 +393,9 @@ function GestionPersonal({
         "",
 
       requiereVerificacionEmail:
-        empleado.requiereVerificacionEmail ===
+        administrador.requiereVerificacionEmail ===
         true,
     });
-
 
     setModoFormulario(
       "editar"
@@ -453,21 +412,7 @@ function GestionPersonal({
       }
 
       setModoFormulario(null);
-      setEmpleadoEditar(null);
-
-      setFormulario(
-        formularioInicial
-      );
-
-      setMostrarPassword(false);
-      setMostrarConfirmacion(false);
-    };
-
-
-  const cerrarFormularioForzado =
-    () => {
-      setModoFormulario(null);
-      setEmpleadoEditar(null);
+      setAdministradorEditar(null);
 
       setFormulario(
         formularioInicial
@@ -488,7 +433,6 @@ function GestionPersonal({
       checked,
     } = evento.target;
 
-
     setFormulario(
       (anterior) => ({
         ...anterior,
@@ -505,30 +449,25 @@ function GestionPersonal({
   const validarFormulario =
     () => {
       if (
-        formulario.nombre
-          .trim() === ""
+        formulario.nombre.trim() ===
+        ""
       ) {
         return "Ingresa el nombre.";
       }
 
-
       if (
-        formulario.apellido
-          .trim() === ""
+        formulario.apellido.trim() ===
+        ""
       ) {
         return "Ingresa el apellido.";
       }
 
-
       if (
-        formulario.rol !==
-          "recepcionista" &&
-        formulario.rol !==
-          "bioquimico"
+        formulario.laboratorioId ===
+        ""
       ) {
-        return "Selecciona un rol válido.";
+        return "Selecciona un laboratorio.";
       }
-
 
       if (
         modoFormulario ===
@@ -537,15 +476,14 @@ function GestionPersonal({
         const correoValido =
           /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-
         if (
           !correoValido.test(
-            formulario.email.trim()
+            formulario.email
+              .trim()
           )
         ) {
           return "Ingresa un correo electrónico válido.";
         }
-
 
         if (
           !passwordSeguro(
@@ -555,7 +493,6 @@ function GestionPersonal({
           return "La contraseña debe tener al menos 8 caracteres, una mayúscula, una minúscula, un número y un carácter especial.";
         }
 
-
         if (
           formulario.password !==
           formulario.confirmarPassword
@@ -563,7 +500,6 @@ function GestionPersonal({
           return "Las contraseñas no coinciden.";
         }
       }
-
 
       return "";
     };
@@ -575,10 +511,8 @@ function GestionPersonal({
     ) => {
       evento.preventDefault();
 
-
       const validacion =
         validarFormulario();
-
 
       if (validacion) {
         mostrarMensaje(
@@ -589,10 +523,8 @@ function GestionPersonal({
         return;
       }
 
-
       try {
         setGuardando(true);
-
 
         if (
           modoFormulario ===
@@ -600,13 +532,12 @@ function GestionPersonal({
         ) {
           if (!puedeCrear) {
             throw new Error(
-              "No tienes permiso para registrar personal."
+              "No tienes permiso para registrar administradores."
             );
           }
 
-
           const resultado =
-            await crearPersonal({
+            await crearAdministrador({
               nombre:
                 formulario.nombre,
 
@@ -616,51 +547,42 @@ function GestionPersonal({
               email:
                 formulario.email,
 
-              rol:
-                formulario.rol,
-
               password:
                 formulario.password,
 
+              laboratorioId:
+                formulario.laboratorioId,
+
               requiereVerificacionEmail:
                 formulario.requiereVerificacionEmail,
-
-              laboratorioId:
-                usuario.laboratorioId,
             });
-
 
           cerrarFormularioForzado();
 
-
           await cargarDatos();
-
 
           mostrarMensaje(
             "exito",
             resultado.verificacionEnviada
-              ? "El integrante fue registrado correctamente. Se envió un correo de verificación."
-              : "El integrante fue registrado correctamente."
+              ? "Administrador registrado correctamente. Se envió un correo de verificación."
+              : "Administrador registrado correctamente."
           );
-
 
         } else {
           if (
-            !empleadoEditar
+            !administradorEditar
           ) {
             return;
           }
 
-
           if (!puedeEditar) {
             throw new Error(
-              "No tienes permiso para editar personal."
+              "No tienes permiso para modificar administradores."
             );
           }
 
-
-          await actualizarPersonal(
-            empleadoEditar.id,
+          await actualizarAdministrador(
+            administradorEditar.id,
             {
               nombre:
                 formulario.nombre,
@@ -668,31 +590,26 @@ function GestionPersonal({
               apellido:
                 formulario.apellido,
 
-              rol:
-                formulario.rol,
+              laboratorioId:
+                formulario.laboratorioId,
             }
           );
 
-
           cerrarFormularioForzado();
-
 
           await cargarDatos();
 
-
           mostrarMensaje(
             "exito",
-            "La información del integrante fue actualizada correctamente."
+            "Administrador actualizado correctamente."
           );
         }
 
-
       } catch (error) {
         console.error(
-          "Error guardando personal:",
+          "Error guardando administrador:",
           error
         );
-
 
         if (
           error?.code ===
@@ -711,16 +628,27 @@ function GestionPersonal({
           );
         }
 
-
       } finally {
         setGuardando(false);
       }
     };
 
 
+  const cerrarFormularioForzado =
+    () => {
+      setModoFormulario(null);
+      setAdministradorEditar(null);
+      setFormulario(
+        formularioInicial
+      );
+      setMostrarPassword(false);
+      setMostrarConfirmacion(false);
+    };
+
+
   const cambiarEstado =
     async (
-      empleado
+      administrador
     ) => {
       if (
         !puedeCambiarEstado
@@ -728,41 +656,34 @@ function GestionPersonal({
         return;
       }
 
-
       const nuevoEstado =
-        !empleado.activo;
-
+        !administrador.activo;
 
       const confirmar =
         window.confirm(
           nuevoEstado
-            ? `¿Deseas activar la cuenta de ${empleado.nombre} ${empleado.apellido}?`
-            : `¿Deseas desactivar la cuenta de ${empleado.nombre} ${empleado.apellido}?`
+            ? `¿Deseas activar la cuenta de ${administrador.nombre} ${administrador.apellido}?`
+            : `¿Deseas desactivar la cuenta de ${administrador.nombre} ${administrador.apellido}?`
         );
-
 
       if (!confirmar) {
         return;
       }
 
-
       try {
-        await cambiarEstadoPersonal(
-          empleado.id,
+        await cambiarEstadoAdministrador(
+          administrador.id,
           nuevoEstado
         );
 
-
         await cargarDatos();
-
 
         mostrarMensaje(
           "exito",
           nuevoEstado
-            ? "La cuenta fue activada correctamente."
-            : "La cuenta fue desactivada correctamente."
+            ? "Administrador activado correctamente."
+            : "Administrador desactivado correctamente."
         );
-
 
       } catch (error) {
         console.error(
@@ -770,11 +691,10 @@ function GestionPersonal({
           error
         );
 
-
         mostrarMensaje(
           "error",
           error?.message ||
-            "No se pudo cambiar el estado de la cuenta."
+            "No se pudo cambiar el estado."
         );
       }
     };
@@ -786,7 +706,6 @@ function GestionPersonal({
     if (!fecha) {
       return "No registrada";
     }
-
 
     try {
       if (
@@ -800,7 +719,6 @@ function GestionPersonal({
           );
       }
 
-
       if (fecha.seconds) {
         return new Date(
           fecha.seconds *
@@ -810,13 +728,11 @@ function GestionPersonal({
         );
       }
 
-
       return new Date(
         fecha
       ).toLocaleString(
         "es-BO"
       );
-
 
     } catch {
       return "No registrada";
@@ -824,72 +740,11 @@ function GestionPersonal({
   };
 
 
-  const cantidadActivos =
-    personal.filter(
-      (item) =>
-        item.activo
-    ).length;
-
-
-  const cantidadRecepcionistas =
-    personal.filter(
-      (item) =>
-        item.rol ===
-        "recepcionista"
-    ).length;
-
-
-  const cantidadBioquimicos =
-    personal.filter(
-      (item) =>
-        item.rol ===
-        "bioquimico"
-    ).length;
-
-
-  if (
-    usuario?.rol !==
-    "administrador"
-  ) {
-    return (
-      <main className="personal-page">
-
-        <section className="personal-access">
-
-          <div className="personal-access-icon">
-            🔒
-          </div>
-
-          <h1>
-            Acceso restringido
-          </h1>
-
-          <p>
-            No tienes autorización para administrar el personal.
-          </p>
-
-          <button
-            type="button"
-            className="personal-primary"
-            onClick={volver}
-          >
-            ← Volver
-          </button>
-
-        </section>
-
-      </main>
-    );
-  }
-
-
   if (!puedeVer) {
     return (
-      <main className="personal-page">
-
-        <section className="personal-access">
-
-          <div className="personal-access-icon">
+      <main className="admins-page">
+        <section className="admins-access">
+          <div className="admins-access-icon">
             🔒
           </div>
 
@@ -898,70 +753,61 @@ function GestionPersonal({
           </h1>
 
           <p>
-            Tu cuenta no tiene permiso para consultar el personal.
+            No tienes autorización para consultar los administradores.
           </p>
 
           <button
             type="button"
-            className="personal-primary"
+            className="admins-primary"
             onClick={volver}
           >
             ← Volver
           </button>
-
         </section>
-
       </main>
     );
   }
 
 
   return (
-    <main className="personal-page">
+    <main className="admins-page">
 
-      <header className="personal-header">
-
+      <header className="admins-header">
         <div>
-
           <button
             type="button"
-            className="personal-back"
+            className="admins-back"
             onClick={volver}
           >
             ← Dashboard
           </button>
 
-
           <h1>
-            Gestión de personal
+            Administradores
           </h1>
 
-
           <p>
-            Administra las cuentas de Recepcionistas y Bioquímicos de tu laboratorio.
+            Gestiona los responsables asignados a los laboratorios de la plataforma.
           </p>
-
         </div>
-
 
         {puedeCrear && (
           <button
             type="button"
-            className="personal-primary"
+            className="admins-primary"
             onClick={
               abrirCrear
             }
           >
-            + Nuevo integrante
+            + Nuevo administrador
           </button>
         )}
-
       </header>
 
 
       {mensaje && (
         <div
-          className={`personal-message ${mensaje.tipo}`}
+          className={`admins-message ${mensaje.tipo}`}
         >
           <span>
             {mensaje.tipo ===
@@ -975,116 +821,64 @@ function GestionPersonal({
       )}
 
 
-      {laboratorio && (
-        <section className="personal-lab-bar">
-
-          <div className="personal-lab-logo">
-
-            {laboratorio.logoUrl ? (
-              <img
-                src={
-                  laboratorio.logoUrl
-                }
-                alt="Logo del laboratorio"
-                onError={(
-                  evento
-                ) => {
-                  evento.currentTarget.style.display =
-                    "none";
-                }}
-              />
-
-            ) : (
-              <span>
-                🧪
-              </span>
-            )}
-
-          </div>
-
-
-          <div>
-
-            <small>
-              Laboratorio
-            </small>
-
-            <strong>
-              {laboratorio.nombreVisible ||
-                laboratorio.nombre}
-            </strong>
-
-            <span>
-              El personal nuevo se asociará automáticamente a este laboratorio.
-            </span>
-
-          </div>
-
-        </section>
-      )}
-
-
-      <section className="personal-stats">
-
+      <section className="admins-stats">
         <Resumen
-          icono="👥"
-          titulo="Personal"
+          icono="👤"
+          titulo="Administradores"
           valor={
-            personal.length
+            administradores.length
           }
           texto="Total registrado"
           clase="blue"
         />
 
-
         <Resumen
           icono="✓"
           titulo="Activos"
           valor={
-            cantidadActivos
+            administradores.filter(
+              (item) =>
+                item.activo
+            ).length
           }
           texto="Cuentas habilitadas"
           clase="green"
         />
 
-
         <Resumen
-          icono="💼"
-          titulo="Recepcionistas"
+          icono="○"
+          titulo="Inactivos"
           valor={
-            cantidadRecepcionistas
+            administradores.filter(
+              (item) =>
+                !item.activo
+            ).length
           }
-          texto="Personal de recepción"
-          clase="cyan"
+          texto="Cuentas deshabilitadas"
+          clase="red"
         />
 
-
         <Resumen
-          icono="🧪"
-          titulo="Bioquímicos"
+          icono="🏥"
+          titulo="Laboratorios"
           valor={
-            cantidadBioquimicos
+            laboratorios.length
           }
-          texto="Personal bioquímico"
+          texto="Establecimientos"
           clase="purple"
         />
-
       </section>
 
 
-      <section className="personal-toolbar">
-
-        <div className="personal-search">
-
+      <section className="admins-toolbar">
+        <div className="admins-search">
           <span>
             🔎
           </span>
 
           <input
             type="text"
-            value={
-              busqueda
-            }
+            value={busqueda}
             onChange={(
               evento
             ) =>
@@ -1092,18 +886,16 @@ function GestionPersonal({
                 evento.target.value
               )
             }
-            placeholder="Buscar por nombre, apellido o correo..."
+            placeholder="Buscar por nombre, apellido, correo o laboratorio..."
           />
-
         </div>
-
 
         <button
           type="button"
           className={
             mostrarFiltros
-              ? "personal-filter active"
-              : "personal-filter"
+              ? "admins-filter active"
+              : "admins-filter"
           }
           onClick={() =>
             setMostrarFiltros(
@@ -1114,28 +906,23 @@ function GestionPersonal({
           Filtros
 
           {(
-            filtroRol !==
+            filtroLaboratorio !==
               "todos" ||
             filtroEstado !==
               "todos"
           ) && (
-            <span className="personal-filter-dot" />
+            <span className="admins-filter-dot" />
           )}
-
         </button>
-
       </section>
 
 
       {mostrarFiltros && (
-        <section className="personal-filters">
-
-          <div className="personal-filter-header">
-
+        <section className="admins-filters">
+          <div className="admins-filter-header">
             <h3>
               Filtrar resultados
             </h3>
-
 
             <button
               type="button"
@@ -1145,54 +932,51 @@ function GestionPersonal({
             >
               Limpiar filtros
             </button>
-
           </div>
 
-
-          <div className="personal-filter-grid">
-
-            <div className="personal-field">
-
+          <div className="admins-filter-grid">
+            <div className="admins-field">
               <label>
-                Rol
+                Laboratorio
               </label>
-
 
               <select
                 value={
-                  filtroRol
+                  filtroLaboratorio
                 }
                 onChange={(
                   evento
                 ) =>
-                  setFiltroRol(
+                  setFiltroLaboratorio(
                     evento.target.value
                   )
                 }
               >
                 <option value="todos">
-                  Todos los roles
+                  Todos los laboratorios
                 </option>
 
-                <option value="recepcionista">
-                  Recepcionistas
-                </option>
-
-                <option value="bioquimico">
-                  Bioquímicos
-                </option>
-
+                {laboratorios.map(
+                  (laboratorio) => (
+                    <option
+                      key={
+                        laboratorio.id
+                      }
+                      value={
+                        laboratorio.id
+                      }
+                    >
+                      {laboratorio.nombre}
+                    </option>
+                  )
+                )}
               </select>
-
             </div>
 
-
-            <div className="personal-field">
-
+            <div className="admins-field">
               <label>
                 Estado
               </label>
-
 
               <select
                 value={
@@ -1217,57 +1001,44 @@ function GestionPersonal({
                 <option value="inactivo">
                   Inactivos
                 </option>
-
               </select>
-
             </div>
-
           </div>
-
         </section>
       )}
 
 
-      <section className="personal-list">
-
-        <div className="personal-list-header">
-
+      <section className="admins-list">
+        <div className="admins-list-header">
           <div>
-
             <h2>
-              Personal registrado
+              Responsables registrados
             </h2>
 
             <p>
-              Consulta y administra las cuentas vinculadas a tu laboratorio.
+              Consulta y administra las cuentas responsables de cada laboratorio.
             </p>
-
           </div>
 
-
           <span>
-            {personalFiltrado.length} resultado(s)
+            {administradoresFiltrados.length} resultado(s)
           </span>
-
         </div>
 
 
         {cargando ? (
-          <div className="personal-empty">
-
-            <div className="personal-spinner" />
+          <div className="admins-empty">
+            <div className="admins-spinner" />
 
             <p>
-              Cargando personal...
+              Cargando administradores...
             </p>
-
           </div>
 
-        ) : personalFiltrado.length ===
+        ) : administradoresFiltrados.length ===
           0 ? (
-          <div className="personal-empty">
-
-            <div className="personal-empty-icon">
+          <div className="admins-empty">
+            <div className="admins-empty-icon">
               🔎
             </div>
 
@@ -1287,18 +1058,16 @@ function GestionPersonal({
             >
               Limpiar filtros
             </button>
-
           </div>
 
         ) : (
-          <div className="personal-table-wrapper">
-
-            <table className="personal-table">
+          <div className="admins-table-wrapper">
+            <table className="admins-table">
 
               <thead>
                 <tr>
                   <th>
-                    Usuario
+                    Administrador
                   </th>
 
                   <th>
@@ -1306,7 +1075,7 @@ function GestionPersonal({
                   </th>
 
                   <th>
-                    Rol
+                    Laboratorio
                   </th>
 
                   <th>
@@ -1321,120 +1090,107 @@ function GestionPersonal({
 
 
               <tbody>
-
-                {personalFiltrado.map(
-                  (empleado) => (
+                {administradoresFiltrados.map(
+                  (administrador) => (
                     <tr
                       key={
-                        empleado.id
+                        administrador.id
                       }
                     >
-
                       <td>
-
-                        <div className="personal-user">
-
-                          <div className="personal-avatar">
+                        <div className="admins-user">
+                          <div className="admins-avatar">
                             {(
-                              empleado.nombre ||
-                              "U"
+                              administrador.nombre ||
+                              "A"
                             )
                               .charAt(0)
                               .toUpperCase()}
                           </div>
 
-
                           <div>
-
                             <strong>
-                              {empleado.nombre}{" "}
-                              {empleado.apellido}
+                              {administrador.nombre}{" "}
+                              {administrador.apellido}
                             </strong>
 
                             <span>
-                              Personal del laboratorio
+                              Administrador
                             </span>
-
                           </div>
-
                         </div>
-
                       </td>
 
 
                       <td>
-                        {empleado.email}
+                        {administrador.email}
                       </td>
 
 
                       <td>
+                        <div className="admins-lab-cell">
+                          <span className="admins-lab-icon">
+                            🏥
+                          </span>
 
-                        <span
-                          className={`personal-role ${empleado.rol}`}
-                        >
-                          {nombreRol(
-                            empleado.rol
-                          )}
-                        </span>
-
+                          <span>
+                            {nombreLaboratorio(
+                              administrador.laboratorioId
+                            )}
+                          </span>
+                        </div>
                       </td>
 
 
                       <td>
-
                         <span
                           className={
-                            empleado.activo
-                              ? "personal-status active"
-                              : "personal-status inactive"
+                            administrador.activo
+                              ? "admins-status active"
+                              : "admins-status inactive"
                           }
                         >
                           ●{" "}
-                          {empleado.activo
+                          {administrador.activo
                             ? "Activo"
                             : "Inactivo"}
                         </span>
-
                       </td>
 
 
                       <td>
-
-                        <div className="personal-actions">
-
+                        <div className="admins-actions">
                           <button
                             type="button"
-                            className="personal-action view"
+                            className="admins-action view"
                             onClick={() =>
-                              setEmpleadoVer(
-                                empleado
+                              setAdministradorVer(
+                                administrador
                               )
                             }
                           >
                             👁 Ver
                           </button>
 
-
                           <button
                             type="button"
-                            className="personal-action detail"
+                            className="admins-action detail"
                             onClick={() =>
-                              setEmpleadoDetalle(
-                                empleado
+                              setAdministradorDetalle(
+                                administrador
                               )
                             }
                           >
                             📄 Detalle
                           </button>
 
-
                           {puedeEditar && (
                             <button
                               type="button"
-                              className="personal-action edit"
+                              className="admins-action edit"
                               onClick={() =>
                                 abrirEditar(
-                                  empleado
+                                  administrador
                                 )
                               }
                             >
@@ -1442,74 +1198,62 @@ function GestionPersonal({
                             </button>
                           )}
 
-
                           {puedeCambiarEstado && (
                             <button
                               type="button"
                               className={
-                                empleado.activo
-                                  ? "personal-action disable"
-                                  : "personal-action enable"
+                                administrador.activo
+                                  ? "admins-action disable"
+                                  : "admins-action enable"
                               }
                               onClick={() =>
                                 cambiarEstado(
-                                  empleado
+                                  administrador
                                 )
                               }
                             >
-                              {empleado.activo
+                              {administrador.activo
                                 ? "Desactivar"
                                 : "Activar"}
                             </button>
                           )}
-
                         </div>
-
                       </td>
-
                     </tr>
                   )
                 )}
-
               </tbody>
 
             </table>
-
           </div>
         )}
-
       </section>
 
 
       {modoFormulario && (
-        <div className="personal-modal-overlay">
+        <div className="admins-modal-overlay">
+          <section className="admins-modal admins-form-modal">
 
-          <section className="personal-modal personal-form-modal">
-
-            <div className="personal-modal-header">
-
+            <div className="admins-modal-header">
               <div>
-
                 <h2>
                   {modoFormulario ===
                   "crear"
-                    ? "Nuevo integrante"
-                    : "Editar integrante"}
+                    ? "Nuevo administrador"
+                    : "Editar administrador"}
                 </h2>
 
                 <p>
                   {modoFormulario ===
                   "crear"
-                    ? "Registra una nueva cuenta para el personal de tu laboratorio."
-                    : "Actualiza los datos y el rol del usuario."}
+                    ? "Registra una nueva cuenta responsable de laboratorio."
+                    : "Actualiza los datos y laboratorio asignado."}
                 </p>
-
               </div>
-
 
               <button
                 type="button"
-                className="personal-close"
+                className="admins-close"
                 onClick={
                   cerrarFormulario
                 }
@@ -1519,45 +1263,32 @@ function GestionPersonal({
               >
                 ×
               </button>
-
             </div>
 
 
             <form
-              className="personal-form"
-              onSubmit={
-                guardar
-              }
+              className="admins-form"
+              onSubmit={guardar}
             >
-
-              <div className="personal-form-section">
-
-                <div className="personal-section-title">
-
-                  <div className="personal-section-icon">
+              <div className="admins-form-section">
+                <div className="admins-section-title">
+                  <div className="admins-section-icon">
                     👤
                   </div>
 
-
                   <div>
-
                     <h3>
                       Información personal
                     </h3>
 
                     <p>
-                      Datos principales del integrante.
+                      Datos principales del responsable.
                     </p>
-
                   </div>
-
                 </div>
 
-
-                <div className="personal-form-grid">
-
-                  <div className="personal-field">
-
+                <div className="admins-form-grid">
+                  <div className="admins-field">
                     <label>
                       Nombre *
                     </label>
@@ -1573,12 +1304,9 @@ function GestionPersonal({
                       }
                       placeholder="Nombre"
                     />
-
                   </div>
 
-
-                  <div className="personal-field">
-
+                  <div className="admins-field">
                     <label>
                       Apellido *
                     </label>
@@ -1594,12 +1322,9 @@ function GestionPersonal({
                       }
                       placeholder="Apellido"
                     />
-
                   </div>
 
-
-                  <div className="personal-field personal-full">
-
+                  <div className="admins-field admins-full">
                     <label>
                       Correo electrónico *
                     </label>
@@ -1617,125 +1342,123 @@ function GestionPersonal({
                         modoFormulario ===
                         "editar"
                       }
-                      placeholder="usuario@correo.com"
+                      placeholder="administrador@correo.com"
                     />
 
                     {modoFormulario ===
                       "editar" && (
                       <small>
-                        El correo de acceso no se modifica desde esta pantalla.
+                        El correo de autenticación no se modifica desde esta pantalla.
                       </small>
                     )}
-
                   </div>
-
-
-                  <div className="personal-field personal-full">
-
-                    <label>
-                      Rol *
-                    </label>
-
-                    <select
-                      name="rol"
-                      value={
-                        formulario.rol
-                      }
-                      onChange={
-                        manejarCambio
-                      }
-                    >
-                      <option value="">
-                        Selecciona un rol
-                      </option>
-
-                      <option value="recepcionista">
-                        Recepcionista
-                      </option>
-
-                      <option value="bioquimico">
-                        Bioquímico
-                      </option>
-
-                    </select>
-
-                  </div>
-
                 </div>
-
               </div>
 
 
-              <div className="personal-form-section">
-
-                <div className="personal-section-title">
-
-                  <div className="personal-section-icon purple">
+              <div className="admins-form-section">
+                <div className="admins-section-title">
+                  <div className="admins-section-icon purple">
                     🏥
                   </div>
 
-
                   <div>
-
                     <h3>
-                      Laboratorio
+                      Laboratorio asignado
                     </h3>
 
                     <p>
-                      La cuenta quedará asociada automáticamente a tu laboratorio.
+                      El administrador trabajará con la información de este laboratorio.
                     </p>
-
                   </div>
-
                 </div>
 
+                <div className="admins-field">
+                  <label>
+                    Laboratorio *
+                  </label>
 
-                <LaboratorioAsignado
-                  laboratorio={
-                    laboratorio
-                  }
-                />
+                  <select
+                    name="laboratorioId"
+                    value={
+                      formulario.laboratorioId
+                    }
+                    onChange={
+                      manejarCambio
+                    }
+                  >
+                    <option value="">
+                      Selecciona un laboratorio
+                    </option>
 
+                    {laboratorios.map(
+                      (laboratorio) => {
+                        const disponible =
+                          laboratorio.activo ||
+                          laboratorio.id ===
+                            formulario.laboratorioId;
+
+                        return (
+                          <option
+                            key={
+                              laboratorio.id
+                            }
+                            value={
+                              laboratorio.id
+                            }
+                            disabled={
+                              !disponible
+                            }
+                          >
+                            {laboratorio.nombre}
+                            {!laboratorio.activo
+                              ? " (Inactivo)"
+                              : ""}
+                          </option>
+                        );
+                      }
+                    )}
+                  </select>
+                </div>
+
+                {formulario.laboratorioId && (
+                  <LaboratorioAsignado
+                    laboratorio={
+                      mapaLaboratorios.get(
+                        formulario.laboratorioId
+                      )
+                    }
+                  />
+                )}
               </div>
 
 
               {modoFormulario ===
                 "crear" && (
-                <div className="personal-form-section">
-
-                  <div className="personal-section-title">
-
-                    <div className="personal-section-icon green">
+                <div className="admins-form-section">
+                  <div className="admins-section-title">
+                    <div className="admins-section-icon green">
                       🔐
                     </div>
 
-
                     <div>
-
                       <h3>
                         Acceso a la cuenta
                       </h3>
 
                       <p>
-                        Define las credenciales iniciales del usuario.
+                        Define las credenciales iniciales del administrador.
                       </p>
-
                     </div>
-
                   </div>
 
-
-                  <div className="personal-form-grid">
-
-                    <div className="personal-field">
-
+                  <div className="admins-form-grid">
+                    <div className="admins-field">
                       <label>
                         Contraseña *
                       </label>
 
-
-                      <div className="personal-password">
-
+                      <div className="admins-password">
                         <input
                           type={
                             mostrarPassword
@@ -1752,7 +1475,6 @@ function GestionPersonal({
                           placeholder="Contraseña segura"
                         />
 
-
                         <button
                           type="button"
                           onClick={() =>
@@ -1765,21 +1487,15 @@ function GestionPersonal({
                             ? "Ocultar"
                             : "Ver"}
                         </button>
-
                       </div>
-
                     </div>
 
-
-                    <div className="personal-field">
-
+                    <div className="admins-field">
                       <label>
                         Confirmar contraseña *
                       </label>
 
-
-                      <div className="personal-password">
-
+                      <div className="admins-password">
                         <input
                           type={
                             mostrarConfirmacion
@@ -1796,7 +1512,6 @@ function GestionPersonal({
                           placeholder="Repite la contraseña"
                         />
 
-
                         <button
                           type="button"
                           onClick={() =>
@@ -1809,23 +1524,17 @@ function GestionPersonal({
                             ? "Ocultar"
                             : "Ver"}
                         </button>
-
                       </div>
-
                     </div>
-
                   </div>
 
 
-                  <div className="personal-password-rules">
-
+                  <div className="admins-password-rules">
                     <strong>
                       La contraseña debe contener:
                     </strong>
 
-
                     <div>
-
                       <ReglaPassword
                         correcta={
                           formulario.password.length >=
@@ -1833,7 +1542,6 @@ function GestionPersonal({
                         }
                         texto="8 caracteres como mínimo"
                       />
-
 
                       <ReglaPassword
                         correcta={
@@ -1844,7 +1552,6 @@ function GestionPersonal({
                         texto="Una letra mayúscula"
                       />
 
-
                       <ReglaPassword
                         correcta={
                           /[a-z]/.test(
@@ -1853,7 +1560,6 @@ function GestionPersonal({
                         }
                         texto="Una letra minúscula"
                       />
-
 
                       <ReglaPassword
                         correcta={
@@ -1864,7 +1570,6 @@ function GestionPersonal({
                         texto="Un número"
                       />
 
-
                       <ReglaPassword
                         correcta={
                           /[^A-Za-z0-9]/.test(
@@ -1873,14 +1578,11 @@ function GestionPersonal({
                         }
                         texto="Un carácter especial"
                       />
-
                     </div>
-
                   </div>
 
 
-                  <label className="personal-checkbox">
-
+                  <label className="admins-checkbox">
                     <input
                       type="checkbox"
                       name="requiereVerificacionEmail"
@@ -1892,30 +1594,24 @@ function GestionPersonal({
                       }
                     />
 
-
                     <span>
-
                       <strong>
                         Solicitar verificación de correo
                       </strong>
 
                       <small>
-                        El usuario deberá verificar su correo antes de iniciar sesión.
+                        El usuario deberá verificar su dirección de correo antes de ingresar.
                       </small>
-
                     </span>
-
                   </label>
-
                 </div>
               )}
 
 
-              <div className="personal-form-actions">
-
+              <div className="admins-form-actions">
                 <button
                   type="button"
-                  className="personal-secondary"
+                  className="admins-secondary"
                   onClick={
                     cerrarFormulario
                   }
@@ -1926,10 +1622,9 @@ function GestionPersonal({
                   Cancelar
                 </button>
 
-
                 <button
                   type="submit"
-                  className="personal-primary"
+                  className="admins-primary"
                   disabled={
                     guardando
                   }
@@ -1938,126 +1633,97 @@ function GestionPersonal({
                     ? "Guardando..."
                     : modoFormulario ===
                         "crear"
-                      ? "Registrar integrante"
+                      ? "Registrar administrador"
                       : "Guardar cambios"}
                 </button>
-
               </div>
-
             </form>
 
           </section>
-
         </div>
       )}
 
 
-      {empleadoVer && (
-        <div className="personal-modal-overlay">
+      {administradorVer && (
+        <div className="admins-modal-overlay">
+          <section className="admins-modal admins-small">
 
-          <section className="personal-modal personal-small">
-
-            <div className="personal-modal-header">
-
+            <div className="admins-modal-header">
               <div>
                 <h2>
-                  Perfil del usuario
+                  Perfil del administrador
                 </h2>
               </div>
 
-
               <button
                 type="button"
-                className="personal-close"
+                className="admins-close"
                 onClick={() =>
-                  setEmpleadoVer(
+                  setAdministradorVer(
                     null
                   )
                 }
               >
                 ×
               </button>
-
             </div>
 
-
-            <div className="personal-profile">
-
-              <div className="personal-profile-avatar">
+            <div className="admins-profile">
+              <div className="admins-profile-avatar">
                 {(
-                  empleadoVer.nombre ||
-                  "U"
+                  administradorVer.nombre ||
+                  "A"
                 )
                   .charAt(0)
                   .toUpperCase()}
               </div>
 
-
               <h3>
-                {empleadoVer.nombre}{" "}
-                {empleadoVer.apellido}
+                {administradorVer.nombre}{" "}
+                {administradorVer.apellido}
               </h3>
 
-
               <p>
-                {empleadoVer.email}
+                {administradorVer.email}
               </p>
-
-
-              <span
-                className={`personal-role ${empleadoVer.rol}`}
-              >
-                {nombreRol(
-                  empleadoVer.rol
-                )}
-              </span>
-
 
               <span
                 className={
-                  empleadoVer.activo
-                    ? "personal-status active"
-                    : "personal-status inactive"
+                  administradorVer.activo
+                    ? "admins-status active"
+                    : "admins-status inactive"
                 }
               >
                 ●{" "}
-                {empleadoVer.activo
+                {administradorVer.activo
                   ? "Activo"
                   : "Inactivo"}
               </span>
 
-
-              <div className="personal-profile-lab">
-
+              <div className="admins-profile-lab">
                 <span>
                   🏥
                 </span>
 
-
                 <div>
-
                   <small>
                     Laboratorio
                   </small>
 
                   <strong>
-                    {laboratorio?.nombreVisible ||
-                      laboratorio?.nombre ||
-                      "Laboratorio"}
+                    {nombreLaboratorio(
+                      administradorVer.laboratorioId
+                    )}
                   </strong>
-
                 </div>
-
               </div>
-
             </div>
-
 
             <button
               type="button"
-              className="personal-primary personal-full-button"
+              className="admins-primary admins-full-button"
               onClick={() =>
-                setEmpleadoVer(
+                setAdministradorVer(
                   null
                 )
               }
@@ -2066,157 +1732,131 @@ function GestionPersonal({
             </button>
 
           </section>
-
         </div>
       )}
 
 
-      {empleadoDetalle && (
-        <div className="personal-modal-overlay">
+      {administradorDetalle && (
+        <div className="admins-modal-overlay">
+          <section className="admins-modal">
 
-          <section className="personal-modal">
-
-            <div className="personal-modal-header">
-
+            <div className="admins-modal-header">
               <div>
-
                 <h2>
-                  Detalle del usuario
+                  Detalle del administrador
                 </h2>
 
                 <p>
-                  Información completa de la cuenta.
+                  Información de la cuenta y laboratorio asignado.
                 </p>
-
               </div>
-
 
               <button
                 type="button"
-                className="personal-close"
+                className="admins-close"
                 onClick={() =>
-                  setEmpleadoDetalle(
+                  setAdministradorDetalle(
                     null
                   )
                 }
               >
                 ×
               </button>
-
             </div>
 
 
-            <div className="personal-detail-grid">
-
+            <div className="admins-detail-grid">
               <Detalle
                 titulo="Nombre"
                 valor={
-                  empleadoDetalle.nombre
+                  administradorDetalle.nombre
                 }
               />
-
 
               <Detalle
                 titulo="Apellido"
                 valor={
-                  empleadoDetalle.apellido
+                  administradorDetalle.apellido
                 }
               />
-
 
               <Detalle
                 titulo="Correo electrónico"
                 valor={
-                  empleadoDetalle.email
+                  administradorDetalle.email
                 }
               />
-
-
-              <Detalle
-                titulo="Rol"
-                valor={
-                  nombreRol(
-                    empleadoDetalle.rol
-                  )
-                }
-              />
-
 
               <Detalle
                 titulo="Estado"
                 valor={
-                  empleadoDetalle.activo
+                  administradorDetalle.activo
                     ? "Activo"
                     : "Inactivo"
                 }
               />
 
-
               <Detalle
                 titulo="Laboratorio"
                 valor={
-                  laboratorio?.nombreVisible ||
-                  laboratorio?.nombre
+                  nombreLaboratorio(
+                    administradorDetalle.laboratorioId
+                  )
                 }
               />
-
 
               <Detalle
                 titulo="Verificación de correo"
                 valor={
-                  empleadoDetalle.requiereVerificacionEmail
+                  administradorDetalle.requiereVerificacionEmail
                     ? "Requerida"
                     : "No requerida"
                 }
               />
 
-
               <Detalle
                 titulo="Fecha de registro"
                 valor={
                   formatearFecha(
-                    empleadoDetalle.fechaRegistro
+                    administradorDetalle.fechaRegistro
                   )
                 }
               />
 
-
               <Detalle
                 titulo="UID"
                 valor={
-                  empleadoDetalle.id
+                  administradorDetalle.id
                 }
                 completo
               />
-
             </div>
 
 
             <IdentidadLaboratorio
               laboratorio={
-                laboratorio
+                mapaLaboratorios.get(
+                  administradorDetalle.laboratorioId
+                )
               }
             />
 
 
-            <div className="personal-modal-footer">
-
+            <div className="admins-modal-footer">
               <button
                 type="button"
-                className="personal-secondary"
+                className="admins-secondary"
                 onClick={() =>
-                  setEmpleadoDetalle(
+                  setAdministradorDetalle(
                     null
                   )
                 }
               >
                 Cerrar
               </button>
-
             </div>
 
           </section>
-
         </div>
       )}
 
@@ -2233,17 +1873,14 @@ function Resumen({
   clase,
 }) {
   return (
-    <article className="personal-stat">
-
+    <article className="admins-stat">
       <div
-        className={`personal-stat-icon ${clase}`}
+        className={`admins-stat-icon ${clase}`}
       >
         {icono}
       </div>
 
-
       <div>
-
         <span>
           {titulo}
         </span>
@@ -2255,9 +1892,7 @@ function Resumen({
         <small>
           {texto}
         </small>
-
       </div>
-
     </article>
   );
 }
@@ -2271,8 +1906,8 @@ function ReglaPassword({
     <span
       className={
         correcta
-          ? "personal-password-rule valid"
-          : "personal-password-rule"
+          ? "password-rule valid"
+          : "password-rule"
       }
     >
       {correcta
@@ -2288,31 +1923,12 @@ function LaboratorioAsignado({
   laboratorio,
 }) {
   if (!laboratorio) {
-    return (
-      <div className="personal-selected-lab">
-        <div className="personal-selected-logo">
-          🧪
-        </div>
-
-        <div>
-          <small>
-            Laboratorio asignado
-          </small>
-
-          <strong>
-            Cargando información...
-          </strong>
-        </div>
-      </div>
-    );
+    return null;
   }
 
-
   return (
-    <div className="personal-selected-lab">
-
-      <div className="personal-selected-logo">
-
+    <div className="admins-selected-lab">
+      <div className="admins-selected-logo">
         {laboratorio.logoUrl ? (
           <img
             src={
@@ -2326,33 +1942,28 @@ function LaboratorioAsignado({
                 "none";
             }}
           />
-
         ) : (
           <span>
             🧪
           </span>
         )}
-
       </div>
 
-
       <div>
-
         <small>
-          Laboratorio asignado
+          Laboratorio seleccionado
         </small>
 
         <strong>
-          {laboratorio.nombreVisible ||
-            laboratorio.nombre}
+          {laboratorio.nombre}
         </strong>
 
         <span>
-          La asociación se realiza automáticamente.
+          {laboratorio.nombreVisible ||
+            laboratorio.direccion ||
+            "Sin información adicional"}
         </span>
-
       </div>
-
     </div>
   );
 }
@@ -2365,7 +1976,6 @@ function IdentidadLaboratorio({
     return null;
   }
 
-
   const colorPrimario =
     /^#[0-9A-Fa-f]{6}$/.test(
       laboratorio.colorPrimario
@@ -2373,33 +1983,27 @@ function IdentidadLaboratorio({
       ? laboratorio.colorPrimario
       : "#2563EB";
 
-
   const colorSecundario =
     /^#[0-9A-Fa-f]{6}$/.test(
       laboratorio.colorSecundario
     )
       ? laboratorio.colorSecundario
-      : "#14B8A6";
-
+      : "#0EA5E9";
 
   return (
-    <section className="personal-identity">
-
+    <section className="admins-identity">
       <div>
-
         <h3>
           Identidad del laboratorio
         </h3>
 
         <p>
-          Esta apariencia estará disponible para el usuario al ingresar al sistema.
+          Esta apariencia estará disponible para el administrador al ingresar al sistema.
         </p>
-
       </div>
 
-
       <div
-        className="personal-identity-preview"
+        className="admins-identity-preview"
         style={{
           background:
             `linear-gradient(
@@ -2409,9 +2013,7 @@ function IdentidadLaboratorio({
             )`,
         }}
       >
-
-        <div className="personal-identity-logo">
-
+        <div className="admins-identity-logo">
           {laboratorio.logoUrl ? (
             <img
               src={
@@ -2419,18 +2021,14 @@ function IdentidadLaboratorio({
               }
               alt="Logo"
             />
-
           ) : (
             <span>
               🧪
             </span>
           )}
-
         </div>
 
-
         <div>
-
           <strong>
             {laboratorio.nombreVisible ||
               laboratorio.nombre}
@@ -2439,11 +2037,8 @@ function IdentidadLaboratorio({
           <span>
             {laboratorio.nombre}
           </span>
-
         </div>
-
       </div>
-
     </section>
   );
 }
@@ -2458,11 +2053,10 @@ function Detalle({
     <div
       className={
         completo
-          ? "personal-detail-item full"
-          : "personal-detail-item"
+          ? "admins-detail-item full"
+          : "admins-detail-item"
       }
     >
-
       <span>
         {titulo}
       </span>
@@ -2471,10 +2065,9 @@ function Detalle({
         {valor ||
           "No registrado"}
       </strong>
-
     </div>
   );
 }
 
 
-export default GestionPersonal;
+export default SuperAdminAdministradores;
