@@ -7,13 +7,11 @@ import {
 } from "firebase/firestore";
 
 import {
-  auth,
   db,
 } from "../firebase/firebase";
 
-
 // =====================================================
-// COLORES POR DEFECTO
+// VALORES PREDETERMINADOS
 // =====================================================
 
 export const PERSONALIZACION_DEFAULT = {
@@ -36,7 +34,7 @@ function limpiarTexto(valor) {
 
 
 // =====================================================
-// VALIDAR COLOR HEXADECIMAL
+// VALIDAR COLOR
 // =====================================================
 
 function colorValido(color) {
@@ -47,127 +45,39 @@ function colorValido(color) {
 
 
 // =====================================================
-// VALIDAR SUPER ADMINISTRADOR
+// CONVERTIR LABORATORIO
 // =====================================================
 
-async function validarSuperAdmin() {
-  const firebaseUser =
-    auth.currentUser;
-
-
-  if (!firebaseUser) {
-    throw new Error(
-      "No existe una sesión autenticada."
-    );
-  }
-
-
-  const usuarioRef = doc(
-    db,
-    "usuarios",
-    firebaseUser.uid
-  );
-
-
-  const usuarioSnap =
-    await getDoc(
-      usuarioRef
-    );
-
-
-  if (!usuarioSnap.exists()) {
-    throw new Error(
-      "El usuario autenticado no existe en Firestore."
-    );
-  }
-
-
-  const datos =
-    usuarioSnap.data();
-
-
-  if (datos.activo !== true) {
-    throw new Error(
-      "El usuario autenticado se encuentra inactivo."
-    );
-  }
-
-
-  if (
-    datos.rol !==
-    "super_admin"
-  ) {
-    throw new Error(
-      "Solo el Super Administrador puede modificar la personalización."
-    );
-  }
-
-
-  return {
-    uid:
-      usuarioSnap.id,
-
-    rol:
-      datos.rol,
-  };
-}
-
-
-// =====================================================
-// OBTENER PERSONALIZACIÓN DE UN LABORATORIO
-//
-// Esta función se utiliza también desde Dashboard.jsx.
-//
-// Administrador, Recepcionista y Bioquímico reciben
-// automáticamente la personalización de SU laboratorio.
-// =====================================================
-
-export async function obtenerPersonalizacion(
-  laboratorioId
+function convertirLaboratorio(
+  id,
+  datos
 ) {
-  if (
-    typeof laboratorioId !==
-      "string" ||
-    laboratorioId.trim() ===
-      ""
-  ) {
-    return null;
-  }
-
-
-  const laboratorioRef = doc(
-    db,
-    "laboratorios",
-    laboratorioId
-  );
-
-
-  const laboratorioSnap =
-    await getDoc(
-      laboratorioRef
+  const colorPrimario =
+    limpiarTexto(
+      datos.colorPrimario
     );
 
-
-  if (!laboratorioSnap.exists()) {
-    return null;
-  }
-
-
-  const datos =
-    laboratorioSnap.data();
-
+  const colorSecundario =
+    limpiarTexto(
+      datos.colorSecundario
+    );
 
   return {
-    id:
-      laboratorioSnap.id,
+    id,
 
     laboratorioId:
-      datos.laboratorioId ||
-      laboratorioSnap.id,
+      limpiarTexto(
+        datos.laboratorioId
+      ) || id,
 
     nombre:
       limpiarTexto(
         datos.nombre
+      ),
+
+    nombreVisible:
+      limpiarTexto(
+        datos.nombreVisible
       ),
 
     direccion:
@@ -185,18 +95,6 @@ export async function obtenerPersonalizacion(
         datos.email
       ),
 
-    activo:
-      datos.activo === true,
-
-    fechaRegistro:
-      datos.fechaRegistro ||
-      null,
-
-    nombreVisible:
-      limpiarTexto(
-        datos.nombreVisible
-      ),
-
     logoUrl:
       limpiarTexto(
         datos.logoUrl
@@ -204,30 +102,75 @@ export async function obtenerPersonalizacion(
 
     colorPrimario:
       colorValido(
-        datos.colorPrimario
+        colorPrimario
       )
-        ? datos.colorPrimario
+        ? colorPrimario.toUpperCase()
         : PERSONALIZACION_DEFAULT.colorPrimario,
 
     colorSecundario:
       colorValido(
-        datos.colorSecundario
+        colorSecundario
       )
-        ? datos.colorSecundario
+        ? colorSecundario.toUpperCase()
         : PERSONALIZACION_DEFAULT.colorSecundario,
+
+    activo:
+      datos.activo === true,
+
+    fechaRegistro:
+      datos.fechaRegistro ||
+      null,
   };
 }
 
 
 // =====================================================
-// OBTENER LABORATORIOS PARA PERSONALIZACIÓN
-// SOLO SUPER ADMIN
+// OBTENER PERSONALIZACIÓN DE UN LABORATORIO
+//
+// Lo usa también el Dashboard del Administrador,
+// Recepcionista y Bioquímico.
+// =====================================================
+
+export async function obtenerPersonalizacion(
+  laboratorioId
+) {
+  const id =
+    limpiarTexto(
+      laboratorioId
+    );
+
+  if (!id) {
+    return null;
+  }
+
+  const referencia =
+    doc(
+      db,
+      "laboratorios",
+      id
+    );
+
+  const snapshot =
+    await getDoc(
+      referencia
+    );
+
+  if (!snapshot.exists()) {
+    return null;
+  }
+
+  return convertirLaboratorio(
+    snapshot.id,
+    snapshot.data()
+  );
+}
+
+
+// =====================================================
+// LISTAR LABORATORIOS PARA SUPER ADMIN
 // =====================================================
 
 export async function obtenerLaboratoriosPersonalizacion() {
-  await validarSuperAdmin();
-
-
   const snapshot =
     await getDocs(
       collection(
@@ -236,168 +179,70 @@ export async function obtenerLaboratoriosPersonalizacion() {
       )
     );
 
-
-  const laboratorios =
-    snapshot.docs.map(
-      (documento) => {
-        const datos =
-          documento.data();
-
-
-        const nombreVisible =
-          limpiarTexto(
-            datos.nombreVisible
-          );
-
-
-        const logoUrl =
-          limpiarTexto(
-            datos.logoUrl
-          );
-
-
-        const colorPrimario =
-          colorValido(
-            datos.colorPrimario
-          )
-            ? datos.colorPrimario
-            : PERSONALIZACION_DEFAULT.colorPrimario;
-
-
-        const colorSecundario =
-          colorValido(
-            datos.colorSecundario
-          )
-            ? datos.colorSecundario
-            : PERSONALIZACION_DEFAULT.colorSecundario;
-
-
-        const personalizado =
-          nombreVisible !== "" ||
-          logoUrl !== "" ||
-          typeof datos.colorPrimario ===
-            "string" ||
-          typeof datos.colorSecundario ===
-            "string";
-
-
-        return {
-          id:
-            documento.id,
-
-          laboratorioId:
-            datos.laboratorioId ||
-            documento.id,
-
-          nombre:
-            limpiarTexto(
-              datos.nombre
-            ),
-
-          direccion:
-            limpiarTexto(
-              datos.direccion
-            ),
-
-          telefono:
-            limpiarTexto(
-              datos.telefono
-            ),
-
-          email:
-            limpiarTexto(
-              datos.email
-            ),
-
-          activo:
-            datos.activo === true,
-
-          fechaRegistro:
-            datos.fechaRegistro ||
-            null,
-
-          nombreVisible,
-
-          logoUrl,
-
-          colorPrimario,
-
-          colorSecundario,
-
-          personalizado,
-        };
-      }
+  return snapshot.docs
+    .map(
+      (documento) =>
+        convertirLaboratorio(
+          documento.id,
+          documento.data()
+        )
+    )
+    .sort(
+      (a, b) =>
+        a.nombre.localeCompare(
+          b.nombre,
+          "es"
+        )
     );
-
-
-  return laboratorios.sort(
-    (a, b) =>
-      a.nombre.localeCompare(
-        b.nombre,
-        "es"
-      )
-  );
 }
 
 
 // =====================================================
 // ACTUALIZAR PERSONALIZACIÓN
-// SOLO SUPER ADMIN
 // =====================================================
 
 export async function actualizarPersonalizacion(
   laboratorioId,
   datos
 ) {
-  await validarSuperAdmin();
+  const id =
+    limpiarTexto(
+      laboratorioId
+    );
 
-
-  if (
-    typeof laboratorioId !==
-      "string" ||
-    laboratorioId.trim() ===
-      ""
-  ) {
+  if (!id) {
     throw new Error(
       "Laboratorio inválido."
     );
   }
 
-
   const nombreVisible =
     limpiarTexto(
-      datos?.nombreVisible
+      datos.nombreVisible
     );
-
 
   const logoUrl =
     limpiarTexto(
-      datos?.logoUrl
+      datos.logoUrl
     );
-
 
   const colorPrimario =
     limpiarTexto(
-      datos?.colorPrimario
+      datos.colorPrimario
     ).toUpperCase();
-
 
   const colorSecundario =
     limpiarTexto(
-      datos?.colorSecundario
+      datos.colorSecundario
     ).toUpperCase();
 
-
-  // =====================================================
-  // VALIDACIONES
-  // =====================================================
-
-  if (!nombreVisible) {
+  if (
+    nombreVisible.length < 2
+  ) {
     throw new Error(
-      "El nombre visible es obligatorio."
+      "Ingresa un nombre visible válido."
     );
   }
-
 
   if (
     !colorValido(
@@ -409,7 +254,6 @@ export async function actualizarPersonalizacion(
     );
   }
 
-
   if (
     !colorValido(
       colorSecundario
@@ -420,55 +264,43 @@ export async function actualizarPersonalizacion(
     );
   }
 
-
+  // Permitimos:
+  // data:image/...  -> archivo convertido a Data URL
+  // http/https      -> compatibilidad con logos anteriores
   if (
-    logoUrl !== ""
-  ) {
-    try {
-      new URL(
-        logoUrl
-      );
-
-    } catch {
-      throw new Error(
-        "La URL del logo no es válida."
-      );
-    }
-  }
-
-
-  // =====================================================
-  // COMPROBAR LABORATORIO
-  // =====================================================
-
-  const laboratorioRef = doc(
-    db,
-    "laboratorios",
-    laboratorioId
-  );
-
-
-  const laboratorioSnap =
-    await getDoc(
-      laboratorioRef
-    );
-
-
-  if (
-    !laboratorioSnap.exists()
+    logoUrl &&
+    !logoUrl.startsWith(
+      "data:image/"
+    ) &&
+    !/^https?:\/\//i.test(
+      logoUrl
+    )
   ) {
     throw new Error(
-      "El laboratorio seleccionado no existe."
+      "El formato del logo no es válido."
     );
   }
 
+  const referencia =
+    doc(
+      db,
+      "laboratorios",
+      id
+    );
 
-  // =====================================================
-  // GUARDAR SOLO PERSONALIZACIÓN
-  // =====================================================
+  const snapshot =
+    await getDoc(
+      referencia
+    );
+
+  if (!snapshot.exists()) {
+    throw new Error(
+      "El laboratorio no existe."
+    );
+  }
 
   await updateDoc(
-    laboratorioRef,
+    referencia,
     {
       nombreVisible,
       logoUrl,
@@ -476,7 +308,4 @@ export async function actualizarPersonalizacion(
       colorSecundario,
     }
   );
-
-
-  return true;
 }

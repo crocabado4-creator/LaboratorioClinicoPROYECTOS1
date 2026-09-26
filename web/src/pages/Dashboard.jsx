@@ -50,6 +50,10 @@ function Dashboard({
   ] = useState(null);
 
 
+  // =====================================================
+  // CARGAR PERMISOS DEL USUARIO
+  // =====================================================
+
   useEffect(() => {
     const cargarPermisos =
       async () => {
@@ -91,6 +95,14 @@ function Dashboard({
   }, [usuario?.rol]);
 
 
+  // =====================================================
+  // CARGAR PERSONALIZACIÓN DEL LABORATORIO
+  //
+  // Para Administrador, Recepcionista y Bioquímico.
+  // Cuando vuelve al dashboard se actualiza nombre,
+  // logo y colores desde Firestore.
+  // =====================================================
+
   useEffect(() => {
     const cargarLaboratorio =
       async () => {
@@ -127,6 +139,10 @@ function Dashboard({
   ]);
 
 
+  // =====================================================
+  // PERMISOS
+  // =====================================================
+
   const tienePermiso = (
     permiso
   ) => {
@@ -147,6 +163,10 @@ function Dashboard({
     );
   };
 
+
+  // =====================================================
+  // CERRAR SESIÓN
+  // =====================================================
 
   const cerrarSesion =
     async () => {
@@ -182,6 +202,10 @@ function Dashboard({
     };
 
 
+  // =====================================================
+  // SESIÓN NO DISPONIBLE
+  // =====================================================
+
   if (!usuario) {
     return (
       <PantallaEstado
@@ -192,6 +216,10 @@ function Dashboard({
     );
   }
 
+
+  // =====================================================
+  // CARGANDO PERMISOS
+  // =====================================================
 
   if (cargandoPermisos) {
     return (
@@ -204,6 +232,10 @@ function Dashboard({
   }
 
 
+  // =====================================================
+  // SUPER ADMIN - LABORATORIOS
+  // =====================================================
+
   if (
     usuario.rol === "super_admin" &&
     vista === "laboratorios"
@@ -212,12 +244,18 @@ function Dashboard({
       <SuperAdminLaboratorios
         permisos={permisos}
         volver={() =>
-          setVista("dashboard")
+          setVista(
+            "dashboard"
+          )
         }
       />
     );
   }
 
+
+  // =====================================================
+  // SUPER ADMIN - PERSONALIZACIÓN
+  // =====================================================
 
   if (
     usuario.rol === "super_admin" &&
@@ -227,12 +265,18 @@ function Dashboard({
       <SuperAdminPersonalizacion
         permisos={permisos}
         volver={() =>
-          setVista("dashboard")
+          setVista(
+            "dashboard"
+          )
         }
       />
     );
   }
 
+
+  // =====================================================
+  // SUPER ADMIN - ADMINISTRADORES
+  // =====================================================
 
   if (
     usuario.rol === "super_admin" &&
@@ -242,12 +286,18 @@ function Dashboard({
       <SuperAdminAdministradores
         permisos={permisos}
         volver={() =>
-          setVista("dashboard")
+          setVista(
+            "dashboard"
+          )
         }
       />
     );
   }
 
+
+  // =====================================================
+  // SUPER ADMIN - USUARIOS
+  // =====================================================
 
   if (
     usuario.rol === "super_admin" &&
@@ -256,12 +306,18 @@ function Dashboard({
     return (
       <SuperAdminUsuarios
         volver={() =>
-          setVista("dashboard")
+          setVista(
+            "dashboard"
+          )
         }
       />
     );
   }
 
+
+  // =====================================================
+  // SUPER ADMIN - ROLES
+  // =====================================================
 
   if (
     usuario.rol === "super_admin" &&
@@ -270,12 +326,18 @@ function Dashboard({
     return (
       <SuperAdminRoles
         volver={() =>
-          setVista("dashboard")
+          setVista(
+            "dashboard"
+          )
         }
       />
     );
   }
 
+
+  // =====================================================
+  // SUPER ADMIN - AUDITORÍA
+  // =====================================================
 
   if (
     usuario.rol === "super_admin" &&
@@ -284,12 +346,18 @@ function Dashboard({
     return (
       <SuperAdminAuditoria
         volver={() =>
-          setVista("dashboard")
+          setVista(
+            "dashboard"
+          )
         }
       />
     );
   }
 
+
+  // =====================================================
+  // SUPER ADMIN - DASHBOARD
+  // =====================================================
 
   if (
     usuario.rol === "super_admin"
@@ -299,12 +367,18 @@ function Dashboard({
         usuario={usuario}
         onLogout={cerrarSesion}
         onNavigate={(modulo) =>
-          setVista(modulo)
+          setVista(
+            modulo
+          )
         }
       />
     );
   }
 
+
+  // =====================================================
+  // ADMINISTRADOR - ROLES
+  // =====================================================
 
   if (
     usuario.rol === "administrador" &&
@@ -317,12 +391,18 @@ function Dashboard({
       <GestionRoles
         usuario={usuario}
         volver={() =>
-          setVista("dashboard")
+          setVista(
+            "dashboard"
+          )
         }
       />
     );
   }
 
+
+  // =====================================================
+  // ADMINISTRADOR - CONFIGURACIÓN
+  // =====================================================
 
   if (
     usuario.rol === "administrador" &&
@@ -335,12 +415,18 @@ function Dashboard({
       <ConfiguracionLaboratorio
         usuario={usuario}
         volver={() =>
-          setVista("dashboard")
+          setVista(
+            "dashboard"
+          )
         }
       />
     );
   }
 
+
+  // =====================================================
+  // ADMINISTRADOR - PERSONAL
+  // =====================================================
 
   if (
     usuario.rol === "administrador" &&
@@ -357,12 +443,18 @@ function Dashboard({
         usuario={usuario}
         permisos={permisos}
         volver={() =>
-          setVista("dashboard")
+          setVista(
+            "dashboard"
+          )
         }
       />
     );
   }
 
+
+  // =====================================================
+  // PERSONALIZACIÓN DEL DASHBOARD
+  // =====================================================
 
   const colorPrimario =
     validarColor(
@@ -371,6 +463,7 @@ function Dashboard({
       ? laboratorio.colorPrimario
       : "#2563EB";
 
+
   const colorSecundario =
     validarColor(
       laboratorio?.colorSecundario
@@ -378,20 +471,28 @@ function Dashboard({
       ? laboratorio.colorSecundario
       : "#0EA5E9";
 
+
   const nombreLaboratorio =
     laboratorio?.nombreVisible ||
     laboratorio?.nombre ||
     "Laboratorio Clínico";
 
 
+  // =====================================================
+  // DASHBOARD NORMAL
+  // =====================================================
+
   return (
     <main
       style={{
         minHeight: "100vh",
         padding: "32px",
+
         background:
           "linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%)",
+
         color: "#0f172a",
+
         fontFamily:
           "Inter, Arial, sans-serif",
       }}
@@ -403,25 +504,41 @@ function Dashboard({
           margin: "0 auto",
         }}
       >
+
+        {/* =================================================
+            CABECERA DEL LABORATORIO
+        ================================================= */}
+
         <section
           style={{
             position: "relative",
             overflow: "hidden",
+
             display: "flex",
             alignItems: "center",
             justifyContent:
               "space-between",
+
             gap: "30px",
+
             minHeight: "250px",
-            padding: "38px 42px",
-            borderRadius: "26px",
+
+            padding:
+              "38px 42px",
+
+            borderRadius:
+              "26px",
+
             background:
               `linear-gradient(
                 125deg,
                 ${colorPrimario} 0%,
                 ${colorSecundario} 100%
               )`,
-            color: "#ffffff",
+
+            color:
+              "#ffffff",
+
             boxShadow:
               `0 24px 55px ${hexToRgba(
                 colorPrimario,
@@ -429,92 +546,138 @@ function Dashboard({
               )}`,
           }}
         >
+
+          {/* Decoración */}
+
           <div
             style={{
               position: "absolute",
+
               width: "350px",
               height: "350px",
+
               right: "-100px",
               top: "-150px",
-              borderRadius: "50%",
+
+              borderRadius:
+                "50%",
+
               background:
                 "rgba(255,255,255,.08)",
             }}
           />
 
+
           <div
             style={{
               position: "absolute",
+
               width: "200px",
               height: "200px",
+
               right: "240px",
               bottom: "-130px",
-              borderRadius: "50%",
+
+              borderRadius:
+                "50%",
+
               background:
                 "rgba(255,255,255,.06)",
             }}
           />
 
+
+          {/* Información */}
+
           <div
             style={{
               position: "relative",
               zIndex: 2,
-              maxWidth: "720px",
+
+              maxWidth:
+                "720px",
             }}
           >
             <span
               style={{
                 display:
                   "inline-flex",
-                padding: "7px 11px",
-                marginBottom: "15px",
+
+                padding:
+                  "7px 11px",
+
+                marginBottom:
+                  "15px",
+
                 border:
                   "1px solid rgba(255,255,255,.15)",
-                borderRadius: "30px",
+
+                borderRadius:
+                  "30px",
+
                 background:
                   "rgba(255,255,255,.12)",
-                fontSize: "10px",
-                fontWeight: "800",
-                letterSpacing: "1px",
+
+                fontSize:
+                  "10px",
+
+                fontWeight:
+                  "800",
+
+                letterSpacing:
+                  "1px",
               }}
             >
               Panel principal
             </span>
 
+
             <h1
               style={{
                 margin: 0,
+
                 fontSize:
                   "clamp(30px, 4vw, 48px)",
-                letterSpacing: "-1px",
+
+                letterSpacing:
+                  "-1px",
               }}
             >
               {nombreLaboratorio}
             </h1>
 
+
             <p
               style={{
                 margin:
                   "14px 0 0",
+
                 color:
                   "rgba(255,255,255,.9)",
-                fontSize: "14px",
+
+                fontSize:
+                  "14px",
               }}
             >
               Bienvenido,{" "}
+
               <strong>
                 {usuario.nombre}{" "}
                 {usuario.apellido}
               </strong>
             </p>
 
+
             <p
               style={{
                 margin:
                   "5px 0 0",
+
                 color:
                   "rgba(255,255,255,.72)",
-                fontSize: "11px",
+
+                fontSize:
+                  "11px",
               }}
             >
               {nombreRol(
@@ -523,21 +686,44 @@ function Dashboard({
             </p>
           </div>
 
+
+          {/* =================================================
+              LOGO
+          ================================================= */}
+
           <div
             style={{
-              position: "relative",
+              position:
+                "relative",
+
               zIndex: 2,
-              width: "135px",
-              height: "135px",
+
+              width:
+                "135px",
+
+              height:
+                "135px",
+
               flexShrink: 0,
-              display: "grid",
-              placeItems: "center",
-              overflow: "hidden",
+
+              display:
+                "grid",
+
+              placeItems:
+                "center",
+
+              overflow:
+                "hidden",
+
               border:
                 "1px solid rgba(255,255,255,.2)",
-              borderRadius: "30px",
+
+              borderRadius:
+                "30px",
+
               background:
                 "rgba(255,255,255,.16)",
+
               backdropFilter:
                 "blur(10px)",
             }}
@@ -549,10 +735,18 @@ function Dashboard({
                 }
                 alt="Logo del laboratorio"
                 style={{
-                  width: "100%",
-                  height: "100%",
-                  objectFit: "contain",
-                  padding: "13px",
+                  width:
+                    "100%",
+
+                  height:
+                    "100%",
+
+                  objectFit:
+                    "contain",
+
+                  padding:
+                    "13px",
+
                   background:
                     "rgba(255,255,255,.93)",
                 }}
@@ -566,7 +760,8 @@ function Dashboard({
             ) : (
               <span
                 style={{
-                  fontSize: "58px",
+                  fontSize:
+                    "58px",
                 }}
               >
                 🧪
@@ -576,13 +771,21 @@ function Dashboard({
         </section>
 
 
+        {/* =================================================
+            INFORMACIÓN DEL USUARIO
+        ================================================= */}
+
         <section
           style={{
             display: "grid",
+
             gridTemplateColumns:
               "repeat(auto-fit, minmax(210px, 1fr))",
+
             gap: "14px",
-            marginTop: "22px",
+
+            marginTop:
+              "22px",
           }}
         >
           <InfoCard
@@ -591,8 +794,11 @@ function Dashboard({
               `${usuario.nombre || ""} ${usuario.apellido || ""}`.trim()
             }
             icono="👤"
-            color={colorPrimario}
+            color={
+              colorPrimario
+            }
           />
+
 
           <InfoCard
             titulo="Correo"
@@ -601,8 +807,11 @@ function Dashboard({
               "Sin correo"
             }
             icono="✉️"
-            color={colorPrimario}
+            color={
+              colorPrimario
+            }
           />
+
 
           <InfoCard
             titulo="Rol"
@@ -612,36 +821,54 @@ function Dashboard({
               )
             }
             icono="🛡️"
-            color={colorPrimario}
+            color={
+              colorPrimario
+            }
           />
+
 
           <InfoCard
             titulo="Estado"
             valor="Activo"
             icono="●"
             valorColor="#059669"
-            color={colorPrimario}
+            color={
+              colorPrimario
+            }
           />
         </section>
 
 
+        {/* =================================================
+            MÓDULOS
+        ================================================= */}
+
         <section
           style={{
-            marginTop: "36px",
+            marginTop:
+              "36px",
           }}
         >
           <div
             style={{
-              marginBottom: "20px",
+              marginBottom:
+                "20px",
             }}
           >
             <span
               style={{
                 color:
                   colorPrimario,
-                fontSize: "10px",
-                fontWeight: "900",
-                letterSpacing: "1.2px",
+
+                fontSize:
+                  "10px",
+
+                fontWeight:
+                  "900",
+
+                letterSpacing:
+                  "1.2px",
+
                 textTransform:
                   "uppercase",
               }}
@@ -649,20 +876,29 @@ function Dashboard({
               Área de trabajo
             </span>
 
+
             <h2
               style={{
-                margin: "5px 0 5px",
-                fontSize: "25px",
+                margin:
+                  "5px 0 5px",
+
+                fontSize:
+                  "25px",
               }}
             >
               Módulos disponibles
             </h2>
 
+
             <p
               style={{
                 margin: 0,
-                color: "#64748b",
-                fontSize: "12px",
+
+                color:
+                  "#64748b",
+
+                fontSize:
+                  "12px",
               }}
             >
               Accede a las funciones disponibles para tu cuenta.
@@ -672,12 +908,21 @@ function Dashboard({
 
           <div
             style={{
-              display: "grid",
+              display:
+                "grid",
+
               gridTemplateColumns:
                 "repeat(auto-fit, minmax(250px, 1fr))",
-              gap: "16px",
+
+              gap:
+                "16px",
             }}
           >
+
+            {/* =============================================
+                ROLES
+            ============================================= */}
+
             {usuario.rol ===
               "administrador" &&
               tienePermiso(
@@ -690,11 +935,17 @@ function Dashboard({
                   fondo="#EEF2FF"
                   color="#4338CA"
                   onClick={() =>
-                    setVista("roles")
+                    setVista(
+                      "roles"
+                    )
                   }
                 />
               )}
 
+
+            {/* =============================================
+                CONFIGURACIÓN
+            ============================================= */}
 
             {usuario.rol ===
               "administrador" &&
@@ -715,6 +966,10 @@ function Dashboard({
                 />
               )}
 
+
+            {/* =============================================
+                PERSONAL
+            ============================================= */}
 
             {usuario.rol ===
               "administrador" &&
@@ -739,6 +994,10 @@ function Dashboard({
               )}
 
 
+            {/* =============================================
+                PACIENTES
+            ============================================= */}
+
             {tieneAlgunPermiso([
               "pacientes.crear",
               "pacientes.editar",
@@ -758,6 +1017,10 @@ function Dashboard({
               />
             )}
 
+
+            {/* =============================================
+                ANÁLISIS
+            ============================================= */}
 
             {tieneAlgunPermiso([
               "analisis.crear",
@@ -779,6 +1042,10 @@ function Dashboard({
             )}
 
 
+            {/* =============================================
+                VENTAS
+            ============================================= */}
+
             {tienePermiso(
               "ventas.ver"
             ) && (
@@ -796,6 +1063,10 @@ function Dashboard({
               />
             )}
 
+
+            {/* =============================================
+                RESULTADOS
+            ============================================= */}
 
             {tienePermiso(
               "resultados.ver"
@@ -817,20 +1088,42 @@ function Dashboard({
         </section>
 
 
+        {/* =================================================
+            SESIÓN
+        ================================================= */}
+
         <section
           style={{
-            display: "flex",
-            alignItems: "center",
+            display:
+              "flex",
+
+            alignItems:
+              "center",
+
             justifyContent:
               "space-between",
-            flexWrap: "wrap",
-            gap: "15px",
-            marginTop: "35px",
-            padding: "20px",
+
+            flexWrap:
+              "wrap",
+
+            gap:
+              "15px",
+
+            marginTop:
+              "35px",
+
+            padding:
+              "20px",
+
             border:
               "1px solid #e2e8f0",
-            borderRadius: "16px",
-            background: "#ffffff",
+
+            borderRadius:
+              "16px",
+
+            background:
+              "#ffffff",
+
             boxShadow:
               "0 5px 20px rgba(15,23,42,.04)",
           }}
@@ -838,24 +1131,36 @@ function Dashboard({
           <div>
             <strong
               style={{
-                display: "block",
-                color: "#0f172a",
-                fontSize: "12px",
+                display:
+                  "block",
+
+                color:
+                  "#0f172a",
+
+                fontSize:
+                  "12px",
               }}
             >
               {usuario.email}
             </strong>
 
+
             <small
               style={{
-                display: "block",
-                marginTop: "4px",
-                color: "#64748b",
+                display:
+                  "block",
+
+                marginTop:
+                  "4px",
+
+                color:
+                  "#64748b",
               }}
             >
               Sesión activa
             </small>
           </div>
+
 
           <button
             type="button"
@@ -865,16 +1170,27 @@ function Dashboard({
             style={{
               padding:
                 "11px 17px",
+
               border:
                 "1px solid #fecaca",
+
               borderRadius:
                 "10px",
+
               background:
                 "#fff1f2",
-              color: "#dc2626",
-              fontSize: "10px",
-              fontWeight: "900",
-              cursor: "pointer",
+
+              color:
+                "#dc2626",
+
+              fontSize:
+                "10px",
+
+              fontWeight:
+                "900",
+
+              cursor:
+                "pointer",
             }}
           >
             Cerrar sesión
@@ -885,6 +1201,10 @@ function Dashboard({
   );
 }
 
+
+// =====================================================
+// TARJETA MÓDULO
+// =====================================================
 
 function ModuloCard({
   icono,
@@ -897,68 +1217,128 @@ function ModuloCard({
   return (
     <article
       style={{
-        minHeight: "215px",
-        display: "flex",
-        flexDirection: "column",
-        padding: "22px",
+        minHeight:
+          "215px",
+
+        display:
+          "flex",
+
+        flexDirection:
+          "column",
+
+        padding:
+          "22px",
+
         border:
           "1px solid #e2e8f0",
-        borderRadius: "18px",
-        background: "#ffffff",
+
+        borderRadius:
+          "18px",
+
+        background:
+          "#ffffff",
+
         boxShadow:
           "0 7px 24px rgba(15,23,42,.05)",
       }}
     >
       <div
         style={{
-          width: "50px",
-          height: "50px",
-          display: "grid",
-          placeItems: "center",
-          borderRadius: "14px",
-          background: fondo,
-          fontSize: "23px",
+          width:
+            "50px",
+
+          height:
+            "50px",
+
+          display:
+            "grid",
+
+          placeItems:
+            "center",
+
+          borderRadius:
+            "14px",
+
+          background:
+            fondo,
+
+          fontSize:
+            "23px",
         }}
       >
         {icono}
       </div>
 
+
       <h3
         style={{
-          margin: "18px 0 7px",
-          color: "#0f172a",
-          fontSize: "17px",
+          margin:
+            "18px 0 7px",
+
+          color:
+            "#0f172a",
+
+          fontSize:
+            "17px",
         }}
       >
         {titulo}
       </h3>
 
+
       <p
         style={{
-          margin: "0 0 18px",
-          color: "#64748b",
-          fontSize: "11px",
-          lineHeight: 1.6,
+          margin:
+            "0 0 18px",
+
+          color:
+            "#64748b",
+
+          fontSize:
+            "11px",
+
+          lineHeight:
+            1.6,
         }}
       >
         {descripcion}
       </p>
 
+
       <button
         type="button"
-        onClick={onClick}
+        onClick={
+          onClick
+        }
         style={{
-          width: "100%",
-          marginTop: "auto",
+          width:
+            "100%",
+
+          marginTop:
+            "auto",
+
           padding:
             "11px 12px",
-          border: "none",
-          borderRadius: "10px",
-          background: fondo,
+
+          border:
+            "none",
+
+          borderRadius:
+            "10px",
+
+          background:
+            fondo,
+
           color,
-          fontSize: "10px",
-          fontWeight: "900",
-          cursor: "pointer",
+
+          fontSize:
+            "10px",
+
+          fontWeight:
+            "900",
+
+          cursor:
+            "pointer",
         }}
       >
         Abrir módulo →
@@ -967,6 +1347,10 @@ function ModuloCard({
   );
 }
 
+
+// =====================================================
+// TARJETA INFORMACIÓN
+// =====================================================
 
 function InfoCard({
   titulo,
@@ -978,62 +1362,110 @@ function InfoCard({
   return (
     <article
       style={{
-        display: "flex",
-        alignItems: "center",
-        gap: "12px",
-        padding: "17px",
+        display:
+          "flex",
+
+        alignItems:
+          "center",
+
+        gap:
+          "12px",
+
+        padding:
+          "17px",
+
         border:
           "1px solid #e2e8f0",
-        borderRadius: "15px",
-        background: "#ffffff",
+
+        borderRadius:
+          "15px",
+
+        background:
+          "#ffffff",
+
         boxShadow:
           "0 5px 20px rgba(15,23,42,.04)",
       }}
     >
       <div
         style={{
-          width: "42px",
-          height: "42px",
-          flexShrink: 0,
-          display: "grid",
-          placeItems: "center",
-          borderRadius: "12px",
+          width:
+            "42px",
+
+          height:
+            "42px",
+
+          flexShrink:
+            0,
+
+          display:
+            "grid",
+
+          placeItems:
+            "center",
+
+          borderRadius:
+            "12px",
+
           background:
             hexToRgba(
               color,
               0.1
             ),
-          fontSize: "18px",
+
+          fontSize:
+            "18px",
         }}
       >
         {icono}
       </div>
 
+
       <div
         style={{
-          minWidth: 0,
-          display: "flex",
-          flexDirection: "column",
+          minWidth:
+            0,
+
+          display:
+            "flex",
+
+          flexDirection:
+            "column",
         }}
       >
         <span
           style={{
-            color: "#64748b",
-            fontSize: "8px",
-            fontWeight: "900",
+            color:
+              "#64748b",
+
+            fontSize:
+              "8px",
+
+            fontWeight:
+              "900",
+
             textTransform:
               "uppercase",
-            letterSpacing: ".8px",
+
+            letterSpacing:
+              ".8px",
           }}
         >
           {titulo}
         </span>
 
+
         <strong
           style={{
-            marginTop: "3px",
-            color: valorColor,
-            fontSize: "11px",
+            marginTop:
+              "3px",
+
+            color:
+              valorColor,
+
+            fontSize:
+              "11px",
+
             overflowWrap:
               "anywhere",
           }}
@@ -1046,6 +1478,10 @@ function InfoCard({
 }
 
 
+// =====================================================
+// PANTALLA DE ESTADO
+// =====================================================
+
 function PantallaEstado({
   icono,
   titulo,
@@ -1054,12 +1490,21 @@ function PantallaEstado({
   return (
     <main
       style={{
-        minHeight: "100vh",
-        display: "grid",
-        placeItems: "center",
-        padding: "20px",
+        minHeight:
+          "100vh",
+
+        display:
+          "grid",
+
+        placeItems:
+          "center",
+
+        padding:
+          "20px",
+
         background:
           "linear-gradient(135deg, #0f172a, #172554, #2563eb)",
+
         fontFamily:
           "Inter, Arial, sans-serif",
       }}
@@ -1068,43 +1513,74 @@ function PantallaEstado({
         style={{
           width:
             "min(430px, 100%)",
-          padding: "38px",
-          borderRadius: "22px",
-          background: "#ffffff",
-          textAlign: "center",
+
+          padding:
+            "38px",
+
+          borderRadius:
+            "22px",
+
+          background:
+            "#ffffff",
+
+          textAlign:
+            "center",
+
           boxShadow:
             "0 25px 70px rgba(0,0,0,.25)",
         }}
       >
         <div
           style={{
-            width: "65px",
-            height: "65px",
-            display: "grid",
-            placeItems: "center",
+            width:
+              "65px",
+
+            height:
+              "65px",
+
+            display:
+              "grid",
+
+            placeItems:
+              "center",
+
             margin:
               "0 auto 15px",
-            borderRadius: "18px",
-            background: "#eff6ff",
-            fontSize: "30px",
+
+            borderRadius:
+              "18px",
+
+            background:
+              "#eff6ff",
+
+            fontSize:
+              "30px",
           }}
         >
           {icono}
         </div>
 
+
         <h2
           style={{
-            margin: "0 0 7px",
+            margin:
+              "0 0 7px",
           }}
         >
           {titulo}
         </h2>
 
+
         <p
           style={{
-            margin: 0,
-            color: "#64748b",
-            fontSize: "12px",
+            margin:
+              0,
+
+            color:
+              "#64748b",
+
+            fontSize:
+              "12px",
           }}
         >
           {texto}
@@ -1114,6 +1590,10 @@ function PantallaEstado({
   );
 }
 
+
+// =====================================================
+// NOMBRE DEL ROL
+// =====================================================
 
 function nombreRol(
   rol
@@ -1131,11 +1611,19 @@ function nombreRol(
     case "bioquimico":
       return "Bioquímico";
 
+    case "paciente":
+      return "Paciente";
+
     default:
-      return rol || "Sin rol";
+      return rol ||
+        "Sin rol";
   }
 }
 
+
+// =====================================================
+// VALIDAR COLOR HEX
+// =====================================================
 
 function validarColor(
   color
@@ -1150,31 +1638,51 @@ function validarColor(
 }
 
 
+// =====================================================
+// HEX -> RGBA
+// =====================================================
+
 function hexToRgba(
   hex,
   alpha = 1
 ) {
-  if (!validarColor(hex)) {
+  if (
+    !validarColor(
+      hex
+    )
+  ) {
     return `rgba(37, 99, 235, ${alpha})`;
   }
 
   const r =
     parseInt(
-      hex.slice(1, 3),
+      hex.slice(
+        1,
+        3
+      ),
       16
     );
+
 
   const g =
     parseInt(
-      hex.slice(3, 5),
+      hex.slice(
+        3,
+        5
+      ),
       16
     );
 
+
   const b =
     parseInt(
-      hex.slice(5, 7),
+      hex.slice(
+        5,
+        7
+      ),
       16
     );
+
 
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
