@@ -15,6 +15,8 @@ import {
 import GestionRoles from "./GestionRoles";
 import ConfiguracionLaboratorio from "./ConfiguracionLaboratorio";
 import GestionPersonal from "./GestionPersonal";
+import GestionPacientes from "./GestionPacientes";
+import GestionAnalisis from "./GestionAnalisis";
 
 import SuperAdminDashboard from "./SuperAdminDashboard";
 import SuperAdminLaboratorios from "./SuperAdminLaboratorios";
@@ -440,6 +442,63 @@ function Dashboard({
   ) {
     return (
       <GestionPersonal
+        usuario={usuario}
+        permisos={permisos}
+        volver={() =>
+          setVista(
+            "dashboard"
+          )
+        }
+      />
+    );
+  }
+
+
+  // =====================================================
+  // HU-09 - GESTIÓN DE PACIENTES
+  //
+  // Disponible para cualquier usuario del laboratorio
+  // que posea al menos uno de los permisos del módulo.
+  // La propia pantalla controla qué acciones puede
+  // realizar según sus permisos.
+  // =====================================================
+
+  if (
+    vista === "pacientes" &&
+    tieneAlgunPermiso([
+      "pacientes.crear",
+      "pacientes.editar",
+      "pacientes.ver",
+    ])
+  ) {
+    return (
+      <GestionPacientes
+        usuario={usuario}
+        permisos={permisos}
+        volver={() =>
+          setVista(
+            "dashboard"
+          )
+        }
+      />
+    );
+  }
+
+
+  // =====================================================
+  // GESTIÓN DE ANÁLISIS CLÍNICOS
+  // =====================================================
+
+  if (
+    vista === "analisis" &&
+    tieneAlgunPermiso([
+      "analisis.crear",
+      "analisis.editar",
+      "analisis.ver",
+    ])
+  ) {
+    return (
+      <GestionAnalisis
         usuario={usuario}
         permisos={permisos}
         volver={() =>
@@ -1010,8 +1069,8 @@ function Dashboard({
                 fondo="#DCFCE7"
                 color="#15803D"
                 onClick={() =>
-                  window.alert(
-                    "Este módulo estará disponible próximamente."
+                  setVista(
+                    "pacientes"
                   )
                 }
               />
@@ -1034,8 +1093,8 @@ function Dashboard({
                 fondo="#CFFAFE"
                 color="#0E7490"
                 onClick={() =>
-                  window.alert(
-                    "Este módulo estará disponible próximamente."
+                  setVista(
+                    "analisis"
                   )
                 }
               />
