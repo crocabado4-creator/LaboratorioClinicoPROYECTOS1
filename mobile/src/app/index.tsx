@@ -1178,23 +1178,21 @@ export default function Index() {
           )}
 
           {tieneAlgunPermiso([
-            "analisis.crear",
-            "analisis.editar",
-            "analisis.ver",
-          ]) && (
-            <Modulo
-              icono="🔬"
-              titulo="Análisis clínicos"
-              descripcion="Gestiona los análisis disponibles."
-              color="#0E7490"
-              fondo="#CFFAFE"
-              onPress={() =>
-                moduloNoDisponible(
-                  "Análisis clínicos"
-                )
-              }
-            />
-          )}
+  "analisis.crear",
+  "analisis.editar",
+  "analisis.ver",
+]) && (
+  <Modulo
+    icono="🔬"
+    titulo="Análisis clínicos"
+    descripcion="Gestiona los análisis disponibles."
+    color="#0E7490"
+    fondo="#CFFAFE"
+    onPress={() =>
+      router.push("/analisis")
+    }
+  />
+)}
 
           {tienePermiso(
             "ventas.ver"

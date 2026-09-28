@@ -7,11 +7,11 @@ import {
 
 import {
   ActivityIndicator,
+  Alert,
   KeyboardAvoidingView,
   Modal,
   Platform,
   Pressable,
-  RefreshControl,
   SafeAreaView,
   ScrollView,
   StatusBar,
@@ -26,30 +26,43 @@ import {
 } from "expo-router";
 
 import {
+  doc,
+  getDoc,
+} from "firebase/firestore";
+
+import {
+  auth,
+  db,
+} from "../firebase/firebase";
+
+import {
+  obtenerPermisosRol,
+} from "../services/rolesService";
+
+import {
   actualizarPaciente,
   crearPaciente,
   obtenerPacientes,
-  type DatosPaciente,
-  type PacienteSistema,
+  type Paciente,
+  type PacienteInput,
 } from "../services/pacientesService";
 
-type SexoFiltro =
+
+type UsuarioActual = {
+  id: string;
+  rol: string;
+  laboratorioId: string;
+};
+
+
+type CampoBusqueda =
   | "todos"
-  | "masculino"
-  | "femenino"
-  | "otro";
+  | "nombres"
+  | "apellidos"
+  | "ci"
+  | "telefono"
+  | "email";
 
-type ModoFormulario =
-  | "crear"
-  | "editar"
-  | null;
-
-type Mensaje = {
-  tipo:
-    | "exito"
-    | "error";
-  texto: string;
-} | null;
 
 type FormularioPaciente = {
   nombres: string;
@@ -65,86 +78,150 @@ type FormularioPaciente = {
   enfermedadesPrevias: string;
 };
 
+
 const formularioInicial:
   FormularioPaciente = {
-  nombres: "",
-  apellidos: "",
-  ci: "",
-  fechaNacimiento: "",
-  sexo: "",
-  telefono: "",
-  email: "",
-  direccion: "",
-  ciudad: "",
-  alergias: "",
-  enfermedadesPrevias: "",
-};
+    nombres: "",
+    apellidos: "",
+    ci: "",
+    fechaNacimiento: "",
+    sexo: "",
+    telefono: "",
+    email: "",
+    direccion: "",
+    ciudad: "",
+    alergias: "",
+    enfermedadesPrevias: "",
+  };
 
-export default function PacientesScreen() {
+
+const camposBusqueda: {
+  valor: CampoBusqueda;
+  texto: string;
+}[] = [
+  {
+    valor: "todos",
+    texto: "Todos",
+  },
+  {
+    valor: "nombres",
+    texto: "Nombres",
+  },
+  {
+    valor: "apellidos",
+    texto: "Apellidos",
+  },
+  {
+    valor: "ci",
+    texto: "CI",
+  },
+  {
+    valor: "telefono",
+    texto: "Teléfono",
+  },
+  {
+    valor: "email",
+    texto: "Correo",
+  },
+];
+
+
+export default function Pacientes() {
   const router =
     useRouter();
+
+
+  const [
+    usuario,
+    setUsuario,
+  ] =
+    useState<UsuarioActual | null>(
+      null
+    );
+
+
+  const [
+    permisos,
+    setPermisos,
+  ] =
+    useState<string[]>([]);
+
 
   const [
     pacientes,
     setPacientes,
   ] =
-    useState<PacienteSistema[]>(
-      []
-    );
+    useState<Paciente[]>([]);
+
 
   const [
     cargando,
     setCargando,
-  ] = useState(true);
+  ] =
+    useState(true);
 
-  const [
-    refrescando,
-    setRefrescando,
-  ] = useState(false);
 
   const [
     guardando,
     setGuardando,
-  ] = useState(false);
-
-  const [
-    mensaje,
-    setMensaje,
   ] =
-    useState<Mensaje>(
-      null
-    );
+    useState(false);
+
 
   const [
     busqueda,
     setBusqueda,
-  ] = useState("");
+  ] =
+    useState("");
+
+
+  const [
+    campoBusqueda,
+    setCampoBusqueda,
+  ] =
+    useState<CampoBusqueda>(
+      "todos"
+    );
+
 
   const [
     fechaFiltro,
     setFechaFiltro,
-  ] = useState("");
-
-  const [
-    sexoFiltro,
-    setSexoFiltro,
   ] =
-    useState<SexoFiltro>(
-      "todos"
-    );
+    useState("");
+
 
   const [
-    mostrarFiltros,
-    setMostrarFiltros,
-  ] = useState(false);
-
-  const [
-    modoFormulario,
-    setModoFormulario,
+    modalFormulario,
+    setModalFormulario,
   ] =
-    useState<ModoFormulario>(
+    useState(false);
+
+
+  const [
+    modalDetalle,
+    setModalDetalle,
+  ] =
+    useState(false);
+
+
+  const [
+    pacienteSeleccionado,
+    setPacienteSeleccionado,
+  ] =
+    useState<Paciente | null>(
       null
     );
+
+
+  const [
+    editandoId,
+    setEditandoId,
+  ] =
+    useState<string | null>(
+      null
+    );
+
 
   const [
     formulario,
@@ -154,82 +231,162 @@ export default function PacientesScreen() {
       formularioInicial
     );
 
-  const [
-    pacienteEditar,
-    setPacienteEditar,
-  ] =
-    useState<PacienteSistema | null>(
-      null
+
+  const puedeCrear =
+    permisos.includes(
+      "pacientes.crear"
     );
 
-  const [
-    pacienteVer,
-    setPacienteVer,
-  ] =
-    useState<PacienteSistema | null>(
-      null
+
+  const puedeEditar =
+    permisos.includes(
+      "pacientes.editar"
     );
 
-  const [
-    pacienteDetalle,
-    setPacienteDetalle,
-  ] =
-    useState<PacienteSistema | null>(
-      null
+
+  const puedeVer =
+    permisos.includes(
+      "pacientes.ver"
+    ) ||
+    puedeCrear ||
+    puedeEditar;
+
+
+  const puedeVerHistorial =
+    permisos.includes(
+      "resultados.ver"
     );
 
-  const mostrarMensaje = (
-    tipo:
-      | "exito"
-      | "error",
-    texto: string
-  ) => {
-    setMensaje({
-      tipo,
-      texto,
-    });
-  };
 
-  useEffect(() => {
-    if (!mensaje) {
-      return;
-    }
-
-    const temporizador =
-      setTimeout(
-        () => {
-          setMensaje(
-            null
-          );
-        },
-        4000
-      );
-
-    return () => {
-      clearTimeout(
-        temporizador
-      );
-    };
-  }, [
-    mensaje,
-  ]);
-
-  const cargarDatos =
+  const cargarPantalla =
     useCallback(
-      async (
-        mostrarCarga = true
-      ) => {
+      async () => {
         try {
+          setCargando(
+            true
+          );
+
+          const firebaseUser =
+            auth.currentUser;
+
+          if (!firebaseUser) {
+            Alert.alert(
+              "Sesión no disponible",
+              "Debes iniciar sesión nuevamente."
+            );
+
+            router.replace(
+              "/"
+            );
+
+            return;
+          }
+
+          const usuarioSnap =
+            await getDoc(
+              doc(
+                db,
+                "usuarios",
+                firebaseUser.uid
+              )
+            );
+
           if (
-            mostrarCarga
+            !usuarioSnap.exists()
           ) {
-            setCargando(
-              true
+            throw new Error(
+              "No se encontró el usuario en Firestore."
             );
           }
 
+          const datosUsuario =
+            usuarioSnap.data();
+
+          if (
+            datosUsuario.activo !==
+            true
+          ) {
+            throw new Error(
+              "El usuario está inactivo."
+            );
+          }
+
+          const rol =
+            typeof datosUsuario.rol ===
+              "string"
+              ? datosUsuario.rol.trim()
+              : "";
+
+          const laboratorioId =
+            typeof datosUsuario.laboratorioId ===
+              "string"
+              ? datosUsuario.laboratorioId.trim()
+              : "";
+
+          if (!rol) {
+            throw new Error(
+              "El usuario no tiene rol asignado."
+            );
+          }
+
+          if (!laboratorioId) {
+            throw new Error(
+              "El usuario no está asociado a un laboratorio."
+            );
+          }
+
+          const permisosRol =
+            await obtenerPermisosRol(
+              rol
+            );
+
+          const listaPermisos =
+            Array.isArray(
+              permisosRol
+            )
+              ? permisosRol
+              : [];
+
+          const tieneAcceso =
+            listaPermisos.some(
+              (permiso) =>
+                [
+                  "pacientes.crear",
+                  "pacientes.editar",
+                  "pacientes.ver",
+                ].includes(
+                  permiso
+                )
+            );
+
+          if (!tieneAcceso) {
+            throw new Error(
+              "No tienes permiso para consultar pacientes."
+            );
+          }
+
+          const usuarioActual:
+            UsuarioActual = {
+              id:
+                usuarioSnap.id,
+
+              rol,
+
+              laboratorioId,
+            };
+
+          setUsuario(
+            usuarioActual
+          );
+
+          setPermisos(
+            listaPermisos
+          );
+
           const resultado =
-            await obtenerPacientes();
+            await obtenerPacientes(
+              laboratorioId
+            );
 
           setPacientes(
             resultado
@@ -241,440 +398,506 @@ export default function PacientesScreen() {
             error
           );
 
-          mostrarMensaje(
-            "error",
-            error instanceof
-            Error
-              ? error.message
-              : "No se pudieron cargar los pacientes."
+          Alert.alert(
+            "Error",
+            obtenerMensajeError(
+              error,
+              "No se pudieron cargar los pacientes."
+            )
           );
 
         } finally {
           setCargando(
             false
           );
-
-          setRefrescando(
-            false
-          );
         }
       },
-      []
+      [
+        router,
+      ]
     );
 
+
   useEffect(() => {
-    cargarDatos();
-  }, [
-    cargarDatos,
-  ]);
+    cargarPantalla();
+  }, [cargarPantalla]);
 
-  const refrescar =
-    async () => {
-      setRefrescando(
-        true
-      );
-
-      await cargarDatos(
-        false
-      );
-    };
 
   const pacientesFiltrados =
-    useMemo(() => {
-      const texto =
-        busqueda
-          .trim()
-          .toLowerCase();
+    useMemo(
+      () => {
+        const texto =
+          normalizarTexto(
+            busqueda
+          );
 
-      return pacientes.filter(
-        (
-          paciente
-        ) => {
-          const coincideBusqueda =
-            texto === "" ||
-            [
-              paciente.nombres,
-              paciente.apellidos,
-              paciente.ci,
-              paciente.telefono,
-              paciente.email,
-              paciente.ciudad,
-            ].some(
-              (
-                valor
-              ) =>
-                String(
-                  valor ||
-                    ""
-                )
-                  .toLowerCase()
-                  .includes(
+        const fecha =
+          fechaFiltro.trim();
+
+        return pacientes.filter(
+          (paciente) => {
+            if (
+              fecha !== "" &&
+              paciente.fechaNacimiento !==
+                fecha
+            ) {
+              return false;
+            }
+
+            if (!texto) {
+              return true;
+            }
+
+            const valores = {
+              nombres:
+                normalizarTexto(
+                  paciente.nombres
+                ),
+
+              apellidos:
+                normalizarTexto(
+                  paciente.apellidos
+                ),
+
+              ci:
+                normalizarTexto(
+                  paciente.ci
+                ),
+
+              telefono:
+                normalizarTexto(
+                  paciente.telefono
+                ),
+
+              email:
+                normalizarTexto(
+                  paciente.email
+                ),
+            };
+
+            if (
+              campoBusqueda ===
+              "todos"
+            ) {
+              return Object.values(
+                valores
+              ).some(
+                (valor) =>
+                  valor.includes(
                     texto
                   )
+              );
+            }
+
+            return valores[
+              campoBusqueda
+            ].includes(
+              texto
             );
+          }
+        );
+      },
+      [
+        pacientes,
+        busqueda,
+        campoBusqueda,
+        fechaFiltro,
+      ]
+    );
 
-          const coincideFecha =
-            fechaFiltro.trim() ===
-              "" ||
-            paciente.fechaNacimiento ===
-              fechaFiltro.trim();
 
-          const coincideSexo =
-            sexoFiltro ===
-              "todos" ||
-            paciente.sexo.toLowerCase() ===
-              sexoFiltro;
+  const filtrosActivos =
+    busqueda.trim() !== "" ||
+    fechaFiltro.trim() !== "" ||
+    campoBusqueda !== "todos";
 
-          return (
-            coincideBusqueda &&
-            coincideFecha &&
-            coincideSexo
-          );
-        }
-      );
-    }, [
-      pacientes,
-      busqueda,
-      fechaFiltro,
-      sexoFiltro,
-    ]);
-
-  const masculino =
-    pacientes.filter(
-      (
-        paciente
-      ) =>
-        paciente.sexo ===
-        "masculino"
-    ).length;
-
-  const femenino =
-    pacientes.filter(
-      (
-        paciente
-      ) =>
-        paciente.sexo ===
-        "femenino"
-    ).length;
 
   const limpiarFiltros =
     () => {
       setBusqueda("");
       setFechaFiltro("");
-      setSexoFiltro(
+      setCampoBusqueda(
         "todos"
       );
     };
 
-  const convertirTextoArray = (
-    texto: string
-  ): string[] => {
-    return texto
-      .split(",")
-      .map(
-        (
-          item
-        ) =>
-          item.trim()
-      )
-      .filter(Boolean);
-  };
 
-  const convertirArrayTexto = (
-    lista: string[]
-  ): string => {
-    return lista.join(
-      ", "
-    );
-  };
-
-  const actualizarCampo = (
-    campo:
-      keyof FormularioPaciente,
-    valor: string
-  ) => {
-    setFormulario(
-      (
-        anterior
-      ) => ({
-        ...anterior,
-        [campo]:
-          valor,
-      })
-    );
-  };
-
-  const abrirCrear =
+  const abrirNuevo =
     () => {
-      setFormulario({
-        ...formularioInicial,
-      });
+      if (!puedeCrear) {
+        Alert.alert(
+          "Acceso denegado",
+          "No tienes permiso para registrar pacientes."
+        );
 
-      setPacienteEditar(
-        null
-      );
-
-      setMensaje(
-        null
-      );
-
-      setModoFormulario(
-        "crear"
-      );
-    };
-
-  const abrirEditar = (
-    paciente:
-      PacienteSistema
-  ) => {
-    setPacienteEditar(
-      paciente
-    );
-
-    setFormulario({
-      nombres:
-        paciente.nombres,
-
-      apellidos:
-        paciente.apellidos,
-
-      ci:
-        paciente.ci,
-
-      fechaNacimiento:
-        paciente.fechaNacimiento,
-
-      sexo:
-        paciente.sexo,
-
-      telefono:
-        paciente.telefono,
-
-      email:
-        paciente.email,
-
-      direccion:
-        paciente.direccion,
-
-      ciudad:
-        paciente.ciudad,
-
-      alergias:
-        convertirArrayTexto(
-          paciente.alergias
-        ),
-
-      enfermedadesPrevias:
-        convertirArrayTexto(
-          paciente.enfermedadesPrevias
-        ),
-    });
-
-    setMensaje(
-      null
-    );
-
-    setModoFormulario(
-      "editar"
-    );
-  };
-
-  const cerrarFormulario =
-    () => {
-      if (
-        guardando
-      ) {
         return;
       }
 
-      setModoFormulario(
+      setFormulario(
+        formularioInicial
+      );
+
+      setEditandoId(
         null
       );
 
-      setPacienteEditar(
+      setPacienteSeleccionado(
         null
+      );
+
+      setModalFormulario(
+        true
+      );
+    };
+
+
+  const abrirEditar =
+    (
+      paciente: Paciente
+    ) => {
+      if (!puedeEditar) {
+        Alert.alert(
+          "Acceso denegado",
+          "No tienes permiso para modificar pacientes."
+        );
+
+        return;
+      }
+
+      setEditandoId(
+        paciente.id
+      );
+
+      setPacienteSeleccionado(
+        paciente
       );
 
       setFormulario({
-        ...formularioInicial,
+        nombres:
+          paciente.nombres,
+
+        apellidos:
+          paciente.apellidos,
+
+        ci:
+          paciente.ci,
+
+        fechaNacimiento:
+          paciente.fechaNacimiento,
+
+        sexo:
+          paciente.sexo,
+
+        telefono:
+          paciente.telefono,
+
+        email:
+          paciente.email,
+
+        direccion:
+          paciente.direccion,
+
+        ciudad:
+          paciente.ciudad,
+
+        alergias:
+          paciente.alergias.join(
+            ", "
+          ),
+
+        enfermedadesPrevias:
+          paciente.enfermedadesPrevias.join(
+            ", "
+          ),
+      });
+
+      setModalFormulario(
+        true
+      );
+    };
+
+
+  const abrirHistorial =
+    (
+      paciente: Paciente
+    ) => {
+      if (
+        !puedeVerHistorial
+      ) {
+        Alert.alert(
+          "Acceso denegado",
+          "No tienes permiso para consultar el historial clínico."
+        );
+
+        return;
+      }
+
+      router.push({
+        pathname:
+          "/historial-paciente",
+
+        params: {
+          pacienteId:
+            paciente.id,
+        },
       });
     };
+
+
+  const abrirDetalle =
+    (
+      paciente: Paciente
+    ) => {
+      setPacienteSeleccionado(
+        paciente
+      );
+
+      setModalDetalle(
+        true
+      );
+    };
+
+
+  const cerrarFormulario =
+    () => {
+      if (guardando) {
+        return;
+      }
+
+      setModalFormulario(
+        false
+      );
+
+      setEditandoId(
+        null
+      );
+
+      setPacienteSeleccionado(
+        null
+      );
+
+      setFormulario(
+        formularioInicial
+      );
+    };
+
+
+  const cambiarCampo =
+    (
+      campo:
+        keyof FormularioPaciente,
+      valor: string
+    ) => {
+      setFormulario(
+        (actual) => ({
+          ...actual,
+          [campo]: valor,
+        })
+      );
+    };
+
 
   const validarFormulario =
     (): string => {
       if (
-        formulario.nombres
-          .trim()
-          .length < 2
+        !formulario.nombres.trim()
       ) {
-        return "Ingresa los nombres del paciente.";
+        return "Los nombres son obligatorios.";
       }
 
       if (
-        formulario.apellidos
-          .trim()
-          .length < 2
+        !formulario.apellidos.trim()
       ) {
-        return "Ingresa los apellidos del paciente.";
+        return "Los apellidos son obligatorios.";
+      }
+
+      if (!formulario.ci.trim()) {
+        return "El CI es obligatorio.";
       }
 
       if (
-        formulario.ci
-          .trim()
-          .length < 4
+        !formulario.fechaNacimiento.trim()
       ) {
-        return "Ingresa un CI o carnet válido.";
+        return "La fecha de nacimiento es obligatoria.";
       }
 
       if (
-        !/^\d{4}-\d{2}-\d{2}$/.test(
+        !formulario.sexo.trim()
+      ) {
+        return "Debes seleccionar el sexo.";
+      }
+
+      if (
+        !fechaValida(
           formulario.fechaNacimiento
-            .trim()
         )
       ) {
-        return "La fecha debe utilizar el formato AAAA-MM-DD.";
+        return "La fecha debe tener el formato AAAA-MM-DD y ser válida.";
+      }
+
+      const nacimiento =
+        new Date(
+          `${formulario.fechaNacimiento}T00:00:00`
+        );
+
+      const hoy =
+        new Date();
+
+      hoy.setHours(
+        0,
+        0,
+        0,
+        0
+      );
+
+      if (
+        nacimiento >
+        hoy
+      ) {
+        return "La fecha de nacimiento no puede ser futura.";
       }
 
       if (
-        ![
-          "masculino",
-          "femenino",
-          "otro",
-        ].includes(
-          formulario.sexo
+        formulario.email.trim() !==
+          "" &&
+        !correoValido(
+          formulario.email
         )
       ) {
-        return "Selecciona el sexo.";
-      }
-
-      if (
-        formulario.direccion
-          .trim()
-          .length < 3
-      ) {
-        return "Ingresa la dirección del paciente.";
-      }
-
-      if (
-        formulario.ciudad
-          .trim()
-          .length < 2
-      ) {
-        return "Ingresa la ciudad del paciente.";
+        return "El correo electrónico no es válido.";
       }
 
       return "";
     };
 
-  const prepararDatos =
-    (): DatosPaciente => {
-      return {
-        nombres:
-          formulario.nombres,
-
-        apellidos:
-          formulario.apellidos,
-
-        ci:
-          formulario.ci,
-
-        fechaNacimiento:
-          formulario.fechaNacimiento,
-
-        sexo:
-          formulario.sexo,
-
-        telefono:
-          formulario.telefono,
-
-        email:
-          formulario.email,
-
-        direccion:
-          formulario.direccion,
-
-        ciudad:
-          formulario.ciudad,
-
-        alergias:
-          convertirTextoArray(
-            formulario.alergias
-          ),
-
-        enfermedadesPrevias:
-          convertirTextoArray(
-            formulario.enfermedadesPrevias
-          ),
-      };
-    };
 
   const guardarPaciente =
     async () => {
-      const validacion =
+      const error =
         validarFormulario();
 
-      if (
-        validacion
-      ) {
-        mostrarMensaje(
-          "error",
-          validacion
+      if (error) {
+        Alert.alert(
+          "Revisa los datos",
+          error
         );
 
         return;
       }
+
+      if (!usuario) {
+        Alert.alert(
+          "Error",
+          "No se pudo identificar el laboratorio."
+        );
+
+        return;
+      }
+
+      const datos:
+        PacienteInput = {
+          nombres:
+            formulario.nombres,
+
+          apellidos:
+            formulario.apellidos,
+
+          ci:
+            formulario.ci,
+
+          fechaNacimiento:
+            formulario.fechaNacimiento,
+
+          sexo:
+            formulario.sexo,
+
+          telefono:
+            formulario.telefono,
+
+          email:
+            formulario.email,
+
+          direccion:
+            formulario.direccion,
+
+          ciudad:
+            formulario.ciudad,
+
+          alergias:
+            textoALista(
+              formulario.alergias
+            ),
+
+          enfermedadesPrevias:
+            textoALista(
+              formulario.enfermedadesPrevias
+            ),
+        };
 
       try {
         setGuardando(
           true
         );
 
-        const datos =
-          prepararDatos();
+        if (editandoId) {
+          if (!puedeEditar) {
+            throw new Error(
+              "No tienes permiso para modificar pacientes."
+            );
+          }
 
-        if (
-          modoFormulario ===
-          "crear"
-        ) {
-          await crearPaciente(
-            datos
-          );
-
-          mostrarMensaje(
-            "exito",
-            "Paciente registrado correctamente."
-          );
-
-        } else if (
-          modoFormulario ===
-            "editar" &&
-          pacienteEditar
-        ) {
           await actualizarPaciente(
-            pacienteEditar.id,
+            editandoId,
+            usuario.laboratorioId,
             datos
           );
 
-          mostrarMensaje(
-            "exito",
+          Alert.alert(
+            "Correcto",
             "Paciente actualizado correctamente."
+          );
+
+        } else {
+          if (!puedeCrear) {
+            throw new Error(
+              "No tienes permiso para registrar pacientes."
+            );
+          }
+
+          await crearPaciente(
+            usuario.laboratorioId,
+            datos
+          );
+
+          Alert.alert(
+            "Correcto",
+            "Paciente registrado correctamente."
           );
         }
 
-        setModoFormulario(
-          null
-        );
-
-        setPacienteEditar(
-          null
-        );
-
-        setFormulario({
-          ...formularioInicial,
-        });
-
-        await cargarDatos(
+        setModalFormulario(
           false
+        );
+
+        setEditandoId(
+          null
+        );
+
+        setPacienteSeleccionado(
+          null
+        );
+
+        setFormulario(
+          formularioInicial
+        );
+
+        const resultado =
+          await obtenerPacientes(
+            usuario.laboratorioId
+          );
+
+        setPacientes(
+          resultado
         );
 
       } catch (error) {
@@ -683,12 +906,12 @@ export default function PacientesScreen() {
           error
         );
 
-        mostrarMensaje(
-          "error",
-          error instanceof
-          Error
-            ? error.message
-            : "No se pudo guardar el paciente."
+        Alert.alert(
+          "Error",
+          obtenerMensajeError(
+            error,
+            "No se pudo guardar el paciente."
+          )
         );
 
       } finally {
@@ -698,82 +921,19 @@ export default function PacientesScreen() {
       }
     };
 
-  const nombreSexo = (
-    sexo: string
-  ): string => {
-    if (
-      sexo ===
-      "masculino"
-    ) {
-      return "Masculino";
-    }
 
-    if (
-      sexo ===
-      "femenino"
-    ) {
-      return "Femenino";
-    }
-
-    if (
-      sexo ===
-      "otro"
-    ) {
-      return "Otro";
-    }
-
-    return sexo ||
-      "No registrado";
-  };
-
-  const formatearFechaRegistro = (
-    fecha: unknown
-  ): string => {
-    if (!fecha) {
-      return "No registrada";
-    }
-
-    try {
-      if (
-        typeof fecha ===
-          "object" &&
-        fecha !== null &&
-        "toDate" in fecha &&
-        typeof (
-          fecha as {
-            toDate?: unknown;
-          }
-        ).toDate ===
-          "function"
-      ) {
-        return (
-          fecha as {
-            toDate:
-              () => Date;
-          }
-        )
-          .toDate()
-          .toLocaleString(
-            "es-BO"
-          );
-      }
-
-      return "No registrada";
-
-    } catch {
-      return "No registrada";
-    }
-  };
-
-  if (
-    cargando
-  ) {
+  if (cargando) {
     return (
       <SafeAreaView
         style={
           styles.loadingPage
         }
       >
+        <StatusBar
+          barStyle="dark-content"
+          backgroundColor="#F8FAFC"
+        />
+
         <ActivityIndicator
           size="large"
           color="#15803D"
@@ -792,11 +952,12 @@ export default function PacientesScreen() {
             styles.loadingText
           }
         >
-          Cargando pacientes del laboratorio...
+          Cargando información...
         </Text>
       </SafeAreaView>
     );
   }
+
 
   return (
     <SafeAreaView
@@ -805,28 +966,17 @@ export default function PacientesScreen() {
       }
     >
       <StatusBar
-        barStyle="light-content"
-        backgroundColor="#166534"
+        barStyle="dark-content"
+        backgroundColor="#F8FAFC"
       />
 
       <ScrollView
         contentContainerStyle={
-          styles.scroll
+          styles.content
         }
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={
           false
-        }
-        refreshControl={
-          <RefreshControl
-            refreshing={
-              refrescando
-            }
-            onRefresh={
-              refrescar
-            }
-            tintColor="#15803D"
-          />
         }
       >
         <View
@@ -834,239 +984,176 @@ export default function PacientesScreen() {
             styles.header
           }
         >
+          <Pressable
+            style={
+              styles.backButton
+            }
+            onPress={() =>
+              router.back()
+            }
+          >
+            <Text
+              style={
+                styles.backText
+              }
+            >
+              ← Volver
+            </Text>
+          </Pressable>
+
           <View
             style={
               styles.headerRow
             }
           >
-            <Pressable
-              style={
-                styles.backButton
-              }
-              onPress={() =>
-                router.back()
-              }
-            >
-              <Text
-                style={
-                  styles.backText
-                }
-              >
-                ‹
-              </Text>
-            </Pressable>
-
             <View
               style={
-                styles.headerData
+                styles.headerText
               }
             >
               <Text
                 style={
-                  styles.headerSmall
+                  styles.eyebrow
                 }
               >
-                ATENCIÓN DEL LABORATORIO
+                PACIENTES
               </Text>
 
               <Text
                 style={
-                  styles.headerTitle
+                  styles.title
                 }
               >
-                Pacientes
+                Gestión de pacientes
               </Text>
 
               <Text
                 style={
-                  styles.headerDescription
+                  styles.subtitle
                 }
               >
-                Registra, consulta y actualiza los pacientes del laboratorio.
+                Registra, consulta y actualiza pacientes del laboratorio.
               </Text>
             </View>
 
-            <View
-              style={
-                styles.headerIcon
-              }
-            >
-              <Text
-                style={
-                  styles.headerEmoji
-                }
-              >
-                🧑‍⚕️
-              </Text>
-            </View>
-          </View>
-
-          <Pressable
-            style={
-              styles.newButton
-            }
-            onPress={
-              abrirCrear
-            }
-          >
-            <Text
-              style={
-                styles.newButtonText
-              }
-            >
-              + Nuevo paciente
-            </Text>
-          </Pressable>
-        </View>
-
-        {mensaje && (
-          <View
-            style={[
-              styles.message,
-
-              mensaje.tipo ===
-                "exito"
-                ? styles.messageSuccess
-                : styles.messageError,
-            ]}
-          >
-            <Text
-              style={
-                mensaje.tipo ===
-                "exito"
-                  ? styles.successText
-                  : styles.errorText
-              }
-            >
-              {mensaje.tipo ===
-              "exito"
-                ? "✓"
-                : "!"}
-            </Text>
-
-            <Text
-              style={[
-                styles.messageText,
-
-                mensaje.tipo ===
-                  "exito"
-                  ? styles.successText
-                  : styles.errorText,
-              ]}
-            >
-              {mensaje.texto}
-            </Text>
-          </View>
-        )}
-
-        <View
-          style={
-            styles.stats
-          }
-        >
-          <Stat
-            titulo="Pacientes"
-            valor={
-              pacientes.length
-            }
-            icono="🧑‍⚕️"
-            fondo="#DCFCE7"
-            color="#15803D"
-          />
-
-          <Stat
-            titulo="Masculino"
-            valor={
-              masculino
-            }
-            icono="♂"
-            fondo="#DBEAFE"
-            color="#1D4ED8"
-          />
-
-          <Stat
-            titulo="Femenino"
-            valor={
-              femenino
-            }
-            icono="♀"
-            fondo="#FCE7F3"
-            color="#BE185D"
-          />
-        </View>
-
-        <View
-          style={
-            styles.toolbar
-          }
-        >
-          <View
-            style={
-              styles.searchBox
-            }
-          >
-            <Text>
-              🔎
-            </Text>
-
-            <TextInput
-              style={
-                styles.searchInput
-              }
-              value={
-                busqueda
-              }
-              onChangeText={
-                setBusqueda
-              }
-              placeholder="Nombre, apellido, CI, teléfono, correo..."
-              placeholderTextColor="#94A3B8"
-            />
-          </View>
-
-          <Pressable
-            style={[
-              styles.filterButton,
-
-              mostrarFiltros &&
-                styles.filterButtonActive,
-            ]}
-            onPress={() =>
-              setMostrarFiltros(
-                !mostrarFiltros
-              )
-            }
-          >
-            <Text
-              style={
-                styles.filterButtonText
-              }
-            >
-              ⚙ Filtros
-            </Text>
-          </Pressable>
-        </View>
-
-        {mostrarFiltros && (
-          <View
-            style={
-              styles.filters
-            }
-          >
-            <View
-              style={
-                styles.filtersHeader
-              }
-            >
-              <Text
-                style={
-                  styles.filtersTitle
-                }
-              >
-                Filtros de pacientes
-              </Text>
-
+            {puedeCrear && (
               <Pressable
+                style={
+                  styles.newButton
+                }
+                onPress={
+                  abrirNuevo
+                }
+              >
+                <Text
+                  style={
+                    styles.newButtonText
+                  }
+                >
+                  + Nuevo
+                </Text>
+              </Pressable>
+            )}
+          </View>
+        </View>
+
+
+        <View
+          style={
+            styles.statsRow
+          }
+        >
+          <View
+            style={
+              styles.statCard
+            }
+          >
+            <Text
+              style={
+                styles.statLabel
+              }
+            >
+              TOTAL
+            </Text>
+
+            <Text
+              style={
+                styles.statValue
+              }
+            >
+              {pacientes.length}
+            </Text>
+          </View>
+
+          <View
+            style={
+              styles.statCard
+            }
+          >
+            <Text
+              style={
+                styles.statLabel
+              }
+            >
+              RESULTADOS
+            </Text>
+
+            <Text
+              style={
+                styles.statValue
+              }
+            >
+              {pacientesFiltrados.length}
+            </Text>
+          </View>
+        </View>
+
+
+        <View
+          style={
+            styles.filterCard
+          }
+        >
+          <View
+            style={
+              styles.sectionHeader
+            }
+          >
+            <View
+              style={{
+                flex: 1,
+              }}
+            >
+              <Text
+                style={
+                  styles.sectionEyebrow
+                }
+              >
+                BÚSQUEDA
+              </Text>
+
+              <Text
+                style={
+                  styles.sectionTitle
+                }
+              >
+                Buscar pacientes
+              </Text>
+
+              <Text
+                style={
+                  styles.sectionSubtitle
+                }
+              >
+                Busca por nombres, apellidos, CI, teléfono, correo o fecha de nacimiento.
+              </Text>
+            </View>
+
+            {filtrosActivos && (
+              <Pressable
+                style={
+                  styles.clearButton
+                }
                 onPress={
                   limpiarFiltros
                 }
@@ -1079,156 +1166,161 @@ export default function PacientesScreen() {
                   Limpiar
                 </Text>
               </Pressable>
-            </View>
-
-            <Text
-              style={
-                styles.label
-              }
-            >
-              Fecha de nacimiento
-            </Text>
-
-            <TextInput
-              style={
-                styles.input
-              }
-              value={
-                fechaFiltro
-              }
-              onChangeText={
-                setFechaFiltro
-              }
-              placeholder="AAAA-MM-DD"
-              placeholderTextColor="#94A3B8"
-              maxLength={
-                10
-              }
-            />
-
-            <Text
-              style={[
-                styles.label,
-                styles.spacingTop,
-              ]}
-            >
-              Sexo
-            </Text>
-
-            <View
-              style={
-                styles.chips
-              }
-            >
-              <Chip
-                titulo="Todos"
-                activo={
-                  sexoFiltro ===
-                  "todos"
-                }
-                onPress={() =>
-                  setSexoFiltro(
-                    "todos"
-                  )
-                }
-              />
-
-              <Chip
-                titulo="Masculino"
-                activo={
-                  sexoFiltro ===
-                  "masculino"
-                }
-                onPress={() =>
-                  setSexoFiltro(
-                    "masculino"
-                  )
-                }
-              />
-
-              <Chip
-                titulo="Femenino"
-                activo={
-                  sexoFiltro ===
-                  "femenino"
-                }
-                onPress={() =>
-                  setSexoFiltro(
-                    "femenino"
-                  )
-                }
-              />
-
-              <Chip
-                titulo="Otro"
-                activo={
-                  sexoFiltro ===
-                  "otro"
-                }
-                onPress={() =>
-                  setSexoFiltro(
-                    "otro"
-                  )
-                }
-              />
-            </View>
+            )}
           </View>
-        )}
+
+          <TextInput
+            style={
+              styles.searchInput
+            }
+            value={
+              busqueda
+            }
+            onChangeText={
+              setBusqueda
+            }
+            placeholder="Buscar paciente..."
+            placeholderTextColor="#94A3B8"
+            autoCapitalize="none"
+          />
+
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={
+              false
+            }
+            contentContainerStyle={
+              styles.chips
+            }
+          >
+            {camposBusqueda.map(
+              (item) => (
+                <Pressable
+                  key={
+                    item.valor
+                  }
+                  style={[
+                    styles.chip,
+
+                    campoBusqueda ===
+                      item.valor &&
+                      styles.chipActive,
+                  ]}
+                  onPress={() =>
+                    setCampoBusqueda(
+                      item.valor
+                    )
+                  }
+                >
+                  <Text
+                    style={[
+                      styles.chipText,
+
+                      campoBusqueda ===
+                        item.valor &&
+                        styles.chipTextActive,
+                    ]}
+                  >
+                    {item.texto}
+                  </Text>
+                </Pressable>
+              )
+            )}
+          </ScrollView>
+
+          <Text
+            style={
+              styles.fieldLabel
+            }
+          >
+            Fecha de nacimiento
+          </Text>
+
+          <TextInput
+            style={
+              styles.input
+            }
+            value={
+              fechaFiltro
+            }
+            onChangeText={
+              setFechaFiltro
+            }
+            placeholder="AAAA-MM-DD"
+            placeholderTextColor="#94A3B8"
+            keyboardType="numbers-and-punctuation"
+          />
+        </View>
+
 
         <View
           style={
             styles.listHeader
           }
         >
-          <View
-            style={{
-              flex: 1,
-            }}
-          >
-            <Text
-              style={
-                styles.listTitle
-              }
-            >
-              Pacientes registrados
-            </Text>
-
-            <Text
-              style={
-                styles.listSubtitle
-              }
-            >
-              Se muestran únicamente los datos principales.
-            </Text>
-          </View>
-
-          <View
+          <Text
             style={
-              styles.resultBadge
+              styles.listTitle
             }
           >
-            <Text
-              style={
-                styles.resultText
-              }
-            >
-              {
-                pacientesFiltrados.length
-              }
-            </Text>
-          </View>
+            Pacientes registrados
+          </Text>
+
+          <Text
+            style={
+              styles.resultText
+            }
+          >
+            {pacientesFiltrados.length} resultado
+            {pacientesFiltrados.length ===
+            1
+              ? ""
+              : "s"}
+          </Text>
         </View>
 
-        {pacientesFiltrados.length ===
-        0 ? (
+
+        {!puedeVer ? (
           <View
             style={
-              styles.empty
+              styles.emptyCard
             }
           >
             <Text
               style={
-                styles.emptyEmoji
+                styles.emptyIcon
+              }
+            >
+              🔒
+            </Text>
+
+            <Text
+              style={
+                styles.emptyTitle
+              }
+            >
+              Sin acceso
+            </Text>
+
+            <Text
+              style={
+                styles.emptyText
+              }
+            >
+              No tienes permiso para consultar pacientes.
+            </Text>
+          </View>
+
+        ) : pacientesFiltrados.length ===
+          0 ? (
+          <View
+            style={
+              styles.emptyCard
+            }
+          >
+            <Text
+              style={
+                styles.emptyIcon
               }
             >
               🔎
@@ -1239,7 +1331,7 @@ export default function PacientesScreen() {
                 styles.emptyTitle
               }
             >
-              No se encontraron pacientes
+              No existen coincidencias
             </Text>
 
             <Text
@@ -1247,40 +1339,24 @@ export default function PacientesScreen() {
                 styles.emptyText
               }
             >
-              Cambia la búsqueda o los filtros aplicados.
+              Cambia o limpia los filtros para buscar nuevamente.
             </Text>
-
-            <Pressable
-              onPress={
-                limpiarFiltros
-              }
-            >
-              <Text
-                style={
-                  styles.emptyAction
-                }
-              >
-                Limpiar filtros
-              </Text>
-            </Pressable>
           </View>
 
         ) : (
           pacientesFiltrados.map(
-            (
-              paciente
-            ) => (
+            (paciente) => (
               <View
                 key={
                   paciente.id
                 }
                 style={
-                  styles.card
+                  styles.patientCard
                 }
               >
                 <View
                   style={
-                    styles.cardTop
+                    styles.patientTop
                   }
                 >
                   <View
@@ -1293,18 +1369,15 @@ export default function PacientesScreen() {
                         styles.avatarText
                       }
                     >
-                      {(
-                        paciente.nombres ||
-                        "P"
-                      )
-                        .charAt(0)
-                        .toUpperCase()}
+                      {obtenerIniciales(
+                        paciente
+                      )}
                     </Text>
                   </View>
 
                   <View
                     style={
-                      styles.cardData
+                      styles.patientInfo
                     }
                   >
                     <Text
@@ -1318,98 +1391,104 @@ export default function PacientesScreen() {
 
                     <Text
                       style={
-                        styles.patientSecondary
+                        styles.patientMeta
                       }
                     >
-                      CI:{" "}
-                      {paciente.ci}
+                      CI: {paciente.ci}
                     </Text>
 
                     <Text
                       style={
-                        styles.patientSecondary
+                        styles.patientMeta
                       }
                     >
                       Nacimiento:{" "}
-                      {paciente.fechaNacimiento}
+                      {formatearFecha(
+                        paciente.fechaNacimiento
+                      )}
                     </Text>
                   </View>
                 </View>
 
                 <View
                   style={
-                    styles.actions
+                    styles.cardActions
                   }
                 >
                   <Pressable
                     style={[
-                      styles.action,
-                      styles.viewAction,
+                      styles.actionButton,
+                      styles.detailButton,
                     ]}
                     onPress={() =>
-                      setPacienteVer(
+                      abrirDetalle(
                         paciente
                       )
                     }
                   >
                     <Text
                       style={
-                        styles.viewText
+                        styles.detailButtonText
                       }
                     >
-                      👁 Ver
+                      Ver detalle
                     </Text>
                   </Pressable>
 
-                  <Pressable
-                    style={[
-                      styles.action,
-                      styles.detailAction,
-                    ]}
-                    onPress={() =>
-                      setPacienteDetalle(
-                        paciente
-                      )
-                    }
-                  >
-                    <Text
-                      style={
-                        styles.detailText
+                  {puedeVerHistorial && (
+                    <Pressable
+                      style={[
+                        styles.actionButton,
+                        styles.historyButton,
+                      ]}
+                      onPress={() =>
+                        abrirHistorial(
+                          paciente
+                        )
                       }
                     >
-                      📄 Ver detalle
-                    </Text>
-                  </Pressable>
+                      <Text
+                        style={
+                          styles.historyButtonText
+                        }
+                      >
+                        Historial
+                      </Text>
+                    </Pressable>
+                  )}
+
+                  {puedeEditar && (
+                    <Pressable
+                      style={[
+                        styles.actionButton,
+                        styles.editButton,
+                      ]}
+                      onPress={() =>
+                        abrirEditar(
+                          paciente
+                        )
+                      }
+                    >
+                      <Text
+                        style={
+                          styles.editButtonText
+                        }
+                      >
+                        Editar
+                      </Text>
+                    </Pressable>
+                  )}
                 </View>
-
-                <Pressable
-                  style={
-                    styles.editButton
-                  }
-                  onPress={() =>
-                    abrirEditar(
-                      paciente
-                    )
-                  }
-                >
-                  <Text
-                    style={
-                      styles.editText
-                    }
-                  >
-                    ✎ Editar paciente
-                  </Text>
-                </Pressable>
               </View>
             )
           )
         )}
       </ScrollView>
 
+
       <Modal
         visible={
-          modoFormulario !==
-          null
+          modalFormulario
         }
         transparent
         animationType="slide"
@@ -1428,100 +1507,153 @@ export default function PacientesScreen() {
               : undefined
           }
         >
-          <ScrollView
-            contentContainerStyle={
-              styles.modalScroll
+          <View
+            style={
+              styles.modalCard
             }
-            keyboardShouldPersistTaps="handled"
           >
             <View
               style={
-                styles.modal
+                styles.modalHeader
               }
             >
-              <ModalHeader
-                titulo={
-                  modoFormulario ===
-                  "crear"
-                    ? "Nuevo paciente"
-                    : "Editar paciente"
+              <View
+                style={{
+                  flex: 1,
+                }}
+              >
+                <Text
+                  style={
+                    styles.modalEyebrow
+                  }
+                >
+                  {editandoId
+                    ? "ACTUALIZAR"
+                    : "NUEVO REGISTRO"}
+                </Text>
+
+                <Text
+                  style={
+                    styles.modalTitle
+                  }
+                >
+                  {editandoId
+                    ? "Editar paciente"
+                    : "Registrar paciente"}
+                </Text>
+              </View>
+
+              <Pressable
+                style={
+                  styles.closeButton
                 }
-                subtitulo="Completa la información clínica y de contacto."
-                cerrar={
+                onPress={
                   cerrarFormulario
                 }
-              />
+                disabled={
+                  guardando
+                }
+              >
+                <Text
+                  style={
+                    styles.closeButtonText
+                  }
+                >
+                  ×
+                </Text>
+              </Pressable>
+            </View>
 
-              <Campo
-                titulo="Nombres *"
-                valor={
+            <ScrollView
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={
+                false
+              }
+              contentContainerStyle={
+                styles.formContent
+              }
+            >
+              <CampoTexto
+                label="Nombres *"
+                value={
                   formulario.nombres
                 }
-                onChange={(
+                onChangeText={(
                   valor
                 ) =>
-                  actualizarCampo(
+                  cambiarCampo(
                     "nombres",
                     valor
                   )
                 }
-                placeholder="Nombres"
+                placeholder="Ej. Juan Carlos"
+                editable={
+                  !guardando
+                }
               />
 
-              <Campo
-                titulo="Apellidos *"
-                valor={
+              <CampoTexto
+                label="Apellidos *"
+                value={
                   formulario.apellidos
                 }
-                onChange={(
+                onChangeText={(
                   valor
                 ) =>
-                  actualizarCampo(
+                  cambiarCampo(
                     "apellidos",
                     valor
                   )
                 }
-                placeholder="Apellidos"
+                placeholder="Ej. Pérez López"
+                editable={
+                  !guardando
+                }
               />
 
-              <Campo
-                titulo="CI / Carnet *"
-                valor={
+              <CampoTexto
+                label="CI / Carnet *"
+                value={
                   formulario.ci
                 }
-                onChange={(
+                onChangeText={(
                   valor
                 ) =>
-                  actualizarCampo(
+                  cambiarCampo(
                     "ci",
                     valor
                   )
                 }
-                placeholder="Documento de identidad"
+                placeholder="Ej. 1234567"
+                keyboardType="default"
+                editable={
+                  !guardando
+                }
               />
 
-              <Campo
-                titulo="Fecha de nacimiento *"
-                valor={
+              <CampoTexto
+                label="Fecha de nacimiento *"
+                value={
                   formulario.fechaNacimiento
                 }
-                onChange={(
+                onChangeText={(
                   valor
                 ) =>
-                  actualizarCampo(
+                  cambiarCampo(
                     "fechaNacimiento",
                     valor
                   )
                 }
                 placeholder="AAAA-MM-DD"
-                maxLength={
-                  10
+                keyboardType="numbers-and-punctuation"
+                editable={
+                  !guardando
                 }
               />
 
               <Text
                 style={
-                  styles.label
+                  styles.fieldLabel
                 }
               >
                 Sexo *
@@ -1529,172 +1661,174 @@ export default function PacientesScreen() {
 
               <View
                 style={
-                  styles.sexOptions
+                  styles.sexRow
                 }
               >
-                <Option
-                  titulo="Masculino"
-                  seleccionado={
-                    formulario.sexo ===
-                    "masculino"
-                  }
-                  onPress={() =>
-                    actualizarCampo(
-                      "sexo",
-                      "masculino"
-                    )
-                  }
-                />
+                {[
+                  "Masculino",
+                  "Femenino",
+                  "Otro",
+                ].map(
+                  (sexo) => (
+                    <Pressable
+                      key={
+                        sexo
+                      }
+                      style={[
+                        styles.sexButton,
 
-                <Option
-                  titulo="Femenino"
-                  seleccionado={
-                    formulario.sexo ===
-                    "femenino"
-                  }
-                  onPress={() =>
-                    actualizarCampo(
-                      "sexo",
-                      "femenino"
-                    )
-                  }
-                />
+                        formulario.sexo ===
+                          sexo &&
+                          styles.sexButtonActive,
+                      ]}
+                      onPress={() =>
+                        cambiarCampo(
+                          "sexo",
+                          sexo
+                        )
+                      }
+                      disabled={
+                        guardando
+                      }
+                    >
+                      <Text
+                        style={[
+                          styles.sexButtonText,
 
-                <Option
-                  titulo="Otro"
-                  seleccionado={
-                    formulario.sexo ===
-                    "otro"
-                  }
-                  onPress={() =>
-                    actualizarCampo(
-                      "sexo",
-                      "otro"
-                    )
-                  }
-                />
+                          formulario.sexo ===
+                            sexo &&
+                            styles.sexButtonTextActive,
+                        ]}
+                      >
+                        {sexo}
+                      </Text>
+                    </Pressable>
+                  )
+                )}
               </View>
 
-              <Campo
-                titulo="Teléfono"
-                valor={
+              <CampoTexto
+                label="Teléfono"
+                value={
                   formulario.telefono
                 }
-                onChange={(
+                onChangeText={(
                   valor
                 ) =>
-                  actualizarCampo(
+                  cambiarCampo(
                     "telefono",
                     valor
                   )
                 }
-                placeholder="Número de teléfono"
+                placeholder="Ej. 70707070"
                 keyboardType="phone-pad"
+                editable={
+                  !guardando
+                }
               />
 
-              <Campo
-                titulo="Correo electrónico"
-                valor={
+              <CampoTexto
+                label="Correo electrónico"
+                value={
                   formulario.email
                 }
-                onChange={(
+                onChangeText={(
                   valor
                 ) =>
-                  actualizarCampo(
+                  cambiarCampo(
                     "email",
                     valor
                   )
                 }
-                placeholder="paciente@correo.com"
+                placeholder="correo@ejemplo.com"
                 keyboardType="email-address"
+                autoCapitalize="none"
+                editable={
+                  !guardando
+                }
               />
 
-              <Campo
-                titulo="Dirección *"
-                valor={
+              <CampoTexto
+                label="Dirección"
+                value={
                   formulario.direccion
                 }
-                onChange={(
+                onChangeText={(
                   valor
                 ) =>
-                  actualizarCampo(
+                  cambiarCampo(
                     "direccion",
                     valor
                   )
                 }
-                placeholder="Dirección"
-                multiline
+                placeholder="Dirección del paciente"
+                editable={
+                  !guardando
+                }
               />
 
-              <Campo
-                titulo="Ciudad *"
-                valor={
+              <CampoTexto
+                label="Ciudad"
+                value={
                   formulario.ciudad
                 }
-                onChange={(
+                onChangeText={(
                   valor
                 ) =>
-                  actualizarCampo(
+                  cambiarCampo(
                     "ciudad",
                     valor
                   )
                 }
-                placeholder="Ciudad"
+                placeholder="Ej. Cochabamba"
+                editable={
+                  !guardando
+                }
               />
 
-              <Campo
-                titulo="Alergias"
-                valor={
+              <CampoTexto
+                label="Alergias"
+                value={
                   formulario.alergias
                 }
-                onChange={(
+                onChangeText={(
                   valor
                 ) =>
-                  actualizarCampo(
+                  cambiarCampo(
                     "alergias",
                     valor
                   )
                 }
-                placeholder="Ej.: Penicilina, látex"
+                placeholder="Separadas por coma"
                 multiline
+                editable={
+                  !guardando
+                }
               />
 
-              <Text
-                style={
-                  styles.help
-                }
-              >
-                Separa varias alergias con comas.
-              </Text>
-
-              <Campo
-                titulo="Enfermedades previas"
-                valor={
+              <CampoTexto
+                label="Enfermedades previas"
+                value={
                   formulario.enfermedadesPrevias
                 }
-                onChange={(
+                onChangeText={(
                   valor
                 ) =>
-                  actualizarCampo(
+                  cambiarCampo(
                     "enfermedadesPrevias",
                     valor
                   )
                 }
-                placeholder="Ej.: Diabetes, hipertensión"
+                placeholder="Separadas por coma"
                 multiline
-              />
-
-              <Text
-                style={
-                  styles.help
+                editable={
+                  !guardando
                 }
-              >
-                Separa varios antecedentes con comas.
-              </Text>
+              />
 
               <View
                 style={
-                  styles.modalActions
+                  styles.formActions
                 }
               >
                 <Pressable
@@ -1704,10 +1838,13 @@ export default function PacientesScreen() {
                   onPress={
                     cerrarFormulario
                   }
+                  disabled={
+                    guardando
+                  }
                 >
                   <Text
                     style={
-                      styles.cancelText
+                      styles.cancelButtonText
                     }
                   >
                     Cancelar
@@ -1719,7 +1856,7 @@ export default function PacientesScreen() {
                     styles.saveButton,
 
                     guardando &&
-                      styles.disabled,
+                      styles.disabledButton,
                   ]}
                   onPress={
                     guardarPaciente
@@ -1735,32 +1872,31 @@ export default function PacientesScreen() {
                   ) : (
                     <Text
                       style={
-                        styles.saveText
+                        styles.saveButtonText
                       }
                     >
-                      {modoFormulario ===
-                      "crear"
-                        ? "Registrar"
-                        : "Guardar cambios"}
+                      {editandoId
+                        ? "Guardar cambios"
+                        : "Registrar"}
                     </Text>
                   )}
                 </Pressable>
               </View>
-            </View>
-          </ScrollView>
+            </ScrollView>
+          </View>
         </KeyboardAvoidingView>
       </Modal>
 
+
       <Modal
         visible={
-          pacienteVer !==
-          null
+          modalDetalle
         }
         transparent
         animationType="fade"
         onRequestClose={() =>
-          setPacienteVer(
-            null
+          setModalDetalle(
+            false
           )
         }
       >
@@ -1771,428 +1907,256 @@ export default function PacientesScreen() {
         >
           <View
             style={[
-              styles.modal,
-              styles.smallModal,
+              styles.modalCard,
+              styles.detailModal,
             ]}
           >
-            {pacienteVer && (
-              <>
-                <ModalHeader
-                  titulo="Paciente"
-                  subtitulo="Vista rápida"
-                  cerrar={() =>
-                    setPacienteVer(
-                      null
-                    )
+            <View
+              style={
+                styles.modalHeader
+              }
+            >
+              <View
+                style={{
+                  flex: 1,
+                }}
+              >
+                <Text
+                  style={
+                    styles.modalEyebrow
                   }
-                />
+                >
+                  INFORMACIÓN COMPLETA
+                </Text>
 
+                <Text
+                  style={
+                    styles.modalTitle
+                  }
+                >
+                  Detalle del paciente
+                </Text>
+              </View>
+
+              <Pressable
+                style={
+                  styles.closeButton
+                }
+                onPress={() =>
+                  setModalDetalle(
+                    false
+                  )
+                }
+              >
+                <Text
+                  style={
+                    styles.closeButtonText
+                  }
+                >
+                  ×
+                </Text>
+              </Pressable>
+            </View>
+
+            {pacienteSeleccionado && (
+              <ScrollView
+                showsVerticalScrollIndicator={
+                  false
+                }
+                contentContainerStyle={
+                  styles.detailContent
+                }
+              >
                 <View
                   style={
-                    styles.profile
+                    styles.detailProfile
                   }
                 >
                   <View
                     style={
-                      styles.profileAvatar
+                      styles.detailAvatar
                     }
                   >
                     <Text
                       style={
-                        styles.profileAvatarText
+                        styles.detailAvatarText
                       }
                     >
-                      {pacienteVer.nombres
-                        .charAt(0)
-                        .toUpperCase()}
+                      {obtenerIniciales(
+                        pacienteSeleccionado
+                      )}
                     </Text>
                   </View>
 
-                  <Text
-                    style={
-                      styles.profileName
-                    }
+                  <View
+                    style={{
+                      flex: 1,
+                    }}
                   >
-                    {pacienteVer.nombres}{" "}
-                    {pacienteVer.apellidos}
-                  </Text>
+                    <Text
+                      style={
+                        styles.detailName
+                      }
+                    >
+                      {
+                        pacienteSeleccionado.nombres
+                      }{" "}
+                      {
+                        pacienteSeleccionado.apellidos
+                      }
+                    </Text>
 
-                  <Text
-                    style={
-                      styles.profileInfo
-                    }
-                  >
-                    CI:{" "}
-                    {pacienteVer.ci}
-                  </Text>
-
-                  <Text
-                    style={
-                      styles.profileInfo
-                    }
-                  >
-                    {nombreSexo(
-                      pacienteVer.sexo
-                    )}
-                  </Text>
-
-                  <Text
-                    style={
-                      styles.profileInfo
-                    }
-                  >
-                    {pacienteVer.telefono ||
-                      "Sin teléfono"}
-                  </Text>
+                    <Text
+                      style={
+                        styles.detailSubtext
+                      }
+                    >
+                      CI:{" "}
+                      {
+                        pacienteSeleccionado.ci
+                      }
+                    </Text>
+                  </View>
                 </View>
+
+                <Detalle
+                  label="Fecha de nacimiento"
+                  value={
+                    formatearFecha(
+                      pacienteSeleccionado.fechaNacimiento
+                    )
+                  }
+                />
+
+                <Detalle
+                  label="Sexo"
+                  value={
+                    pacienteSeleccionado.sexo
+                  }
+                />
+
+                <Detalle
+                  label="Teléfono"
+                  value={
+                    pacienteSeleccionado.telefono
+                  }
+                />
+
+                <Detalle
+                  label="Correo"
+                  value={
+                    pacienteSeleccionado.email
+                  }
+                />
+
+                <Detalle
+                  label="Dirección"
+                  value={
+                    pacienteSeleccionado.direccion
+                  }
+                />
+
+                <Detalle
+                  label="Ciudad"
+                  value={
+                    pacienteSeleccionado.ciudad
+                  }
+                />
+
+                <Detalle
+                  label="Alergias"
+                  value={
+                    pacienteSeleccionado.alergias.length >
+                    0
+                      ? pacienteSeleccionado.alergias.join(
+                          ", "
+                        )
+                      : "Sin información"
+                  }
+                />
+
+                <Detalle
+                  label="Enfermedades previas"
+                  value={
+                    pacienteSeleccionado.enfermedadesPrevias.length >
+                    0
+                      ? pacienteSeleccionado.enfermedadesPrevias.join(
+                          ", "
+                        )
+                      : "Sin información"
+                  }
+                />
+
+                <Detalle
+                  label="Identificador"
+                  value={
+                    pacienteSeleccionado.pacienteId
+                  }
+                />
 
                 <Pressable
                   style={
-                    styles.fullButton
+                    styles.closeDetailButton
                   }
                   onPress={() =>
-                    setPacienteVer(
-                      null
+                    setModalDetalle(
+                      false
                     )
                   }
                 >
                   <Text
                     style={
-                      styles.fullButtonText
+                      styles.closeDetailText
                     }
                   >
                     Cerrar
                   </Text>
                 </Pressable>
-              </>
+              </ScrollView>
             )}
           </View>
-        </View>
-      </Modal>
-
-      <Modal
-        visible={
-          pacienteDetalle !==
-          null
-        }
-        transparent
-        animationType="fade"
-        onRequestClose={() =>
-          setPacienteDetalle(
-            null
-          )
-        }
-      >
-        <View
-          style={
-            styles.modalOverlay
-          }
-        >
-          <ScrollView
-            contentContainerStyle={
-              styles.modalScroll
-            }
-          >
-            <View
-              style={
-                styles.modal
-              }
-            >
-              {pacienteDetalle && (
-                <>
-                  <ModalHeader
-                    titulo="Detalle del paciente"
-                    subtitulo="Información completa registrada"
-                    cerrar={() =>
-                      setPacienteDetalle(
-                        null
-                      )
-                    }
-                  />
-
-                  <Detalle
-                    titulo="Nombres"
-                    valor={
-                      pacienteDetalle.nombres
-                    }
-                  />
-
-                  <Detalle
-                    titulo="Apellidos"
-                    valor={
-                      pacienteDetalle.apellidos
-                    }
-                  />
-
-                  <Detalle
-                    titulo="CI / Carnet"
-                    valor={
-                      pacienteDetalle.ci
-                    }
-                  />
-
-                  <Detalle
-                    titulo="Fecha de nacimiento"
-                    valor={
-                      pacienteDetalle.fechaNacimiento
-                    }
-                  />
-
-                  <Detalle
-                    titulo="Sexo"
-                    valor={
-                      nombreSexo(
-                        pacienteDetalle.sexo
-                      )
-                    }
-                  />
-
-                  <Detalle
-                    titulo="Teléfono"
-                    valor={
-                      pacienteDetalle.telefono
-                    }
-                  />
-
-                  <Detalle
-                    titulo="Correo"
-                    valor={
-                      pacienteDetalle.email
-                    }
-                  />
-
-                  <Detalle
-                    titulo="Dirección"
-                    valor={
-                      pacienteDetalle.direccion
-                    }
-                  />
-
-                  <Detalle
-                    titulo="Ciudad"
-                    valor={
-                      pacienteDetalle.ciudad
-                    }
-                  />
-
-                  <Detalle
-                    titulo="Alergias"
-                    valor={
-                      pacienteDetalle.alergias.length
-                        ? pacienteDetalle.alergias.join(
-                            ", "
-                          )
-                        : "Ninguna registrada"
-                    }
-                  />
-
-                  <Detalle
-                    titulo="Enfermedades previas"
-                    valor={
-                      pacienteDetalle.enfermedadesPrevias.length
-                        ? pacienteDetalle.enfermedadesPrevias.join(
-                            ", "
-                          )
-                        : "Ninguna registrada"
-                    }
-                  />
-
-                  <Detalle
-                    titulo="Fecha de registro"
-                    valor={
-                      formatearFechaRegistro(
-                        pacienteDetalle.fechaRegistro
-                      )
-                    }
-                  />
-
-                  <Pressable
-                    style={
-                      styles.fullButton
-                    }
-                    onPress={() =>
-                      setPacienteDetalle(
-                        null
-                      )
-                    }
-                  >
-                    <Text
-                      style={
-                        styles.fullButtonText
-                      }
-                    >
-                      Cerrar
-                    </Text>
-                  </Pressable>
-                </>
-              )}
-            </View>
-          </ScrollView>
         </View>
       </Modal>
     </SafeAreaView>
   );
 }
 
-function Stat({
-  titulo,
-  valor,
-  icono,
-  fondo,
-  color,
-}: {
-  titulo: string;
-  valor: number;
-  icono: string;
-  fondo: string;
-  color: string;
-}) {
-  return (
-    <View
-      style={
-        styles.stat
-      }
-    >
-      <View
-        style={[
-          styles.statIcon,
-          {
-            backgroundColor:
-              fondo,
-          },
-        ]}
-      >
-        <Text>
-          {icono}
-        </Text>
-      </View>
 
-      <Text
-        style={[
-          styles.statValue,
-          {
-            color,
-          },
-        ]}
-      >
-        {valor}
-      </Text>
-
-      <Text
-        style={
-          styles.statTitle
-        }
-      >
-        {titulo}
-      </Text>
-    </View>
-  );
-}
-
-function Chip({
-  titulo,
-  activo,
-  onPress,
-}: {
-  titulo: string;
-  activo: boolean;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable
-      style={[
-        styles.chip,
-        activo &&
-          styles.chipActive,
-      ]}
-      onPress={
-        onPress
-      }
-    >
-      <Text
-        style={[
-          styles.chipText,
-          activo &&
-            styles.chipTextActive,
-        ]}
-      >
-        {titulo}
-      </Text>
-    </Pressable>
-  );
-}
-
-function Option({
-  titulo,
-  seleccionado,
-  onPress,
-}: {
-  titulo: string;
-  seleccionado: boolean;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable
-      style={[
-        styles.option,
-        seleccionado &&
-          styles.optionSelected,
-      ]}
-      onPress={
-        onPress
-      }
-    >
-      <View
-        style={[
-          styles.radio,
-          seleccionado &&
-            styles.radioSelected,
-        ]}
-      >
-        {seleccionado && (
-          <View
-            style={
-              styles.radioInner
-            }
-          />
-        )}
-      </View>
-
-      <Text
-        style={[
-          styles.optionText,
-          seleccionado &&
-            styles.optionTextSelected,
-        ]}
-      >
-        {titulo}
-      </Text>
-    </Pressable>
-  );
-}
-
-function Campo({
-  titulo,
-  valor,
-  onChange,
-  placeholder,
-  multiline = false,
-  keyboardType = "default",
-  maxLength,
-}: {
-  titulo: string;
-  valor: string;
-  onChange: (
-    valor: string
-  ) => void;
+type CampoTextoProps = {
+  label: string;
+  value: string;
+  onChangeText:
+    (
+      valor: string
+    ) => void;
   placeholder: string;
-  multiline?: boolean;
   keyboardType?:
     | "default"
     | "email-address"
-    | "phone-pad";
-  maxLength?: number;
-}) {
+    | "phone-pad"
+    | "numbers-and-punctuation";
+  autoCapitalize?:
+    | "none"
+    | "sentences"
+    | "words"
+    | "characters";
+  multiline?: boolean;
+  editable?: boolean;
+};
+
+
+function CampoTexto({
+  label,
+  value,
+  onChangeText,
+  placeholder,
+  keyboardType =
+    "default",
+  autoCapitalize =
+    "sentences",
+  multiline = false,
+  editable = true,
+}: CampoTextoProps) {
   return (
     <View
       style={
@@ -2201,10 +2165,10 @@ function Campo({
     >
       <Text
         style={
-          styles.label
+          styles.fieldLabel
         }
       >
-        {titulo}
+        {label}
       </Text>
 
       <TextInput
@@ -2212,101 +2176,50 @@ function Campo({
           styles.input,
 
           multiline &&
-            styles.multiline,
+            styles.textArea,
         ]}
         value={
-          valor
+          value
         }
         onChangeText={
-          onChange
+          onChangeText
         }
         placeholder={
           placeholder
         }
         placeholderTextColor="#94A3B8"
-        multiline={
-          multiline
-        }
         keyboardType={
           keyboardType
         }
-        maxLength={
-          maxLength
-        }
         autoCapitalize={
-          keyboardType ===
-          "email-address"
-            ? "none"
-            : "sentences"
+          autoCapitalize
+        }
+        autoCorrect={
+          false
+        }
+        multiline={
+          multiline
+        }
+        textAlignVertical={
+          multiline
+            ? "top"
+            : "center"
+        }
+        editable={
+          editable
         }
       />
     </View>
   );
 }
 
-function ModalHeader({
-  titulo,
-  subtitulo,
-  cerrar,
-}: {
-  titulo: string;
-  subtitulo: string;
-  cerrar: () => void;
-}) {
-  return (
-    <View
-      style={
-        styles.modalHeader
-      }
-    >
-      <View
-        style={{
-          flex: 1,
-        }}
-      >
-        <Text
-          style={
-            styles.modalTitle
-          }
-        >
-          {titulo}
-        </Text>
-
-        <Text
-          style={
-            styles.modalSubtitle
-          }
-        >
-          {subtitulo}
-        </Text>
-      </View>
-
-      <Pressable
-        style={
-          styles.modalClose
-        }
-        onPress={
-          cerrar
-        }
-      >
-        <Text
-          style={
-            styles.modalCloseText
-          }
-        >
-          ×
-        </Text>
-      </Pressable>
-    </View>
-  );
-}
 
 function Detalle({
-  titulo,
-  valor,
+  label,
+  value,
 }: {
-  titulo: string;
-  valor: string;
+  label: string;
+  value?: string;
 }) {
   return (
     <View
@@ -2319,7 +2232,7 @@ function Detalle({
           styles.detailLabel
         }
       >
-        {titulo}
+        {label}
       </Text>
 
       <Text
@@ -2327,909 +2240,798 @@ function Detalle({
           styles.detailValue
         }
       >
-        {valor ||
-          "No registrado"}
+        {value?.trim()
+          ? value
+          : "Sin información"}
       </Text>
     </View>
   );
 }
+
+
+function normalizarTexto(
+  valor: unknown
+): string {
+  return String(
+    valor ?? ""
+  )
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(
+      /[\u0300-\u036f]/g,
+      ""
+    );
+}
+
+
+function textoALista(
+  texto: string
+): string[] {
+  return texto
+    .split(",")
+    .map(
+      (item) =>
+        item.trim()
+    )
+    .filter(
+      (item) =>
+        item !== ""
+    );
+}
+
+
+function correoValido(
+  correo: string
+): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(
+    correo.trim()
+  );
+}
+
+
+function fechaValida(
+  fecha: string
+): boolean {
+  if (
+    !/^\d{4}-\d{2}-\d{2}$/.test(
+      fecha
+    )
+  ) {
+    return false;
+  }
+
+  const valor =
+    new Date(
+      `${fecha}T00:00:00`
+    );
+
+  return !Number.isNaN(
+    valor.getTime()
+  );
+}
+
+
+function formatearFecha(
+  fecha: string
+): string {
+  const partes =
+    fecha.split(
+      "-"
+    );
+
+  if (
+    partes.length !==
+    3
+  ) {
+    return fecha ||
+      "Sin información";
+  }
+
+  return `${partes[2]}/${partes[1]}/${partes[0]}`;
+}
+
+
+function obtenerIniciales(
+  paciente: Paciente
+): string {
+  const nombre =
+    paciente.nombres
+      .trim()
+      .charAt(0);
+
+  const apellido =
+    paciente.apellidos
+      .trim()
+      .charAt(0);
+
+  return `${nombre}${apellido}`
+    .toUpperCase() ||
+    "P";
+}
+
+
+function obtenerMensajeError(
+  error: unknown,
+  defecto: string
+): string {
+  if (
+    error instanceof
+    Error
+  ) {
+    return error.message;
+  }
+
+  return defecto;
+}
+
 
 const styles =
   StyleSheet.create({
     page: {
       flex: 1,
       backgroundColor:
-        "#F1F5F9",
+        "#F8FAFC",
     },
 
-    scroll: {
-      paddingBottom: 45,
-    },
-
-    header: {
-      paddingHorizontal: 17,
-      paddingTop: 25,
-      paddingBottom: 28,
-      backgroundColor:
-        "#166534",
-    },
-
-    headerRow: {
-      flexDirection:
-        "row",
-      alignItems:
-        "center",
-    },
-
-    backButton: {
-      width: 42,
-      height: 42,
-      alignItems:
-        "center",
-      justifyContent:
-        "center",
-      marginRight: 10,
-      borderRadius: 13,
-      backgroundColor:
-        "rgba(255,255,255,.12)",
-    },
-
-    backText: {
-      marginTop: -4,
-      color:
-        "#FFFFFF",
-      fontSize: 33,
-    },
-
-    headerData: {
-      flex: 1,
-    },
-
-    headerSmall: {
-      color:
-        "#BBF7D0",
-      fontSize: 8,
-      fontWeight:
-        "900",
-      letterSpacing: 1,
-    },
-
-    headerTitle: {
-      marginTop: 4,
-      color:
-        "#FFFFFF",
-      fontSize: 27,
-      fontWeight:
-        "900",
-    },
-
-    headerDescription: {
-      marginTop: 4,
-      color:
-        "#DCFCE7",
-      fontSize: 9,
-      lineHeight: 14,
-    },
-
-    headerIcon: {
-      width: 54,
-      height: 54,
-      alignItems:
-        "center",
-      justifyContent:
-        "center",
-      borderRadius: 17,
-      backgroundColor:
-        "rgba(255,255,255,.12)",
-    },
-
-    headerEmoji: {
-      fontSize: 25,
-    },
-
-    newButton: {
-      minHeight: 46,
-      alignItems:
-        "center",
-      justifyContent:
-        "center",
-      marginTop: 18,
-      borderRadius: 12,
-      backgroundColor:
-        "#FFFFFF",
-    },
-
-    newButtonText: {
-      color:
-        "#15803D",
-      fontSize: 10,
-      fontWeight:
-        "900",
-    },
-
-    message: {
-      flexDirection:
-        "row",
-      marginHorizontal: 14,
-      marginTop: 12,
-      padding: 12,
-      borderWidth: 1,
-      borderRadius: 11,
-    },
-
-    messageSuccess: {
-      borderColor:
-        "#A7F3D0",
-      backgroundColor:
-        "#ECFDF5",
-    },
-
-    messageError: {
-      borderColor:
-        "#FECACA",
-      backgroundColor:
-        "#FFF1F2",
-    },
-
-    messageText: {
-      flex: 1,
-      marginLeft: 8,
-      fontSize: 9,
-      fontWeight:
-        "700",
-    },
-
-    successText: {
-      color:
-        "#047857",
-      fontWeight:
-        "900",
-    },
-
-    errorText: {
-      color:
-        "#B91C1C",
-      fontWeight:
-        "900",
-    },
-
-    stats: {
-      flexDirection:
-        "row",
-      paddingHorizontal: 14,
-      marginTop: 15,
-    },
-
-    stat: {
-      flex: 1,
-      marginHorizontal: 3,
-      padding: 11,
-      borderWidth: 1,
-      borderColor:
-        "#E2E8F0",
-      borderRadius: 14,
-      backgroundColor:
-        "#FFFFFF",
-    },
-
-    statIcon: {
-      width: 32,
-      height: 32,
-      alignItems:
-        "center",
-      justifyContent:
-        "center",
-      borderRadius: 9,
-    },
-
-    statValue: {
-      marginTop: 7,
-      fontSize: 19,
-      fontWeight:
-        "900",
-    },
-
-    statTitle: {
-      color:
-        "#64748B",
-      fontSize: 7,
-      fontWeight:
-        "700",
-    },
-
-    toolbar: {
-      flexDirection:
-        "row",
-      paddingHorizontal: 14,
-      marginTop: 18,
-    },
-
-    searchBox: {
-      minHeight: 48,
-      flex: 1,
-      flexDirection:
-        "row",
-      alignItems:
-        "center",
-      marginRight: 8,
-      paddingHorizontal: 12,
-      borderWidth: 1,
-      borderColor:
-        "#E2E8F0",
-      borderRadius: 12,
-      backgroundColor:
-        "#FFFFFF",
-    },
-
-    searchInput: {
-      flex: 1,
-      marginLeft: 7,
-      color:
-        "#0F172A",
-      fontSize: 9,
-    },
-
-    filterButton: {
-      justifyContent:
-        "center",
-      paddingHorizontal: 12,
-      borderWidth: 1,
-      borderColor:
-        "#CBD5E1",
-      borderRadius: 12,
-      backgroundColor:
-        "#FFFFFF",
-    },
-
-    filterButtonActive: {
-      borderColor:
-        "#16A34A",
-      backgroundColor:
-        "#F0FDF4",
-    },
-
-    filterButtonText: {
-      color:
-        "#475569",
-      fontSize: 8,
-      fontWeight:
-        "900",
-    },
-
-    filters: {
-      marginHorizontal: 14,
-      marginTop: 9,
-      padding: 14,
-      borderWidth: 1,
-      borderColor:
-        "#BBF7D0",
-      borderRadius: 13,
-      backgroundColor:
-        "#FFFFFF",
-    },
-
-    filtersHeader: {
-      flexDirection:
-        "row",
-      justifyContent:
-        "space-between",
-      marginBottom: 12,
-    },
-
-    filtersTitle: {
-      color:
-        "#0F172A",
-      fontSize: 11,
-      fontWeight:
-        "900",
-    },
-
-    clearText: {
-      color:
-        "#15803D",
-      fontSize: 8,
-      fontWeight:
-        "900",
-    },
-
-    chips: {
-      flexDirection:
-        "row",
-      flexWrap:
-        "wrap",
-    },
-
-    chip: {
-      marginRight: 7,
-      marginBottom: 7,
-      paddingHorizontal: 11,
-      paddingVertical: 8,
-      borderWidth: 1,
-      borderColor:
-        "#E2E8F0",
-      borderRadius: 20,
-    },
-
-    chipActive: {
-      borderColor:
-        "#16A34A",
-      backgroundColor:
-        "#F0FDF4",
-    },
-
-    chipText: {
-      color:
-        "#64748B",
-      fontSize: 8,
-      fontWeight:
-        "700",
-    },
-
-    chipTextActive: {
-      color:
-        "#15803D",
-    },
-
-    spacingTop: {
-      marginTop: 12,
-    },
-
-    listHeader: {
-      flexDirection:
-        "row",
-      alignItems:
-        "center",
-      marginHorizontal: 15,
-      marginTop: 22,
-      marginBottom: 11,
-    },
-
-    listTitle: {
-      color:
-        "#0F172A",
-      fontSize: 16,
-      fontWeight:
-        "900",
-    },
-
-    listSubtitle: {
-      marginTop: 3,
-      color:
-        "#64748B",
-      fontSize: 8,
-    },
-
-    resultBadge: {
-      minWidth: 31,
-      height: 31,
-      alignItems:
-        "center",
-      justifyContent:
-        "center",
-      borderRadius: 16,
-      backgroundColor:
-        "#DCFCE7",
-    },
-
-    resultText: {
-      color:
-        "#15803D",
-      fontSize: 9,
-      fontWeight:
-        "900",
-    },
-
-    card: {
-      marginHorizontal: 14,
-      marginBottom: 11,
-      padding: 14,
-      borderWidth: 1,
-      borderColor:
-        "#E2E8F0",
-      borderRadius: 16,
-      backgroundColor:
-        "#FFFFFF",
-    },
-
-    cardTop: {
-      flexDirection:
-        "row",
-    },
-
-    avatar: {
-      width: 51,
-      height: 51,
-      alignItems:
-        "center",
-      justifyContent:
-        "center",
-      marginRight: 11,
-      borderRadius: 14,
-      backgroundColor:
-        "#DCFCE7",
-    },
-
-    avatarText: {
-      color:
-        "#15803D",
-      fontSize: 19,
-      fontWeight:
-        "900",
-    },
-
-    cardData: {
-      flex: 1,
-    },
-
-    patientName: {
-      color:
-        "#0F172A",
-      fontSize: 13,
-      fontWeight:
-        "900",
-    },
-
-    patientSecondary: {
-      marginTop: 4,
-      color:
-        "#64748B",
-      fontSize: 8,
-    },
-
-    actions: {
-      flexDirection:
-        "row",
-      marginTop: 10,
-    },
-
-    action: {
-      minHeight: 39,
-      flex: 1,
-      alignItems:
-        "center",
-      justifyContent:
-        "center",
-      borderRadius: 9,
-    },
-
-    viewAction: {
-      marginRight: 7,
-      backgroundColor:
-        "#E0F2FE",
-    },
-
-    viewText: {
-      color:
-        "#0369A1",
-      fontSize: 8,
-      fontWeight:
-        "900",
-    },
-
-    detailAction: {
-      backgroundColor:
-        "#EDE9FE",
-    },
-
-    detailText: {
-      color:
-        "#6D28D9",
-      fontSize: 8,
-      fontWeight:
-        "900",
-    },
-
-    editButton: {
-      minHeight: 39,
-      alignItems:
-        "center",
-      justifyContent:
-        "center",
-      marginTop: 7,
-      borderRadius: 9,
-      backgroundColor:
-        "#FEF3C7",
-    },
-
-    editText: {
-      color:
-        "#A16207",
-      fontSize: 8,
-      fontWeight:
-        "900",
-    },
-
-    empty: {
-      alignItems:
-        "center",
-      marginHorizontal: 14,
-      padding: 35,
-      borderRadius: 15,
-      backgroundColor:
-        "#FFFFFF",
-    },
-
-    emptyEmoji: {
-      fontSize: 34,
-    },
-
-    emptyTitle: {
-      marginTop: 9,
-      color:
-        "#334155",
-      fontSize: 13,
-      fontWeight:
-        "900",
-    },
-
-    emptyText: {
-      marginTop: 4,
-      color:
-        "#64748B",
-      fontSize: 8,
-    },
-
-    emptyAction: {
-      marginTop: 10,
-      color:
-        "#15803D",
-      fontSize: 8,
-      fontWeight:
-        "900",
+    content: {
+      padding: 16,
+      paddingBottom: 40,
     },
 
     loadingPage: {
       flex: 1,
-      alignItems:
-        "center",
+      alignItems: "center",
       justifyContent:
         "center",
       backgroundColor:
         "#F8FAFC",
+      padding: 24,
     },
 
     loadingTitle: {
-      marginTop: 15,
-      color:
-        "#0F172A",
-      fontSize: 18,
-      fontWeight:
-        "900",
+      marginTop: 14,
+      fontSize: 22,
+      fontWeight: "800",
+      color: "#0F172A",
     },
 
     loadingText: {
-      marginTop: 4,
-      color:
-        "#64748B",
+      marginTop: 5,
+      fontSize: 13,
+      color: "#64748B",
+    },
+
+    header: {
+      padding: 18,
+      borderRadius: 20,
+      backgroundColor:
+        "#ECFDF5",
+      borderWidth: 1,
+      borderColor:
+        "#A7F3D0",
+      marginBottom: 14,
+    },
+
+    backButton: {
+      alignSelf:
+        "flex-start",
+      paddingVertical: 8,
+      paddingHorizontal: 10,
+      borderRadius: 9,
+      backgroundColor:
+        "#FFFFFF",
+      borderWidth: 1,
+      borderColor:
+        "#D1FAE5",
+      marginBottom: 16,
+    },
+
+    backText: {
+      color: "#475569",
+      fontWeight: "700",
+      fontSize: 12,
+    },
+
+    headerRow: {
+      flexDirection: "row",
+      alignItems:
+        "flex-end",
+      gap: 12,
+    },
+
+    headerText: {
+      flex: 1,
+    },
+
+    eyebrow: {
+      fontSize: 10,
+      fontWeight: "900",
+      letterSpacing: 1,
+      color: "#15803D",
+      marginBottom: 5,
+    },
+
+    title: {
+      fontSize: 27,
+      fontWeight: "900",
+      color: "#0F172A",
+    },
+
+    subtitle: {
+      marginTop: 6,
+      fontSize: 12,
+      lineHeight: 18,
+      color: "#64748B",
+    },
+
+    newButton: {
+      backgroundColor:
+        "#15803D",
+      paddingVertical: 12,
+      paddingHorizontal: 15,
+      borderRadius: 12,
+    },
+
+    newButtonText: {
+      color: "#FFFFFF",
+      fontSize: 12,
+      fontWeight: "900",
+    },
+
+    statsRow: {
+      flexDirection: "row",
+      gap: 10,
+      marginBottom: 14,
+    },
+
+    statCard: {
+      flex: 1,
+      backgroundColor:
+        "#FFFFFF",
+      borderWidth: 1,
+      borderColor:
+        "#E2E8F0",
+      borderRadius: 15,
+      padding: 15,
+    },
+
+    statLabel: {
+      color: "#64748B",
       fontSize: 9,
+      fontWeight: "900",
+    },
+
+    statValue: {
+      marginTop: 4,
+      color: "#0F172A",
+      fontSize: 23,
+      fontWeight: "900",
+    },
+
+    filterCard: {
+      backgroundColor:
+        "#FFFFFF",
+      borderWidth: 1,
+      borderColor:
+        "#D1FAE5",
+      borderRadius: 17,
+      padding: 16,
+      marginBottom: 16,
+    },
+
+    sectionHeader: {
+      flexDirection: "row",
+      alignItems:
+        "flex-start",
+      gap: 10,
+      marginBottom: 13,
+    },
+
+    sectionEyebrow: {
+      color: "#15803D",
+      fontSize: 9,
+      fontWeight: "900",
+      letterSpacing: 1,
+    },
+
+    sectionTitle: {
+      marginTop: 3,
+      color: "#0F172A",
+      fontSize: 18,
+      fontWeight: "900",
+    },
+
+    sectionSubtitle: {
+      marginTop: 4,
+      color: "#64748B",
+      fontSize: 11,
+      lineHeight: 16,
+    },
+
+    clearButton: {
+      paddingVertical: 8,
+      paddingHorizontal: 10,
+      borderRadius: 9,
+      backgroundColor:
+        "#F1F5F9",
+    },
+
+    clearText: {
+      color: "#475569",
+      fontWeight: "800",
+      fontSize: 10,
+    },
+
+    searchInput: {
+      minHeight: 46,
+      borderWidth: 1,
+      borderColor:
+        "#CBD5E1",
+      borderRadius: 11,
+      backgroundColor:
+        "#FFFFFF",
+      paddingHorizontal: 13,
+      color: "#0F172A",
+      fontSize: 13,
+      marginBottom: 11,
+    },
+
+    chips: {
+      gap: 7,
+      paddingBottom: 13,
+    },
+
+    chip: {
+      paddingVertical: 8,
+      paddingHorizontal: 12,
+      borderRadius: 20,
+      backgroundColor:
+        "#F1F5F9",
+      borderWidth: 1,
+      borderColor:
+        "#E2E8F0",
+    },
+
+    chipActive: {
+      backgroundColor:
+        "#DCFCE7",
+      borderColor:
+        "#86EFAC",
+    },
+
+    chipText: {
+      color: "#475569",
+      fontSize: 10,
+      fontWeight: "800",
+    },
+
+    chipTextActive: {
+      color: "#15803D",
+    },
+
+    field: {
+      marginBottom: 12,
+    },
+
+    fieldLabel: {
+      color: "#334155",
+      fontSize: 11,
+      fontWeight: "800",
+      marginBottom: 6,
+    },
+
+    input: {
+      minHeight: 46,
+      borderWidth: 1,
+      borderColor:
+        "#CBD5E1",
+      borderRadius: 11,
+      backgroundColor:
+        "#FFFFFF",
+      paddingHorizontal: 12,
+      color: "#0F172A",
+      fontSize: 13,
+    },
+
+    textArea: {
+      minHeight: 90,
+      paddingTop: 12,
+      paddingBottom: 12,
+    },
+
+    listHeader: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent:
+        "space-between",
+      gap: 10,
+      marginBottom: 10,
+    },
+
+    listTitle: {
+      flex: 1,
+      color: "#0F172A",
+      fontSize: 18,
+      fontWeight: "900",
+    },
+
+    resultText: {
+      color: "#15803D",
+      fontSize: 10,
+      fontWeight: "800",
+    },
+
+    patientCard: {
+      backgroundColor:
+        "#FFFFFF",
+      borderWidth: 1,
+      borderColor:
+        "#E2E8F0",
+      borderRadius: 16,
+      padding: 14,
+      marginBottom: 10,
+    },
+
+    patientTop: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 11,
+    },
+
+    avatar: {
+      width: 48,
+      height: 48,
+      borderRadius: 14,
+      backgroundColor:
+        "#DCFCE7",
+      alignItems: "center",
+      justifyContent:
+        "center",
+    },
+
+    avatarText: {
+      color: "#15803D",
+      fontSize: 15,
+      fontWeight: "900",
+    },
+
+    patientInfo: {
+      flex: 1,
+    },
+
+    patientName: {
+      color: "#0F172A",
+      fontSize: 15,
+      fontWeight: "900",
+    },
+
+    patientMeta: {
+      marginTop: 3,
+      color: "#64748B",
+      fontSize: 11,
+    },
+
+    cardActions: {
+      flexDirection: "row",
+      gap: 8,
+      marginTop: 13,
+    },
+
+    actionButton: {
+      flex: 1,
+      minHeight: 38,
+      borderRadius: 9,
+      alignItems: "center",
+      justifyContent:
+        "center",
+      paddingHorizontal: 10,
+    },
+
+    detailButton: {
+      backgroundColor:
+        "#E0F2FE",
+    },
+
+    detailButtonText: {
+      color: "#0369A1",
+      fontSize: 11,
+      fontWeight: "900",
+    },
+
+    editButton: {
+      backgroundColor:
+        "#EDE9FE",
+    },
+
+    editButtonText: {
+      color: "#6D28D9",
+      fontSize: 11,
+      fontWeight: "900",
+    },
+
+
+    historyButton: {
+      backgroundColor:
+        "#DBEAFE",
+    },
+
+    historyButtonText: {
+      color: "#1D4ED8",
+      fontSize: 11,
+      fontWeight: "900",
+    },
+
+    emptyCard: {
+      backgroundColor:
+        "#FFFFFF",
+      borderWidth: 1,
+      borderColor:
+        "#E2E8F0",
+      borderRadius: 16,
+      padding: 28,
+      alignItems: "center",
+    },
+
+    emptyIcon: {
+      fontSize: 32,
+    },
+
+    emptyTitle: {
+      marginTop: 8,
+      color: "#334155",
+      fontSize: 16,
+      fontWeight: "900",
+    },
+
+    emptyText: {
+      marginTop: 5,
+      color: "#64748B",
+      fontSize: 11,
+      textAlign: "center",
+      lineHeight: 17,
     },
 
     modalOverlay: {
       flex: 1,
-      justifyContent:
-        "center",
-      padding: 17,
       backgroundColor:
-        "rgba(15,23,42,.72)",
-    },
-
-    modalScroll: {
-      flexGrow: 1,
+        "rgba(15, 23, 42, 0.68)",
       justifyContent:
         "center",
-      paddingVertical: 20,
+      padding: 14,
     },
 
-    modal: {
-      width:
-        "100%",
-      maxWidth: 530,
-      alignSelf:
-        "center",
-      padding: 19,
+    modalCard: {
+      maxHeight: "94%",
+      backgroundColor:
+        "#F8FAFC",
       borderRadius: 20,
-      backgroundColor:
-        "#FFFFFF",
+      padding: 17,
     },
 
-    smallModal: {
-      maxWidth: 420,
+    detailModal: {
+      maxHeight: "88%",
     },
 
     modalHeader: {
-      flexDirection:
-        "row",
-      marginBottom: 18,
-      paddingBottom: 14,
+      flexDirection: "row",
+      alignItems:
+        "flex-start",
+      gap: 10,
+      paddingBottom: 13,
       borderBottomWidth: 1,
       borderBottomColor:
         "#E2E8F0",
     },
 
+    modalEyebrow: {
+      color: "#15803D",
+      fontSize: 9,
+      fontWeight: "900",
+      letterSpacing: 1,
+    },
+
     modalTitle: {
-      color:
-        "#0F172A",
-      fontSize: 18,
-      fontWeight:
-        "900",
+      marginTop: 3,
+      color: "#0F172A",
+      fontSize: 20,
+      fontWeight: "900",
     },
 
-    modalSubtitle: {
-      marginTop: 4,
-      color:
-        "#64748B",
-      fontSize: 8,
-    },
-
-    modalClose: {
-      width: 35,
-      height: 35,
-      alignItems:
-        "center",
+    closeButton: {
+      width: 36,
+      height: 36,
+      borderRadius: 10,
+      alignItems: "center",
       justifyContent:
         "center",
+      backgroundColor:
+        "#E2E8F0",
+    },
+
+    closeButtonText: {
+      color: "#475569",
+      fontSize: 23,
+      fontWeight: "700",
+      lineHeight: 25,
+    },
+
+    formContent: {
+      paddingTop: 15,
+      paddingBottom: 6,
+    },
+
+    sexRow: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      gap: 7,
+      marginBottom: 13,
+    },
+
+    sexButton: {
+      paddingVertical: 9,
+      paddingHorizontal: 12,
       borderRadius: 10,
       backgroundColor:
         "#F1F5F9",
-    },
-
-    modalCloseText: {
-      color:
-        "#475569",
-      fontSize: 21,
-    },
-
-    field: {
-      marginBottom: 13,
-    },
-
-    label: {
-      marginBottom: 6,
-      color:
-        "#334155",
-      fontSize: 9,
-      fontWeight:
-        "800",
-    },
-
-    input: {
-      minHeight: 49,
-      paddingHorizontal: 12,
-      borderWidth: 1,
-      borderColor:
-        "#CBD5E1",
-      borderRadius: 10,
-      color:
-        "#0F172A",
-      fontSize: 10,
-      backgroundColor:
-        "#FFFFFF",
-    },
-
-    multiline: {
-      minHeight: 80,
-      paddingTop: 12,
-      textAlignVertical:
-        "top",
-    },
-
-    help: {
-      marginTop: -7,
-      marginBottom: 12,
-      color:
-        "#94A3B8",
-      fontSize: 7,
-    },
-
-    sexOptions: {
-      flexDirection:
-        "row",
-      flexWrap:
-        "wrap",
-      marginBottom: 13,
-    },
-
-    option: {
-      flexDirection:
-        "row",
-      alignItems:
-        "center",
-      marginRight: 7,
-      marginBottom: 7,
-      padding: 9,
       borderWidth: 1,
       borderColor:
         "#E2E8F0",
-      borderRadius: 10,
     },
 
-    optionSelected: {
-      borderColor:
-        "#16A34A",
+    sexButtonActive: {
       backgroundColor:
-        "#F0FDF4",
-    },
-
-    radio: {
-      width: 17,
-      height: 17,
-      alignItems:
-        "center",
-      justifyContent:
-        "center",
-      marginRight: 6,
-      borderWidth: 2,
+        "#DCFCE7",
       borderColor:
-        "#CBD5E1",
-      borderRadius: 9,
+        "#86EFAC",
     },
 
-    radioSelected: {
-      borderColor:
-        "#15803D",
+    sexButtonText: {
+      color: "#475569",
+      fontSize: 11,
+      fontWeight: "800",
     },
 
-    radioInner: {
-      width: 7,
-      height: 7,
-      borderRadius: 4,
-      backgroundColor:
-        "#15803D",
+    sexButtonTextActive: {
+      color: "#15803D",
     },
 
-    optionText: {
-      color:
-        "#64748B",
-      fontSize: 8,
-      fontWeight:
-        "700",
-    },
-
-    optionTextSelected: {
-      color:
-        "#15803D",
-    },
-
-    modalActions: {
-      flexDirection:
-        "row",
-      marginTop: 17,
+    formActions: {
+      flexDirection: "row",
+      gap: 9,
+      marginTop: 7,
     },
 
     cancelButton: {
-      minHeight: 45,
       flex: 1,
-      alignItems:
-        "center",
+      minHeight: 45,
+      alignItems: "center",
       justifyContent:
         "center",
-      marginRight: 8,
+      borderRadius: 11,
       borderWidth: 1,
       borderColor:
         "#CBD5E1",
-      borderRadius: 10,
+      backgroundColor:
+        "#FFFFFF",
     },
 
-    cancelText: {
-      color:
-        "#475569",
-      fontSize: 9,
-      fontWeight:
-        "800",
+    cancelButtonText: {
+      color: "#475569",
+      fontWeight: "900",
+      fontSize: 11,
     },
 
     saveButton: {
-      minHeight: 45,
       flex: 1,
-      alignItems:
-        "center",
+      minHeight: 45,
+      alignItems: "center",
       justifyContent:
         "center",
-      borderRadius: 10,
+      borderRadius: 11,
       backgroundColor:
         "#15803D",
     },
 
-    saveText: {
-      color:
-        "#FFFFFF",
-      fontSize: 9,
-      fontWeight:
-        "900",
+    saveButtonText: {
+      color: "#FFFFFF",
+      fontWeight: "900",
+      fontSize: 11,
     },
 
-    disabled: {
-      opacity: 0.55,
+    disabledButton: {
+      opacity: 0.6,
     },
 
-    profile: {
-      alignItems:
-        "center",
-      paddingVertical: 13,
+    detailContent: {
+      paddingTop: 15,
+      paddingBottom: 5,
     },
 
-    profileAvatar: {
-      width: 75,
-      height: 75,
-      alignItems:
-        "center",
+    detailProfile: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 11,
+      backgroundColor:
+        "#ECFDF5",
+      borderWidth: 1,
+      borderColor:
+        "#A7F3D0",
+      borderRadius: 14,
+      padding: 13,
+      marginBottom: 12,
+    },
+
+    detailAvatar: {
+      width: 51,
+      height: 51,
+      borderRadius: 14,
+      alignItems: "center",
       justifyContent:
         "center",
-      borderRadius: 22,
       backgroundColor:
-        "#DCFCE7",
-    },
-
-    profileAvatarText: {
-      color:
         "#15803D",
-      fontSize: 29,
-      fontWeight:
-        "900",
     },
 
-    profileName: {
-      marginTop: 12,
-      color:
-        "#0F172A",
-      fontSize: 17,
-      fontWeight:
-        "900",
-      textAlign:
-        "center",
+    detailAvatarText: {
+      color: "#FFFFFF",
+      fontSize: 16,
+      fontWeight: "900",
     },
 
-    profileInfo: {
-      marginTop: 4,
-      color:
-        "#64748B",
-      fontSize: 9,
+    detailName: {
+      color: "#0F172A",
+      fontSize: 15,
+      fontWeight: "900",
+    },
+
+    detailSubtext: {
+      marginTop: 3,
+      color: "#64748B",
+      fontSize: 11,
     },
 
     detailItem: {
-      marginBottom: 8,
-      padding: 11,
-      borderRadius: 10,
       backgroundColor:
-        "#F8FAFC",
+        "#FFFFFF",
+      borderWidth: 1,
+      borderColor:
+        "#E2E8F0",
+      borderRadius: 11,
+      padding: 12,
+      marginBottom: 8,
     },
 
     detailLabel: {
-      color:
-        "#64748B",
-      fontSize: 7,
-      fontWeight:
-        "800",
+      color: "#64748B",
+      fontSize: 9,
+      fontWeight: "900",
       textTransform:
         "uppercase",
     },
 
     detailValue: {
-      marginTop: 3,
-      color:
-        "#0F172A",
-      fontSize: 9,
-      fontWeight:
-        "700",
+      marginTop: 4,
+      color: "#0F172A",
+      fontSize: 12,
+      lineHeight: 18,
+      fontWeight: "600",
     },
 
-    fullButton: {
-      minHeight: 44,
-      alignItems:
-        "center",
+    closeDetailButton: {
+      minHeight: 45,
+      marginTop: 7,
+      borderRadius: 11,
+      alignItems: "center",
       justifyContent:
         "center",
-      marginTop: 14,
-      borderRadius: 10,
       backgroundColor:
         "#15803D",
     },
 
-    fullButtonText: {
-      color:
-        "#FFFFFF",
-      fontSize: 9,
-      fontWeight:
-        "900",
+    closeDetailText: {
+      color: "#FFFFFF",
+      fontWeight: "900",
+      fontSize: 11,
     },
   });
