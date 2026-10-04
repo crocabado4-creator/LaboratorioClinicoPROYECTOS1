@@ -17,6 +17,10 @@ import ConfiguracionLaboratorio from "./ConfiguracionLaboratorio";
 import GestionPersonal from "./GestionPersonal";
 import GestionPacientes from "./GestionPacientes";
 import GestionAnalisis from "./GestionAnalisis";
+import GestionSolicitudes from "./GestionSolicitudes";
+import GestionVentas from "./GestionVentas";
+import GestionMuestras from "./GestionMuestras";
+
 
 import SuperAdminDashboard from "./SuperAdminDashboard";
 import SuperAdminLaboratorios from "./SuperAdminLaboratorios";
@@ -25,6 +29,7 @@ import SuperAdminAdministradores from "./SuperAdminAdministradores";
 import SuperAdminUsuarios from "./SuperAdminUsuarios";
 import SuperAdminRoles from "./SuperAdminRoles";
 import SuperAdminAuditoria from "./SuperAdminAuditoria";
+
 
 
 function Dashboard({
@@ -509,6 +514,58 @@ function Dashboard({
       />
     );
   }
+
+// =====================================================
+// HU-17, HU-18, HU-19 - SOLICITUDES DE ANÁLISIS
+// =====================================================
+
+if (
+  vista === "solicitudes" &&
+  usuario.rol === "recepcionista"
+) {
+  return (
+    <GestionSolicitudes
+      usuario={usuario}
+      onVolver={() =>
+        setVista("dashboard")
+      }
+    />
+  );
+}
+
+// =====================================================
+// HU-20, HU-21 - VENTAS Y ÓRDENES
+// =====================================================
+
+if (vista === "ventas") {
+  return (
+    <GestionVentas
+      usuario={usuario}
+      onVolver={() =>
+        setVista("dashboard")
+      }
+    />
+  );
+}
+
+
+// =====================================================
+// HU-22, HU-23 - GESTIÓN DE MUESTRAS
+// =====================================================
+
+if (
+  vista === "muestras" &&
+  usuario.rol === "bioquimico"
+) {
+  return (
+    <GestionMuestras
+      usuario={usuario}
+      onVolver={() =>
+        setVista("dashboard")
+      }
+    />
+  );
+}
 
 
   // =====================================================
@@ -1101,6 +1158,30 @@ function Dashboard({
             )}
 
 
+            
+
+{/* =============================================
+    SOLICITUDES DE ANÁLISIS
+============================================= */}
+
+{usuario.rol === "recepcionista" && (
+  <ModuloCard
+    icono="📋"
+    titulo="Solicitudes de análisis"
+    descripcion="Registra solicitudes, consulta el detalle y calcula automáticamente el total."
+    fondo="#EDE9FE"
+    color="#6D28D9"
+    onClick={() =>
+      setVista(
+        "solicitudes"
+      )
+    }
+  />
+)}
+
+
+
+
             {/* =============================================
                 VENTAS
             ============================================= */}
@@ -1114,13 +1195,28 @@ function Dashboard({
                 descripcion="Consulta y administra las operaciones registradas."
                 fondo="#FEF3C7"
                 color="#A16207"
+                onClick={() => setVista("ventas")}
+              />
+            )}
+
+            {/* =============================================
+                MUESTRAS
+            ============================================= */}
+
+            {usuario.rol === "bioquimico" && (
+              <ModuloCard
+                icono="🧪"
+                titulo="Muestras"
+                descripcion="Registra la toma e identificación de muestras."
+                fondo="#CCFBF1"
+                color="#0F766E"
                 onClick={() =>
-                  window.alert(
-                    "Este módulo estará disponible próximamente."
-                  )
+                  setVista("muestras")
                 }
               />
             )}
+
+
 
 
             {/* =============================================
