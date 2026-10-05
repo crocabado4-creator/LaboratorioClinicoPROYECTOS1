@@ -9,10 +9,14 @@ import {
   updateDoc,
   where,
   type DocumentData,
-  type QueryDocumentSnapshot,
 } from "firebase/firestore";
 
-import { db } from "../firebase/firebase";
+import {
+  db,
+} from "../firebase/firebase";
+
+
+const COLECCION = "pacientes";
 
 
 export type Paciente = {
@@ -35,7 +39,7 @@ export type Paciente = {
 };
 
 
-export type PacienteInput = {
+export type DatosPaciente = {
   nombres: string;
   apellidos: string;
   ci: string;
@@ -50,112 +54,257 @@ export type PacienteInput = {
 };
 
 
-const COLECCION = "pacientes";
-
-
 function limpiarTexto(
   valor: unknown
 ): string {
-  return typeof valor === "string"
-    ? valor.trim()
-    : "";
+  if (
+    valor === null ||
+    valor === undefined
+  ) {
+    return "";
+  }
+
+  return String(
+    valor
+  ).trim();
 }
 
 
 function limpiarLista(
   valor: unknown
 ): string[] {
-  if (!Array.isArray(valor)) {
-    return [];
+  if (
+    Array.isArray(
+      valor
+    )
+  ) {
+    return valor
+      .map(
+        (item) =>
+          limpiarTexto(
+            item
+          )
+      )
+      .filter(Boolean);
   }
 
-  return valor
-    .map((item) => limpiarTexto(item))
-    .filter((item) => item !== "");
+  if (
+    typeof valor ===
+    "string"
+  ) {
+    return valor
+      .split(",")
+      .map(
+        (item) =>
+          item.trim()
+      )
+      .filter(Boolean);
+  }
+
+  return [];
 }
 
 
-function validarDatos(
-  datos: PacienteInput
+function validarDatosPaciente(
+  datos: DatosPaciente
 ) {
-  if (!limpiarTexto(datos.nombres)) {
+  const paciente = {
+    nombres:
+      limpiarTexto(
+        datos?.nombres
+      ),
+
+    apellidos:
+      limpiarTexto(
+        datos?.apellidos
+      ),
+
+    ci:
+      limpiarTexto(
+        datos?.ci
+      ),
+
+    fechaNacimiento:
+      limpiarTexto(
+        datos?.fechaNacimiento
+      ),
+
+    sexo:
+      limpiarTexto(
+        datos?.sexo
+      ),
+
+    telefono:
+      limpiarTexto(
+        datos?.telefono
+      ),
+
+    email:
+      limpiarTexto(
+        datos?.email
+      ).toLowerCase(),
+
+    direccion:
+      limpiarTexto(
+        datos?.direccion
+      ),
+
+    ciudad:
+      limpiarTexto(
+        datos?.ciudad
+      ),
+
+    alergias:
+      limpiarLista(
+        datos?.alergias
+      ),
+
+    enfermedadesPrevias:
+      limpiarLista(
+        datos?.enfermedadesPrevias
+      ),
+  };
+
+
+  if (
+    !paciente.nombres
+  ) {
     throw new Error(
       "Los nombres son obligatorios."
     );
   }
 
-  if (!limpiarTexto(datos.apellidos)) {
+
+  if (
+    !paciente.apellidos
+  ) {
     throw new Error(
       "Los apellidos son obligatorios."
     );
   }
 
-  if (!limpiarTexto(datos.ci)) {
+
+  if (
+    !paciente.ci
+  ) {
     throw new Error(
       "El CI es obligatorio."
     );
   }
 
+
   if (
-    !limpiarTexto(
-      datos.fechaNacimiento
-    )
+    !paciente.fechaNacimiento
   ) {
     throw new Error(
       "La fecha de nacimiento es obligatoria."
     );
   }
 
-  if (!limpiarTexto(datos.sexo)) {
+
+  if (
+    !paciente.sexo
+  ) {
     throw new Error(
-      "El sexo es obligatorio."
+      "Debe seleccionar el sexo."
     );
   }
+
+
+  if (
+    paciente.email &&
+    !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(
+      paciente.email
+    )
+  ) {
+    throw new Error(
+      "El correo electrónico no es válido."
+    );
+  }
+
+
+  return paciente;
 }
 
 
-async function existeCi(
-  laboratorioId: string,
-  ci: string,
-  ignorarPacienteId = ""
-) {
-  const consulta =
-    query(
-      collection(
-        db,
-        COLECCION
+function convertirPaciente(
+  id: string,
+  datos: DocumentData
+): Paciente {
+  return {
+    id,
+
+    pacienteId:
+      limpiarTexto(
+        datos?.pacienteId
+      ) || id,
+
+    laboratorioId:
+      limpiarTexto(
+        datos?.laboratorioId
       ),
-      where(
-        "laboratorioId",
-        "==",
-        laboratorioId
-      )
-    );
 
-  const resultado =
-    await getDocs(
-      consulta
-    );
+    nombres:
+      limpiarTexto(
+        datos?.nombres
+      ),
 
-  const ciNormalizado =
-    limpiarTexto(ci)
-      .toLowerCase();
+    apellidos:
+      limpiarTexto(
+        datos?.apellidos
+      ),
 
-  return resultado.docs.some(
-    (item: QueryDocumentSnapshot<DocumentData>) => {
-      const datos =
-        item.data();
+    ci:
+      limpiarTexto(
+        datos?.ci
+      ),
 
-      return (
-        item.id !==
-          ignorarPacienteId &&
-        limpiarTexto(
-          datos.ci
-        ).toLowerCase() ===
-          ciNormalizado
-      );
-    }
-  );
+    fechaNacimiento:
+      limpiarTexto(
+        datos?.fechaNacimiento
+      ),
+
+    sexo:
+      limpiarTexto(
+        datos?.sexo
+      ),
+
+    telefono:
+      limpiarTexto(
+        datos?.telefono
+      ),
+
+    email:
+      limpiarTexto(
+        datos?.email
+      ),
+
+    direccion:
+      limpiarTexto(
+        datos?.direccion
+      ),
+
+    ciudad:
+      limpiarTexto(
+        datos?.ciudad
+      ),
+
+    alergias:
+      limpiarLista(
+        datos?.alergias
+      ),
+
+    enfermedadesPrevias:
+      limpiarLista(
+        datos?.enfermedadesPrevias
+      ),
+
+    fechaRegistro:
+      datos?.fechaRegistro,
+
+    fechaActualizacion:
+      datos?.fechaActualizacion,
+  };
 }
 
 
@@ -167,11 +316,15 @@ export async function obtenerPacientes(
       laboratorioId
     );
 
-  if (!idLaboratorio) {
+
+  if (
+    !idLaboratorio
+  ) {
     throw new Error(
       "No se pudo identificar el laboratorio."
     );
   }
+
 
   const consulta =
     query(
@@ -186,256 +339,116 @@ export async function obtenerPacientes(
       )
     );
 
+
   const resultado =
     await getDocs(
       consulta
     );
 
-  const pacientes: Paciente[] =
+
+  const pacientes =
     resultado.docs.map(
-      (item: QueryDocumentSnapshot<DocumentData>) => {
-        const datos =
-          item.data();
-
-        return {
-          id:
-            item.id,
-
-          pacienteId:
-            limpiarTexto(
-              datos.pacienteId
-            ) || item.id,
-
-          laboratorioId:
-            limpiarTexto(
-              datos.laboratorioId
-            ),
-
-          nombres:
-            limpiarTexto(
-              datos.nombres
-            ),
-
-          apellidos:
-            limpiarTexto(
-              datos.apellidos
-            ),
-
-          ci:
-            limpiarTexto(
-              datos.ci
-            ),
-
-          fechaNacimiento:
-            limpiarTexto(
-              datos.fechaNacimiento
-            ),
-
-          sexo:
-            limpiarTexto(
-              datos.sexo
-            ),
-
-          telefono:
-            limpiarTexto(
-              datos.telefono
-            ),
-
-          email:
-            limpiarTexto(
-              datos.email
-            ),
-
-          direccion:
-            limpiarTexto(
-              datos.direccion
-            ),
-
-          ciudad:
-            limpiarTexto(
-              datos.ciudad
-            ),
-
-          alergias:
-            limpiarLista(
-              datos.alergias
-            ),
-
-          enfermedadesPrevias:
-            limpiarLista(
-              datos.enfermedadesPrevias
-            ),
-
-          fechaRegistro:
-            datos.fechaRegistro,
-
-          fechaActualizacion:
-            datos.fechaActualizacion,
-        } satisfies Paciente;
-      }
+      (documento) =>
+        convertirPaciente(
+          documento.id,
+          documento.data()
+        )
     );
 
+
   pacientes.sort(
-    (a, b) =>
-      `${a.apellidos} ${a.nombres}`
-        .localeCompare(
-          `${b.apellidos} ${b.nombres}`,
-          "es",
-          {
-            sensitivity:
-              "base",
-          }
-        )
+    (a, b) => {
+      const nombreA =
+        `${a.nombres} ${a.apellidos}`;
+
+      const nombreB =
+        `${b.nombres} ${b.apellidos}`;
+
+      return nombreA.localeCompare(
+        nombreB,
+        "es",
+        {
+          sensitivity:
+            "base",
+        }
+      );
+    }
   );
+
 
   return pacientes;
 }
 
 
-export async function obtenerPaciente(
-  pacienteId: string
-): Promise<Paciente | null> {
-  const idPaciente =
+async function validarCiDuplicado(
+  laboratorioId: string,
+  ci: string,
+  ignorarPacienteId = ""
+): Promise<void> {
+  const pacientes =
+    await obtenerPacientes(
+      laboratorioId
+    );
+
+
+  const ciNormalizado =
     limpiarTexto(
-      pacienteId
+      ci
+    ).toLowerCase();
+
+
+  const existe =
+    pacientes.some(
+      (paciente) =>
+        paciente.id !==
+          ignorarPacienteId &&
+        limpiarTexto(
+          paciente.ci
+        ).toLowerCase() ===
+          ciNormalizado
     );
 
-  if (!idPaciente) {
-    return null;
+
+  if (
+    existe
+  ) {
+    throw new Error(
+      "Ya existe un paciente con ese CI en este laboratorio."
+    );
   }
-
-  const referencia =
-    doc(
-      db,
-      COLECCION,
-      idPaciente
-    );
-
-  const resultado =
-    await getDoc(
-      referencia
-    );
-
-  if (!resultado.exists()) {
-    return null;
-  }
-
-  const datos =
-    resultado.data();
-
-  return {
-    id:
-      resultado.id,
-
-    pacienteId:
-      limpiarTexto(
-        datos.pacienteId
-      ) || resultado.id,
-
-    laboratorioId:
-      limpiarTexto(
-        datos.laboratorioId
-      ),
-
-    nombres:
-      limpiarTexto(
-        datos.nombres
-      ),
-
-    apellidos:
-      limpiarTexto(
-        datos.apellidos
-      ),
-
-    ci:
-      limpiarTexto(
-        datos.ci
-      ),
-
-    fechaNacimiento:
-      limpiarTexto(
-        datos.fechaNacimiento
-      ),
-
-    sexo:
-      limpiarTexto(
-        datos.sexo
-      ),
-
-    telefono:
-      limpiarTexto(
-        datos.telefono
-      ),
-
-    email:
-      limpiarTexto(
-        datos.email
-      ),
-
-    direccion:
-      limpiarTexto(
-        datos.direccion
-      ),
-
-    ciudad:
-      limpiarTexto(
-        datos.ciudad
-      ),
-
-    alergias:
-      limpiarLista(
-        datos.alergias
-      ),
-
-    enfermedadesPrevias:
-      limpiarLista(
-        datos.enfermedadesPrevias
-      ),
-
-    fechaRegistro:
-      datos.fechaRegistro,
-
-    fechaActualizacion:
-      datos.fechaActualizacion,
-  };
 }
 
 
 export async function crearPaciente(
   laboratorioId: string,
-  datos: PacienteInput
+  datos: DatosPaciente
 ): Promise<string> {
   const idLaboratorio =
     limpiarTexto(
       laboratorioId
     );
 
-  if (!idLaboratorio) {
+
+  if (
+    !idLaboratorio
+  ) {
     throw new Error(
       "No se pudo identificar el laboratorio."
     );
   }
 
-  validarDatos(
-    datos
+
+  const datosLimpios =
+    validarDatosPaciente(
+      datos
+    );
+
+
+  await validarCiDuplicado(
+    idLaboratorio,
+    datosLimpios.ci
   );
 
-  const ci =
-    limpiarTexto(
-      datos.ci
-    );
-
-  const duplicado =
-    await existeCi(
-      idLaboratorio,
-      ci
-    );
-
-  if (duplicado) {
-    throw new Error(
-      "Ya existe un paciente con ese CI en este laboratorio."
-    );
-  }
 
   const referencia =
     doc(
@@ -444,6 +457,7 @@ export async function crearPaciente(
         COLECCION
       )
     );
+
 
   await setDoc(
     referencia,
@@ -454,57 +468,7 @@ export async function crearPaciente(
       laboratorioId:
         idLaboratorio,
 
-      nombres:
-        limpiarTexto(
-          datos.nombres
-        ),
-
-      apellidos:
-        limpiarTexto(
-          datos.apellidos
-        ),
-
-      ci,
-
-      fechaNacimiento:
-        limpiarTexto(
-          datos.fechaNacimiento
-        ),
-
-      sexo:
-        limpiarTexto(
-          datos.sexo
-        ),
-
-      telefono:
-        limpiarTexto(
-          datos.telefono
-        ),
-
-      email:
-        limpiarTexto(
-          datos.email
-        ),
-
-      direccion:
-        limpiarTexto(
-          datos.direccion
-        ),
-
-      ciudad:
-        limpiarTexto(
-          datos.ciudad
-        ),
-
-      alergias:
-        limpiarLista(
-          datos.alergias
-        ),
-
-      enfermedadesPrevias:
-        limpiarLista(
-          datos.enfermedadesPrevias
-        ),
+      ...datosLimpios,
 
       fechaRegistro:
         serverTimestamp(),
@@ -514,6 +478,7 @@ export async function crearPaciente(
     }
   );
 
+
   return referencia.id;
 }
 
@@ -521,7 +486,7 @@ export async function crearPaciente(
 export async function actualizarPaciente(
   pacienteId: string,
   laboratorioId: string,
-  datos: PacienteInput
+  datos: DatosPaciente
 ): Promise<void> {
   const idPaciente =
     limpiarTexto(
@@ -533,21 +498,24 @@ export async function actualizarPaciente(
       laboratorioId
     );
 
-  if (!idPaciente) {
+
+  if (
+    !idPaciente
+  ) {
     throw new Error(
       "No se pudo identificar el paciente."
     );
   }
 
-  if (!idLaboratorio) {
+
+  if (
+    !idLaboratorio
+  ) {
     throw new Error(
       "No se pudo identificar el laboratorio."
     );
   }
 
-  validarDatos(
-    datos
-  );
 
   const referencia =
     doc(
@@ -556,106 +524,163 @@ export async function actualizarPaciente(
       idPaciente
     );
 
-  const actual =
+
+  const snapshot =
     await getDoc(
       referencia
     );
 
-  if (!actual.exists()) {
+
+  if (
+    !snapshot.exists()
+  ) {
     throw new Error(
-      "El paciente no existe."
+      "El paciente seleccionado no existe."
     );
   }
 
-  const actualDatos =
-    actual.data();
+
+  const pacienteActual =
+    snapshot.data();
+
 
   if (
     limpiarTexto(
-      actualDatos.laboratorioId
-    ) !==
-    idLaboratorio
+      pacienteActual.laboratorioId
+    ) !== idLaboratorio
   ) {
     throw new Error(
-      "No puedes modificar pacientes de otro laboratorio."
+      "El paciente no pertenece a este laboratorio."
     );
   }
 
-  const ci =
-    limpiarTexto(
-      datos.ci
+
+  const datosLimpios =
+    validarDatosPaciente(
+      datos
     );
 
-  const duplicado =
-    await existeCi(
-      idLaboratorio,
-      ci,
-      idPaciente
-    );
 
-  if (duplicado) {
-    throw new Error(
-      "Ya existe otro paciente con ese CI en este laboratorio."
-    );
-  }
+  await validarCiDuplicado(
+    idLaboratorio,
+    datosLimpios.ci,
+    idPaciente
+  );
+
 
   await updateDoc(
     referencia,
     {
       nombres:
-        limpiarTexto(
-          datos.nombres
-        ),
+        datosLimpios.nombres,
 
       apellidos:
-        limpiarTexto(
-          datos.apellidos
-        ),
+        datosLimpios.apellidos,
 
-      ci,
+      ci:
+        datosLimpios.ci,
 
       fechaNacimiento:
-        limpiarTexto(
-          datos.fechaNacimiento
-        ),
+        datosLimpios.fechaNacimiento,
 
       sexo:
-        limpiarTexto(
-          datos.sexo
-        ),
+        datosLimpios.sexo,
 
       telefono:
-        limpiarTexto(
-          datos.telefono
-        ),
+        datosLimpios.telefono,
 
       email:
-        limpiarTexto(
-          datos.email
-        ),
+        datosLimpios.email,
 
       direccion:
-        limpiarTexto(
-          datos.direccion
-        ),
+        datosLimpios.direccion,
 
       ciudad:
-        limpiarTexto(
-          datos.ciudad
-        ),
+        datosLimpios.ciudad,
 
       alergias:
-        limpiarLista(
-          datos.alergias
-        ),
+        datosLimpios.alergias,
 
       enfermedadesPrevias:
-        limpiarLista(
-          datos.enfermedadesPrevias
-        ),
+        datosLimpios.enfermedadesPrevias,
 
       fechaActualizacion:
         serverTimestamp(),
     }
   );
+}
+
+
+export async function obtenerPacientePorId(
+  pacienteId: string,
+  laboratorioId: string
+): Promise<Paciente | null> {
+  const idPaciente =
+    limpiarTexto(
+      pacienteId
+    );
+
+  const idLaboratorio =
+    limpiarTexto(
+      laboratorioId
+    );
+
+
+  if (
+    !idPaciente
+  ) {
+    throw new Error(
+      "Paciente inválido."
+    );
+  }
+
+
+  if (
+    !idLaboratorio
+  ) {
+    throw new Error(
+      "Laboratorio inválido."
+    );
+  }
+
+
+  const referencia =
+    doc(
+      db,
+      COLECCION,
+      idPaciente
+    );
+
+
+  const snapshot =
+    await getDoc(
+      referencia
+    );
+
+
+  if (
+    !snapshot.exists()
+  ) {
+    return null;
+  }
+
+
+  const paciente =
+    convertirPaciente(
+      snapshot.id,
+      snapshot.data()
+    );
+
+
+  if (
+    paciente.laboratorioId !==
+    idLaboratorio
+  ) {
+    throw new Error(
+      "El paciente no pertenece a este laboratorio."
+    );
+  }
+
+
+  return paciente;
 }
