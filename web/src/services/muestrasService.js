@@ -1,34 +1,54 @@
 import {
   collection,
   doc,
+  getDoc,
   getDocs,
   query,
-  runTransaction,
   serverTimestamp,
+  setDoc,
   where,
 } from "firebase/firestore";
 
-import { db } from "../firebase/firebase";
+import {
+  db,
+} from "../firebase/firebase";
 
-const COLECCION_ORDENES = "ordenes";
-const COLECCION_MUESTRAS = "muestras";
+
+const COLECCION_ORDENES =
+  "ordenes";
+
+const COLECCION_SOLICITUDES =
+  "solicitudes";
+
+const COLECCION_MUESTRAS =
+  "muestras";
 
 
-// =====================================================
-// UTILIDADES
-// =====================================================
+function limpiarTexto(
+  valor
+) {
+  if (
+    valor === null ||
+    valor === undefined
+  ) {
+    return "";
+  }
 
-function limpiarTexto(valor) {
-  return typeof valor === "string"
-    ? valor.trim()
-    : "";
+  return String(
+    valor
+  ).trim();
 }
 
 
-function fechaMilisegundos(fecha) {
-  if (!fecha) {
+function fechaMilisegundos(
+  fecha
+) {
+  if (
+    !fecha
+  ) {
     return 0;
   }
+
 
   if (
     typeof fecha.toMillis ===
@@ -37,147 +57,155 @@ function fechaMilisegundos(fecha) {
     return fecha.toMillis();
   }
 
+
   if (
     typeof fecha.seconds ===
     "number"
   ) {
-    return fecha.seconds * 1000;
+    return (
+      fecha.seconds *
+      1000
+    );
   }
+
+
+  if (
+    fecha instanceof Date
+  ) {
+    return fecha.getTime();
+  }
+
 
   return 0;
 }
 
 
-// =====================================================
-// NORMALIZAR ANÁLISIS
-// =====================================================
-
-function normalizarAnalisis(valor) {
-  if (!Array.isArray(valor)) {
+function normalizarAnalisis(
+  valor
+) {
+  if (
+    !Array.isArray(
+      valor
+    )
+  ) {
     return [];
   }
 
-  return valor
-    .map((item) => {
-      if (
-        !item ||
-        typeof item !== "object"
-      ) {
-        return null;
-      }
 
-      return {
-        analisisId:
+  return valor
+    .map(
+      (
+        item
+      ) => {
+        if (
+          !item ||
+          typeof item !==
+            "object"
+        ) {
+          return null;
+        }
+
+
+        const analisisId =
           limpiarTexto(
             item.analisisId
           ) ||
           limpiarTexto(
             item.id
-          ),
+          );
 
-        nombre:
-          limpiarTexto(
-            item.nombre
-          ),
 
-        precio:
+        if (
+          !analisisId
+        ) {
+          return null;
+        }
+
+
+        const precio =
           Number(
-            item.precio || 0
-          ),
+            item.precio ||
+            0
+          );
 
-        cantidad:
+
+        const cantidad =
           Math.max(
             1,
             Number(
-              item.cantidad || 1
+              item.cantidad ||
+              1
             )
-          ),
-      };
-    })
+          );
+
+
+        const subtotalDato =
+          Number(
+            item.subtotal
+          );
+
+
+        return {
+          analisisId,
+
+          nombre:
+            limpiarTexto(
+              item.nombre
+            ) ||
+            "Análisis",
+
+          precio:
+            Number.isFinite(
+              precio
+            )
+              ? precio
+              : 0,
+
+          cantidad:
+            Number.isFinite(
+              cantidad
+            )
+              ? cantidad
+              : 1,
+
+          subtotal:
+            Number.isFinite(
+              subtotalDato
+            )
+              ? subtotalDato
+              : (
+                  Number.isFinite(
+                    precio
+                  )
+                    ? precio
+                    : 0
+                ) *
+                (
+                  Number.isFinite(
+                    cantidad
+                  )
+                    ? cantidad
+                    : 1
+                ),
+        };
+      }
+    )
     .filter(
-      (item) =>
-        item &&
-        item.analisisId
+      (
+        item
+      ) =>
+        item !==
+        null
     );
 }
 
-
-// =====================================================
-// CONVERTIR ORDEN
-// =====================================================
-
-function convertirOrden(
-  documento
-) {
-  const datos =
-    documento.data();
-
-  return {
-    id:
-      documento.id,
-
-    ordenId:
-      limpiarTexto(
-        datos.ordenId
-      ) ||
-      documento.id,
-
-    ventaId:
-      limpiarTexto(
-        datos.ventaId
-      ),
-
-    solicitudId:
-      limpiarTexto(
-        datos.solicitudId
-      ),
-
-    laboratorioId:
-      limpiarTexto(
-        datos.laboratorioId
-      ),
-
-    pacienteId:
-      limpiarTexto(
-        datos.pacienteId
-      ),
-
-    empleadoId:
-      limpiarTexto(
-        datos.empleadoId
-      ),
-
-    fecha:
-      datos.fecha || null,
-
-    estado:
-      limpiarTexto(
-        datos.estado
-      ) ||
-      "generada",
-
-    total:
-      Number(
-        datos.total || 0
-      ),
-
-    analisis:
-      normalizarAnalisis(
-        datos.analisis
-      ),
-  };
-}
-
-
-// =====================================================
-// CONVERTIR MUESTRA
-// =====================================================
 
 function convertirMuestra(
   documento
 ) {
   const datos =
     documento.data();
+
 
   return {
     id:
@@ -189,25 +217,19 @@ function convertirMuestra(
       ) ||
       documento.id,
 
-    codigoEtiqueta:
-      limpiarTexto(
-        datos.codigoEtiqueta
-      ) ||
-      documento.id,
-
     laboratorioId:
       limpiarTexto(
         datos.laboratorioId
       ),
 
-    ordenId:
-      limpiarTexto(
-        datos.ordenId
-      ),
-
     solicitudId:
       limpiarTexto(
         datos.solicitudId
+      ),
+
+    ordenId:
+      limpiarTexto(
+        datos.ordenId
       ),
 
     pacienteId:
@@ -223,6 +245,12 @@ function convertirMuestra(
     analisisNombre:
       limpiarTexto(
         datos.analisisNombre
+      ) ||
+      "Análisis",
+
+    bioquimicoId:
+      limpiarTexto(
+        datos.bioquimicoId
       ),
 
     tipo:
@@ -230,8 +258,10 @@ function convertirMuestra(
         datos.tipo
       ),
 
-    fechaToma:
-      datos.fechaToma || null,
+    codigoEtiqueta:
+      limpiarTexto(
+        datos.codigoEtiqueta
+      ),
 
     estado:
       limpiarTexto(
@@ -239,42 +269,163 @@ function convertirMuestra(
       ) ||
       "tomada",
 
-    bioquimicoId:
-      limpiarTexto(
-        datos.bioquimicoId
-      ),
+    fechaToma:
+      datos.fechaToma ||
+      null,
   };
 }
 
 
-// =====================================================
-// GENERAR ID ÚNICO DE MUESTRA
-// =====================================================
-
-function construirIdMuestra(
-  ordenId,
-  analisisId
+async function completarOrdenConSolicitud(
+  documento,
+  laboratorioId
 ) {
-  return (
-    ordenId +
-    "__" +
-    analisisId
-  )
-    .replace(
-      /[\/\\#?\[\]]/g,
-      "_"
-    )
-    .slice(
-      0,
-      1200
+  const datosOrden =
+    documento.data();
+
+
+  const solicitudId =
+    limpiarTexto(
+      datosOrden.solicitudId
     );
+
+
+  let datosSolicitud =
+    null;
+
+
+  /*
+   * Compatibilidad con órdenes antiguas.
+   *
+   * Si una orden no tiene pacienteId
+   * o analisis[], recuperamos esos datos
+   * desde la solicitud asociada.
+   */
+  if (
+    solicitudId
+  ) {
+    try {
+      const solicitudSnap =
+        await getDoc(
+          doc(
+            db,
+            COLECCION_SOLICITUDES,
+            solicitudId
+          )
+        );
+
+
+      if (
+        solicitudSnap.exists()
+      ) {
+        const posibleSolicitud =
+          solicitudSnap.data();
+
+
+        if (
+          limpiarTexto(
+            posibleSolicitud.laboratorioId
+          ) ===
+          laboratorioId
+        ) {
+          datosSolicitud =
+            posibleSolicitud;
+        }
+      }
+
+    } catch (
+      error
+    ) {
+      console.warn(
+        `No se pudo completar la orden ${documento.id} desde la solicitud ${solicitudId}:`,
+        error
+      );
+    }
+  }
+
+
+  const pacienteId =
+    limpiarTexto(
+      datosOrden.pacienteId
+    ) ||
+    limpiarTexto(
+      datosSolicitud?.pacienteId
+    );
+
+
+  const analisisOrden =
+    normalizarAnalisis(
+      datosOrden.analisis
+    );
+
+
+  const analisisSolicitud =
+    normalizarAnalisis(
+      datosSolicitud?.analisis
+    );
+
+
+  const analisis =
+    analisisOrden.length >
+    0
+      ? analisisOrden
+      : analisisSolicitud;
+
+
+  return {
+    id:
+      documento.id,
+
+    ordenId:
+      limpiarTexto(
+        datosOrden.ordenId
+      ) ||
+      documento.id,
+
+    ventaId:
+      limpiarTexto(
+        datosOrden.ventaId
+      ),
+
+    solicitudId,
+
+    laboratorioId:
+      limpiarTexto(
+        datosOrden.laboratorioId
+      ),
+
+    pacienteId,
+
+    empleadoId:
+      limpiarTexto(
+        datosOrden.empleadoId
+      ) ||
+      limpiarTexto(
+        datosSolicitud?.empleadoId
+      ),
+
+    fecha:
+      datosOrden.fecha ||
+      datosSolicitud?.fecha ||
+      null,
+
+    estado:
+      limpiarTexto(
+        datosOrden.estado
+      ) ||
+      "generada",
+
+    total:
+      Number(
+        datosOrden.total ??
+        datosSolicitud?.total ??
+        0
+      ),
+
+    analisis,
+  };
 }
 
-
-// =====================================================
-// HU-22
-// OBTENER ÓRDENES PARA TOMA DE MUESTRA
-// =====================================================
 
 export async function obtenerOrdenesParaMuestras(
   laboratorioId
@@ -284,9 +435,13 @@ export async function obtenerOrdenesParaMuestras(
       laboratorioId
     );
 
-  if (!idLaboratorio) {
+
+  if (
+    !idLaboratorio
+  ) {
     return [];
   }
+
 
   const consulta =
     query(
@@ -294,7 +449,6 @@ export async function obtenerOrdenesParaMuestras(
         db,
         COLECCION_ORDENES
       ),
-
       where(
         "laboratorioId",
         "==",
@@ -302,22 +456,40 @@ export async function obtenerOrdenesParaMuestras(
       )
     );
 
+
   const resultado =
     await getDocs(
       consulta
     );
 
-  return resultado.docs
-    .map(
-      convertirOrden
-    )
+
+  const ordenes =
+    await Promise.all(
+      resultado.docs.map(
+        (
+          documento
+        ) =>
+          completarOrdenConSolicitud(
+            documento,
+            idLaboratorio
+          )
+      )
+    );
+
+
+  return ordenes
     .filter(
-      (orden) =>
-        orden.estado !==
-        "cancelada"
+      (
+        orden
+      ) =>
+        orden.laboratorioId ===
+        idLaboratorio
     )
     .sort(
-      (a, b) =>
+      (
+        a,
+        b
+      ) =>
         fechaMilisegundos(
           b.fecha
         ) -
@@ -328,11 +500,6 @@ export async function obtenerOrdenesParaMuestras(
 }
 
 
-// =====================================================
-// HU-23
-// OBTENER MUESTRAS
-// =====================================================
-
 export async function obtenerMuestras(
   laboratorioId
 ) {
@@ -341,9 +508,13 @@ export async function obtenerMuestras(
       laboratorioId
     );
 
-  if (!idLaboratorio) {
+
+  if (
+    !idLaboratorio
+  ) {
     return [];
   }
+
 
   const consulta =
     query(
@@ -351,7 +522,6 @@ export async function obtenerMuestras(
         db,
         COLECCION_MUESTRAS
       ),
-
       where(
         "laboratorioId",
         "==",
@@ -359,17 +529,22 @@ export async function obtenerMuestras(
       )
     );
 
+
   const resultado =
     await getDocs(
       consulta
     );
+
 
   return resultado.docs
     .map(
       convertirMuestra
     )
     .sort(
-      (a, b) =>
+      (
+        a,
+        b
+      ) =>
         fechaMilisegundos(
           b.fechaToma
         ) -
@@ -380,10 +555,23 @@ export async function obtenerMuestras(
 }
 
 
-// =====================================================
-// HU-22 + HU-23
-// REGISTRAR TOMA E IDENTIFICACIÓN DE MUESTRA
-// =====================================================
+function generarCodigoEtiqueta() {
+  const fecha =
+    Date.now()
+      .toString()
+      .slice(-8);
+
+
+  const aleatorio =
+    Math.random()
+      .toString(36)
+      .slice(2, 7)
+      .toUpperCase();
+
+
+  return `MUE-${fecha}-${aleatorio}`;
+}
+
 
 export async function registrarMuestra({
   laboratorioId,
@@ -397,20 +585,24 @@ export async function registrarMuestra({
       laboratorioId
     );
 
+
   const idBioquimico =
     limpiarTexto(
       bioquimicoId
     );
+
 
   const idOrden =
     limpiarTexto(
       ordenId
     );
 
+
   const idAnalisis =
     limpiarTexto(
       analisisId
     );
+
 
   const tipoMuestra =
     limpiarTexto(
@@ -418,215 +610,212 @@ export async function registrarMuestra({
     );
 
 
-  if (!idLaboratorio) {
+  if (
+    !idLaboratorio
+  ) {
     throw new Error(
       "No se pudo identificar el laboratorio."
     );
   }
 
 
-  if (!idBioquimico) {
+  if (
+    !idBioquimico
+  ) {
     throw new Error(
-      "No se pudo identificar al bioquímico."
+      "No se pudo identificar al Bioquímico."
     );
   }
 
 
-  if (!idOrden) {
+  if (
+    !idOrden
+  ) {
     throw new Error(
       "Debe seleccionar una orden."
     );
   }
 
 
-  if (!idAnalisis) {
+  if (
+    !idAnalisis
+  ) {
     throw new Error(
       "Debe seleccionar un análisis."
     );
   }
 
 
-  if (!tipoMuestra) {
+  if (
+    !tipoMuestra
+  ) {
     throw new Error(
       "Debe seleccionar el tipo de muestra."
     );
   }
 
 
-  const ordenRef =
+  const ordenSnap =
+    await getDoc(
+      doc(
+        db,
+        COLECCION_ORDENES,
+        idOrden
+      )
+    );
+
+
+  if (
+    !ordenSnap.exists()
+  ) {
+    throw new Error(
+      "La orden seleccionada no existe."
+    );
+  }
+
+
+  const orden =
+    await completarOrdenConSolicitud(
+      ordenSnap,
+      idLaboratorio
+    );
+
+
+  if (
+    orden.laboratorioId !==
+    idLaboratorio
+  ) {
+    throw new Error(
+      "La orden pertenece a otro laboratorio."
+    );
+  }
+
+
+  if (
+    !orden.pacienteId
+  ) {
+    throw new Error(
+      "La orden no tiene un paciente asociado."
+    );
+  }
+
+
+  const analisis =
+    orden.analisis.find(
+      (
+        item
+      ) =>
+        item.analisisId ===
+        idAnalisis
+    );
+
+
+  if (
+    !analisis
+  ) {
+    throw new Error(
+      "El análisis seleccionado no pertenece a la orden."
+    );
+  }
+
+
+  const muestrasActuales =
+    await obtenerMuestras(
+      idLaboratorio
+    );
+
+
+  const yaRegistrada =
+    muestrasActuales.some(
+      (
+        muestra
+      ) =>
+        muestra.ordenId ===
+          idOrden &&
+        muestra.analisisId ===
+          idAnalisis
+    );
+
+
+  if (
+    yaRegistrada
+  ) {
+    throw new Error(
+      "Ya existe una muestra registrada para este análisis de la orden."
+    );
+  }
+
+
+  const referencia =
     doc(
-      db,
-      COLECCION_ORDENES,
-      idOrden
+      collection(
+        db,
+        COLECCION_MUESTRAS
+      )
     );
 
 
-  const muestraId =
-    construirIdMuestra(
-      idOrden,
-      idAnalisis
-    );
+  const codigoEtiqueta =
+    generarCodigoEtiqueta();
 
 
-  const muestraRef =
-    doc(
-      db,
-      COLECCION_MUESTRAS,
-      muestraId
-    );
+  await setDoc(
+    referencia,
+    {
+      muestraId:
+        referencia.id,
 
+      laboratorioId:
+        idLaboratorio,
 
-  let muestraCreada =
-    null;
+      solicitudId:
+        orden.solicitudId,
 
+      ordenId:
+        idOrden,
 
-  await runTransaction(
-    db,
-    async (
-      transaction
-    ) => {
+      pacienteId:
+        orden.pacienteId,
 
-      const ordenSnap =
-        await transaction.get(
-          ordenRef
-        );
+      analisisId:
+        idAnalisis,
 
+      analisisNombre:
+        analisis.nombre,
 
-      if (
-        !ordenSnap.exists()
-      ) {
-        throw new Error(
-          "La orden seleccionada no existe."
-        );
-      }
+      bioquimicoId:
+        idBioquimico,
 
+      tipo:
+        tipoMuestra,
 
-      const datosOrden =
-        ordenSnap.data();
+      codigoEtiqueta,
 
+      estado:
+        "tomada",
 
-      if (
-        limpiarTexto(
-          datosOrden.laboratorioId
-        ) !==
-        idLaboratorio
-      ) {
-        throw new Error(
-          "La orden pertenece a otro laboratorio."
-        );
-      }
-
-
-      const pacienteId =
-        limpiarTexto(
-          datosOrden.pacienteId
-        );
-
-
-      if (!pacienteId) {
-        throw new Error(
-          "La orden no tiene un paciente válido."
-        );
-      }
-
-
-      const analisis =
-        normalizarAnalisis(
-          datosOrden.analisis
-        );
-
-
-      const analisisOrden =
-        analisis.find(
-          (item) =>
-            item.analisisId ===
-            idAnalisis
-        );
-
-
-      if (!analisisOrden) {
-        throw new Error(
-          "El análisis seleccionado no pertenece a esta orden."
-        );
-      }
-
-
-      const muestraSnap =
-        await transaction.get(
-          muestraRef
-        );
-
-
-      if (
-        muestraSnap.exists()
-      ) {
-        throw new Error(
-          "Ya existe una muestra para este análisis y esta orden."
-        );
-      }
-
-
-      const codigoEtiqueta =
-        (
-          "M-" +
-          muestraId
-            .slice(
-              -18
-            )
-            .toUpperCase()
-        );
-
-
-      muestraCreada = {
-        muestraId,
-
-        codigoEtiqueta,
-
-        laboratorioId:
-          idLaboratorio,
-
-        ordenId:
-          ordenSnap.id,
-
-        solicitudId:
-          limpiarTexto(
-            datosOrden.solicitudId
-          ),
-
-        pacienteId,
-
-        analisisId:
-          analisisOrden.analisisId,
-
-        analisisNombre:
-          analisisOrden.nombre,
-
-        tipo:
-          tipoMuestra,
-
-        fechaToma:
-          serverTimestamp(),
-
-        estado:
-          "tomada",
-
-        bioquimicoId:
-          idBioquimico,
-      };
-
-
-      transaction.set(
-        muestraRef,
-        muestraCreada
-      );
+      fechaToma:
+        serverTimestamp(),
     }
   );
 
 
-  return {
-    ...muestraCreada,
+  const creada =
+    await getDoc(
+      referencia
+    );
 
-    id:
-      muestraId,
-  };
+
+  if (
+    !creada.exists()
+  ) {
+    throw new Error(
+      "La muestra fue registrada, pero no pudo recuperarse."
+    );
+  }
+
+
+  return convertirMuestra(
+    creada
+  );
 }
