@@ -1,7 +1,8 @@
 import {
-  deleteApp,
   getApp,
+  getApps,
   initializeApp,
+  type FirebaseApp,
 } from "firebase/app";
 
 import {
@@ -22,6 +23,7 @@ import {
   setDoc,
   updateDoc,
   where,
+  type DocumentData,
 } from "firebase/firestore";
 
 import {
@@ -29,294 +31,183 @@ import {
   db,
 } from "../firebase/firebase";
 
+
+const COLECCION_USUARIOS =
+  "usuarios";
+
+const COLECCION_LABORATORIOS =
+  "laboratorios";
+
+const COLECCION_ROLES =
+  "roles";
+
+const NOMBRE_APP_SECUNDARIA =
+  "crear-personal-secundario";
+
+
+// =====================================================
+// TIPOS
+// =====================================================
+
+export type RolPersonal =
+  | "recepcionista"
+  | "bioquimico";
+
+
 export type PersonalSistema = {
   id: string;
+
+  uid: string;
+
   nombre: string;
+
   apellido: string;
+
   email: string;
-  rol: string;
+
+  rol: RolPersonal;
+
   laboratorioId: string;
+
   activo: boolean;
-  fechaRegistro: unknown;
+
   requiereVerificacionEmail: boolean;
+
+  fechaRegistro?: unknown;
+
+  color?: string;
+
+  [key: string]: any;
 };
+
 
 export type LaboratorioPersonal = {
   id: string;
+
   laboratorioId: string;
+
   nombre: string;
+
   nombreVisible: string;
+
   direccion: string;
+
   telefono: string;
+
   email: string;
+
   logoUrl: string;
+
   colorPrimario: string;
+
   colorSecundario: string;
+
   activo: boolean;
+
+  [key: string]: any;
 };
 
-export type DatosNuevoPersonal = {
+
+export type CrearPersonalInput = {
+  laboratorioId?: string;
+
   nombre: string;
+
   apellido: string;
+
   email: string;
+
   password: string;
-  rol: "recepcionista" | "bioquimico";
-  requiereVerificacionEmail: boolean;
+
+  rol: RolPersonal;
+
+  requiereVerificacionEmail?: boolean;
 };
 
-export type DatosEditarPersonal = {
-  nombre: string;
-  apellido: string;
-  rol: "recepcionista" | "bioquimico";
+
+export type ActualizarPersonalInput = {
+  nombre?: string;
+
+  apellido?: string;
+
+  rol?: RolPersonal;
+
+  activo?: boolean;
 };
 
-const ROLES_PERSONAL = [
-  "recepcionista",
-  "bioquimico",
-];
+
+// =====================================================
+// UTILIDADES
+// =====================================================
 
 function limpiarTexto(
   valor: unknown
 ): string {
-  return typeof valor === "string"
-    ? valor.trim()
-    : "";
+  if (
+    valor === null ||
+    valor === undefined
+  ) {
+    return "";
+  }
+
+  return String(
+    valor
+  ).trim();
 }
 
-function correoValido(
-  correo: string
-): boolean {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(
-    correo
-  );
+
+function normalizarEmail(
+  valor: unknown
+): string {
+  return limpiarTexto(
+    valor
+  ).toLowerCase();
 }
 
-export function passwordSeguraPersonal(
-  password: string
-): boolean {
-  return (
-    password.length >= 8 &&
-    /[A-Z]/.test(password) &&
-    /[a-z]/.test(password) &&
-    /[0-9]/.test(password) &&
-    /[^A-Za-z0-9]/.test(password)
-  );
-}
 
 function rolValido(
-  rol: string
-): rol is "recepcionista" | "bioquimico" {
-  return ROLES_PERSONAL.includes(
-    rol
+  rol: unknown
+): rol is RolPersonal {
+  return (
+    rol === "recepcionista" ||
+    rol === "bioquimico"
   );
 }
 
-function obtenerCodigoError(
-  error: unknown
-): string {
-  if (
-    typeof error === "object" &&
-    error !== null &&
-    "code" in error
-  ) {
-    return String(
-      (
-        error as {
-          code?: string;
-        }
-      ).code || ""
-    );
-  }
 
-  return "";
-}
-
-function convertirErrorFirebase(
-  error: unknown
-): Error {
-  const codigo =
-    obtenerCodigoError(
-      error
-    );
-
-  if (
-    codigo ===
-    "auth/email-already-in-use"
-  ) {
-    return new Error(
-      "Ya existe una cuenta registrada con ese correo electrónico."
-    );
-  }
-
-  if (
-    codigo ===
-    "auth/invalid-email"
-  ) {
-    return new Error(
-      "El correo electrónico no es válido."
-    );
-  }
-
-  if (
-    codigo ===
-    "auth/weak-password"
-  ) {
-    return new Error(
-      "La contraseña no cumple los requisitos de seguridad."
-    );
-  }
-
-  if (
-    codigo ===
-    "auth/network-request-failed"
-  ) {
-    return new Error(
-      "No se pudo conectar con Firebase. Revisa tu conexión a Internet."
-    );
-  }
-
-  if (
-    error instanceof Error
-  ) {
-    return error;
-  }
-
-  return new Error(
-    "Ocurrió un error inesperado."
-  );
-}
-
-async function validarAdministradorActual() {
-  const firebaseUser =
-    auth.currentUser;
-
-  if (!firebaseUser) {
-    throw new Error(
-      "No existe una sesión autenticada."
-    );
-  }
-
-  const usuarioSnap =
-    await getDoc(
-      doc(
-        db,
-        "usuarios",
-        firebaseUser.uid
-      )
-    );
-
-  if (
-    !usuarioSnap.exists()
-  ) {
-    throw new Error(
-      "La cuenta autenticada no existe en el sistema."
-    );
-  }
-
-  const datos =
-    usuarioSnap.data();
-
-  if (
-    datos.activo !== true
-  ) {
-    throw new Error(
-      "La cuenta se encuentra inactiva."
-    );
-  }
-
-  if (
-    datos.rol !==
-    "administrador"
-  ) {
-    throw new Error(
-      "Solo el Administrador del Laboratorio puede gestionar personal."
-    );
-  }
-
-  const laboratorioId =
-    limpiarTexto(
-      datos.laboratorioId
-    );
-
-  if (!laboratorioId) {
-    throw new Error(
-      "El Administrador no tiene un laboratorio asociado."
-    );
-  }
-
-  return {
-    uid:
-      firebaseUser.uid,
-
-    laboratorioId,
-  };
-}
-
-export async function obtenerPermisosGestionPersonal(): Promise<
-  string[]
-> {
-  await validarAdministradorActual();
-
-  const rolSnap =
-    await getDoc(
-      doc(
-        db,
-        "roles",
-        "administrador"
-      )
-    );
-
-  if (
-    !rolSnap.exists()
-  ) {
-    return [];
-  }
-
-  const datos =
-    rolSnap.data();
-
-  if (
-    datos.activo !== true
-  ) {
-    return [];
-  }
-
-  return Array.isArray(
-    datos.permisos
-  )
-    ? datos.permisos.filter(
-        (
-          permiso
-        ): permiso is string =>
-          typeof permiso ===
-          "string"
-      )
-    : [];
-}
-
-async function validarPermiso(
-  permiso: string
-) {
-  const permisos =
-    await obtenerPermisosGestionPersonal();
-
-  if (
-    !permisos.includes(
-      permiso
+function colorValido(
+  color: unknown
+): boolean {
+  return (
+    typeof color === "string" &&
+    /^#[0-9A-Fa-f]{6}$/.test(
+      color.trim()
     )
-  ) {
-    throw new Error(
-      "No tienes permiso para realizar esta operación."
-    );
-  }
+  );
 }
+
+
+// =====================================================
+// CONVERTIR PERSONAL
+// =====================================================
 
 function convertirPersonal(
   id: string,
-  datos: Record<string, unknown>
+  datos: DocumentData
 ): PersonalSistema {
+  const rol =
+    limpiarTexto(
+      datos.rol
+    );
+
+
   return {
     id,
+
+    uid:
+      limpiarTexto(
+        datos.uid
+      ) || id,
 
     nombre:
       limpiarTexto(
@@ -329,14 +220,16 @@ function convertirPersonal(
       ),
 
     email:
-      limpiarTexto(
+      normalizarEmail(
         datos.email
       ),
 
     rol:
-      limpiarTexto(
-        datos.rol
-      ),
+      rolValido(
+        rol
+      )
+        ? rol
+        : "recepcionista",
 
     laboratorioId:
       limpiarTexto(
@@ -346,19 +239,28 @@ function convertirPersonal(
     activo:
       datos.activo === true,
 
-    fechaRegistro:
-      datos.fechaRegistro ||
-      null,
-
     requiereVerificacionEmail:
       datos.requiereVerificacionEmail ===
       true,
+
+    fechaRegistro:
+      datos.fechaRegistro,
+
+    color:
+      limpiarTexto(
+        datos.color
+      ),
   };
 }
 
+
+// =====================================================
+// CONVERTIR LABORATORIO
+// =====================================================
+
 function convertirLaboratorio(
   id: string,
-  datos: Record<string, unknown>
+  datos: DocumentData
 ): LaboratorioPersonal {
   const colorPrimario =
     limpiarTexto(
@@ -370,14 +272,14 @@ function convertirLaboratorio(
       datos.colorSecundario
     );
 
+
   return {
     id,
 
     laboratorioId:
       limpiarTexto(
         datos.laboratorioId
-      ) ||
-      id,
+      ) || id,
 
     nombre:
       limpiarTexto(
@@ -410,14 +312,14 @@ function convertirLaboratorio(
       ),
 
     colorPrimario:
-      /^#[0-9A-Fa-f]{6}$/.test(
+      colorValido(
         colorPrimario
       )
         ? colorPrimario.toUpperCase()
         : "#2563EB",
 
     colorSecundario:
-      /^#[0-9A-Fa-f]{6}$/.test(
+      colorValido(
         colorSecundario
       )
         ? colorSecundario.toUpperCase()
@@ -428,28 +330,131 @@ function convertirLaboratorio(
   };
 }
 
-export async function obtenerLaboratorioDelAdministrador(): Promise<
-  LaboratorioPersonal
-> {
-  const administrador =
-    await validarAdministradorActual();
+
+// =====================================================
+// OBTENER ADMINISTRADOR ACTUAL
+// =====================================================
+
+async function obtenerAdministradorActual() {
+  const firebaseUser =
+    auth.currentUser;
+
+
+  if (
+    !firebaseUser
+  ) {
+    throw new Error(
+      "No existe una sesión activa."
+    );
+  }
+
+
+  const referencia =
+    doc(
+      db,
+      COLECCION_USUARIOS,
+      firebaseUser.uid
+    );
+
 
   const snapshot =
     await getDoc(
-      doc(
-        db,
-        "laboratorios",
-        administrador.laboratorioId
-      )
+      referencia
     );
+
 
   if (
     !snapshot.exists()
   ) {
     throw new Error(
-      "No se encontró el laboratorio asociado al Administrador."
+      "No se encontró el usuario actual."
     );
   }
+
+
+  const datos =
+    snapshot.data();
+
+
+  if (
+    datos.activo !== true
+  ) {
+    throw new Error(
+      "El usuario actual está inactivo."
+    );
+  }
+
+
+  if (
+    limpiarTexto(
+      datos.rol
+    ) !== "administrador"
+  ) {
+    throw new Error(
+      "Solo el Administrador puede gestionar personal."
+    );
+  }
+
+
+  const laboratorioId =
+    limpiarTexto(
+      datos.laboratorioId
+    );
+
+
+  if (
+    !laboratorioId
+  ) {
+    throw new Error(
+      "El Administrador no está asociado a un laboratorio."
+    );
+  }
+
+
+  return {
+    uid:
+      firebaseUser.uid,
+
+    laboratorioId,
+
+    rol:
+      "administrador",
+  };
+}
+
+
+// =====================================================
+// OBTENER LABORATORIO DEL ADMINISTRADOR
+// =====================================================
+
+export async function obtenerLaboratorioDelAdministrador():
+  Promise<LaboratorioPersonal> {
+  const administrador =
+    await obtenerAdministradorActual();
+
+
+  const referencia =
+    doc(
+      db,
+      COLECCION_LABORATORIOS,
+      administrador.laboratorioId
+    );
+
+
+  const snapshot =
+    await getDoc(
+      referencia
+    );
+
+
+  if (
+    !snapshot.exists()
+  ) {
+    throw new Error(
+      "El laboratorio del Administrador no existe."
+    );
+  }
+
 
   return convertirLaboratorio(
     snapshot.id,
@@ -457,195 +462,416 @@ export async function obtenerLaboratorioDelAdministrador(): Promise<
   );
 }
 
-export async function obtenerPersonal(): Promise<
-  PersonalSistema[]
-> {
-  const administrador =
-    await validarAdministradorActual();
 
-  await validarPermiso(
-    "empleados.ver"
-  );
+// =====================================================
+// OBTENER PERMISOS
+// =====================================================
+
+export async function obtenerPermisosGestionPersonal():
+  Promise<any> {
+  const administrador =
+    await obtenerAdministradorActual();
+
+
+  const referencia =
+    doc(
+      db,
+      COLECCION_ROLES,
+      administrador.rol
+    );
+
+
+  const snapshot =
+    await getDoc(
+      referencia
+    );
+
+
+  const permisos:
+    string[] =
+    snapshot.exists() &&
+    Array.isArray(
+      snapshot.data().permisos
+    )
+      ? snapshot
+          .data()
+          .permisos
+          .filter(
+            (
+              permiso: unknown
+            ) =>
+              typeof permiso ===
+              "string"
+          )
+      : [];
+
+
+  const resultado:
+    any =
+    [...permisos];
+
+
+  resultado.permisos =
+    permisos;
+
+
+  resultado.puedeVer =
+    permisos.includes(
+      "empleados.ver"
+    );
+
+
+  resultado.puedeCrear =
+    permisos.includes(
+      "empleados.crear"
+    );
+
+
+  resultado.puedeEditar =
+    permisos.includes(
+      "empleados.editar"
+    );
+
+
+  resultado.puedeDesactivar =
+    permisos.includes(
+      "empleados.desactivar"
+    );
+
+
+  return resultado;
+}
+
+
+// =====================================================
+// CONTRASEÑA SEGURA
+// =====================================================
+
+export function passwordSeguraPersonal(
+  password?: string
+): any {
+  if (
+    typeof password ===
+    "string"
+  ) {
+    const valor =
+      password.trim();
+
+
+    return (
+      valor.length >= 8 &&
+      /[A-Z]/.test(
+        valor
+      ) &&
+      /[a-z]/.test(
+        valor
+      ) &&
+      /[0-9]/.test(
+        valor
+      )
+    );
+  }
+
+
+  const mayusculas =
+    "ABCDEFGHJKLMNPQRSTUVWXYZ";
+
+  const minusculas =
+    "abcdefghijkmnopqrstuvwxyz";
+
+  const numeros =
+    "23456789";
+
+  const especiales =
+    "!@#$%";
+
+
+  const obtenerAleatorio =
+    (
+      caracteres: string
+    ): string => {
+      const indice =
+        Math.floor(
+          Math.random() *
+          caracteres.length
+        );
+
+      return caracteres[
+        indice
+      ];
+    };
+
+
+  let resultado =
+    obtenerAleatorio(
+      mayusculas
+    ) +
+    obtenerAleatorio(
+      minusculas
+    ) +
+    obtenerAleatorio(
+      numeros
+    ) +
+    obtenerAleatorio(
+      especiales
+    );
+
+
+  const todos =
+    mayusculas +
+    minusculas +
+    numeros +
+    especiales;
+
+
+  while (
+    resultado.length <
+    10
+  ) {
+    resultado +=
+      obtenerAleatorio(
+        todos
+      );
+  }
+
+
+  return resultado;
+}
+
+
+// =====================================================
+// OBTENER PERSONAL
+// =====================================================
+
+export async function obtenerPersonal(
+  laboratorioId?: string
+): Promise<PersonalSistema[]> {
+  let idLaboratorio =
+    limpiarTexto(
+      laboratorioId
+    );
+
+
+  if (
+    !idLaboratorio
+  ) {
+    const administrador =
+      await obtenerAdministradorActual();
+
+
+    idLaboratorio =
+      administrador.laboratorioId;
+  }
+
 
   const consulta =
     query(
       collection(
         db,
-        "usuarios"
+        COLECCION_USUARIOS
       ),
       where(
         "laboratorioId",
         "==",
-        administrador.laboratorioId
+        idLaboratorio
       )
     );
+
 
   const snapshot =
     await getDocs(
       consulta
     );
 
-  return snapshot.docs
-    .map(
-      (
-        documento
-      ) =>
-        convertirPersonal(
-          documento.id,
-          documento.data()
-        )
-    )
-    .filter(
-      (
-        usuario
-      ) =>
-        rolValido(
-          usuario.rol
-        )
-    )
-    .sort(
-      (
-        a,
-        b
-      ) =>
-        `${a.nombre} ${a.apellido}`.localeCompare(
+
+  const resultado =
+    snapshot.docs
+      .map(
+        (
+          documento
+        ) =>
+          convertirPersonal(
+            documento.id,
+            documento.data()
+          )
+      )
+      .filter(
+        (
+          usuario
+        ) =>
+          usuario.rol ===
+            "recepcionista" ||
+          usuario.rol ===
+            "bioquimico"
+      );
+
+
+  resultado.sort(
+    (
+      a,
+      b
+    ) =>
+      `${a.nombre} ${a.apellido}`
+        .localeCompare(
           `${b.nombre} ${b.apellido}`,
-          "es"
+          "es",
+          {
+            sensitivity:
+              "base",
+          }
         )
-    );
+  );
+
+
+  return resultado;
 }
 
-async function validarRolDisponible(
-  rol: string
-) {
-  if (
-    !rolValido(
-      rol
-    )
-  ) {
-    throw new Error(
-      "Debes seleccionar un rol válido."
-    );
-  }
 
-  const rolSnap =
-    await getDoc(
-      doc(
-        db,
-        "roles",
-        rol
-      )
+// =====================================================
+// APP SECUNDARIA
+// =====================================================
+
+function obtenerAppSecundaria():
+  FirebaseApp {
+  const existente =
+    getApps().find(
+      (
+        app
+      ) =>
+        app.name ===
+        NOMBRE_APP_SECUNDARIA
     );
 
+
   if (
-    !rolSnap.exists() ||
-    rolSnap.data().activo !==
-      true
+    existente
   ) {
-    throw new Error(
-      "El rol seleccionado no se encuentra disponible."
-    );
+    return existente;
   }
+
+
+  const appPrincipal =
+    getApp();
+
+
+  return initializeApp(
+    appPrincipal.options,
+    NOMBRE_APP_SECUNDARIA
+  );
 }
 
-async function validarCorreoNoRegistrado(
-  email: string
-) {
-  const consulta =
-    query(
-      collection(
-        db,
-        "usuarios"
-      ),
-      where(
-        "email",
-        "==",
-        email
-      )
-    );
 
-  const snapshot =
-    await getDocs(
-      consulta
-    );
-
-  if (
-    !snapshot.empty
-  ) {
-    throw new Error(
-      "Ya existe un usuario registrado con ese correo electrónico."
-    );
-  }
-}
+// =====================================================
+// CREAR PERSONAL
+// =====================================================
 
 export async function crearPersonal(
-  datos: DatosNuevoPersonal
+  datos: CrearPersonalInput
 ): Promise<string> {
   const administrador =
-    await validarAdministradorActual();
+    await obtenerAdministradorActual();
 
-  await validarPermiso(
-    "empleados.crear"
-  );
+
+  const laboratorioId =
+    limpiarTexto(
+      datos.laboratorioId
+    ) ||
+    administrador.laboratorioId;
+
 
   const nombre =
     limpiarTexto(
       datos.nombre
     );
 
+
   const apellido =
     limpiarTexto(
       datos.apellido
     );
 
+
   const email =
-    limpiarTexto(
+    normalizarEmail(
       datos.email
-    ).toLowerCase();
+    );
+
 
   const password =
-    datos.password;
+    String(
+      datos.password ||
+      ""
+    );
+
 
   const rol =
     limpiarTexto(
       datos.rol
     );
 
+
+  const requiereVerificacionEmail =
+    datos.requiereVerificacionEmail ===
+    true;
+
+
   if (
-    nombre.length < 2
+    laboratorioId !==
+    administrador.laboratorioId
   ) {
     throw new Error(
-      "Ingresa un nombre válido."
+      "No puedes registrar personal en otro laboratorio."
     );
   }
 
+
   if (
-    apellido.length < 2
+    !nombre
   ) {
     throw new Error(
-      "Ingresa un apellido válido."
+      "El nombre es obligatorio."
     );
   }
 
+
   if (
-    !correoValido(
+    !apellido
+  ) {
+    throw new Error(
+      "El apellido es obligatorio."
+    );
+  }
+
+
+  if (
+    !email
+  ) {
+    throw new Error(
+      "El correo es obligatorio."
+    );
+  }
+
+
+  if (
+    !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(
       email
     )
   ) {
     throw new Error(
-      "Ingresa un correo electrónico válido."
+      "El correo electrónico no es válido."
     );
   }
 
+
   if (
-    !passwordSeguraPersonal(
-      password
-    )
+    password.length <
+    6
   ) {
     throw new Error(
-      "La contraseña debe tener al menos 8 caracteres, una mayúscula, una minúscula, un número y un carácter especial."
+      "La contraseña debe tener al menos 6 caracteres."
     );
   }
+
 
   if (
     !rolValido(
@@ -653,343 +879,402 @@ export async function crearPersonal(
     )
   ) {
     throw new Error(
-      "Selecciona Recepcionista o Bioquímico."
+      "Seleccione un rol válido."
     );
   }
 
-  await validarRolDisponible(
-    rol
-  );
-
-  const laboratorioSnap =
-    await getDoc(
-      doc(
-        db,
-        "laboratorios",
-        administrador.laboratorioId
-      )
-    );
-
-  if (
-    !laboratorioSnap.exists()
-  ) {
-    throw new Error(
-      "El laboratorio asociado no existe."
-    );
-  }
-
-  if (
-    laboratorioSnap.data().activo !==
-    true
-  ) {
-    throw new Error(
-      "No se puede registrar personal porque el laboratorio se encuentra inactivo."
-    );
-  }
-
-  await validarCorreoNoRegistrado(
-    email
-  );
-
-  const nombreApp =
-    `personal-secundario-${Date.now()}-${Math.random()
-      .toString(36)
-      .slice(2)}`;
 
   const appSecundaria =
-    initializeApp(
-      getApp().options,
-      nombreApp
-    );
+    obtenerAppSecundaria();
 
-  const authSecundaria =
+
+  const authSecundario =
     getAuth(
       appSecundaria
     );
+
 
   let usuarioCreado:
     Awaited<
       ReturnType<
         typeof createUserWithEmailAndPassword
       >
-    > | null = null;
+    >["user"] |
+    null =
+    null;
+
 
   try {
-    usuarioCreado =
+    const credencial =
       await createUserWithEmailAndPassword(
-        authSecundaria,
+        authSecundario,
         email,
         password
       );
 
+
+    usuarioCreado =
+      credencial.user;
+
+
     if (
-      datos.requiereVerificacionEmail
+      requiereVerificacionEmail
     ) {
       await sendEmailVerification(
-        usuarioCreado.user
+        usuarioCreado
       );
     }
 
+
+    const uid =
+      usuarioCreado.uid;
+
+
+    // La escritura se hace con db de la app principal.
+    // La sesión principal continúa siendo Administrador.
     await setDoc(
       doc(
         db,
-        "usuarios",
-        usuarioCreado.user.uid
+        COLECCION_USUARIOS,
+        uid
       ),
       {
-        nombre,
-        apellido,
-        email,
-        rol,
+        uid,
 
-        laboratorioId:
-          administrador.laboratorioId,
+        laboratorioId,
+
+        nombre,
+
+        apellido,
+
+        email,
+
+        rol,
 
         activo:
           true,
 
+        requiereVerificacionEmail,
+
         fechaRegistro:
           serverTimestamp(),
-
-        requiereVerificacionEmail:
-          datos.requiereVerificacionEmail ===
-          true,
       }
     );
 
-    return usuarioCreado.user.uid;
 
-  } catch (error) {
+    await signOut(
+      authSecundario
+    );
+
+
+    return uid;
+
+  } catch (
+    error
+  ) {
     if (
-      usuarioCreado?.user
+      usuarioCreado
     ) {
       try {
         await deleteUser(
-          usuarioCreado.user
+          usuarioCreado
         );
       } catch (
-        rollbackError
+        errorEliminar
       ) {
         console.error(
-          "No se pudo revertir el usuario de Authentication:",
-          rollbackError
+          "No se pudo revertir el usuario creado:",
+          errorEliminar
         );
       }
     }
 
-    throw convertirErrorFirebase(
-      error
-    );
 
-  } finally {
     try {
       await signOut(
-        authSecundaria
+        authSecundario
       );
     } catch {
+      // Sin acción.
     }
 
-    try {
-      await deleteApp(
-        appSecundaria
-      );
-    } catch {
-    }
+
+    throw error;
   }
 }
 
+
+// =====================================================
+// ACTUALIZAR PERSONAL
+// =====================================================
+
 export async function actualizarPersonal(
   usuarioId: string,
-  datos: DatosEditarPersonal
+  datos: ActualizarPersonalInput
 ): Promise<void> {
   const administrador =
-    await validarAdministradorActual();
+    await obtenerAdministradorActual();
 
-  await validarPermiso(
-    "empleados.editar"
-  );
 
   const id =
     limpiarTexto(
       usuarioId
     );
 
-  const nombre =
-    limpiarTexto(
-      datos.nombre
-    );
-
-  const apellido =
-    limpiarTexto(
-      datos.apellido
-    );
-
-  const rol =
-    limpiarTexto(
-      datos.rol
-    );
-
-  if (!id) {
-    throw new Error(
-      "El integrante seleccionado no es válido."
-    );
-  }
 
   if (
-    nombre.length < 2
+    !id
   ) {
     throw new Error(
-      "Ingresa un nombre válido."
+      "No se pudo identificar al integrante."
     );
   }
+
 
   if (
-    apellido.length < 2
+    id ===
+    administrador.uid
   ) {
     throw new Error(
-      "Ingresa un apellido válido."
+      "No puedes modificar tu propia cuenta desde este módulo."
     );
   }
 
-  if (
-    !rolValido(
-      rol
-    )
-  ) {
-    throw new Error(
-      "Selecciona un rol válido."
-    );
-  }
-
-  await validarRolDisponible(
-    rol
-  );
 
   const referencia =
     doc(
       db,
-      "usuarios",
+      COLECCION_USUARIOS,
       id
     );
+
 
   const snapshot =
     await getDoc(
       referencia
     );
 
+
   if (
     !snapshot.exists()
   ) {
     throw new Error(
-      "El integrante seleccionado no existe."
+      "El integrante no existe."
     );
   }
+
 
   const actual =
     snapshot.data();
 
+
   if (
-    actual.laboratorioId !==
+    limpiarTexto(
+      actual.laboratorioId
+    ) !==
     administrador.laboratorioId
   ) {
     throw new Error(
-      "No puedes modificar personal de otro laboratorio."
+      "El integrante pertenece a otro laboratorio."
     );
   }
+
 
   if (
     !rolValido(
-      limpiarTexto(
-        actual.rol
-      )
+      actual.rol
     )
   ) {
     throw new Error(
-      "No puedes modificar esta cuenta desde Gestión de Personal."
+      "El usuario seleccionado no pertenece al personal administrable."
     );
   }
 
+
+  const cambios: {
+    nombre?: string;
+    apellido?: string;
+    rol?: RolPersonal;
+  } = {};
+
+
+  if (
+    datos.nombre !==
+    undefined
+  ) {
+    const nombre =
+      limpiarTexto(
+        datos.nombre
+      );
+
+
+    if (
+      !nombre
+    ) {
+      throw new Error(
+        "El nombre es obligatorio."
+      );
+    }
+
+
+    cambios.nombre =
+      nombre;
+  }
+
+
+  if (
+    datos.apellido !==
+    undefined
+  ) {
+    const apellido =
+      limpiarTexto(
+        datos.apellido
+      );
+
+
+    if (
+      !apellido
+    ) {
+      throw new Error(
+        "El apellido es obligatorio."
+      );
+    }
+
+
+    cambios.apellido =
+      apellido;
+  }
+
+
+  if (
+    datos.rol !==
+    undefined
+  ) {
+    if (
+      !rolValido(
+        datos.rol
+      )
+    ) {
+      throw new Error(
+        "Seleccione un rol válido."
+      );
+    }
+
+
+    cambios.rol =
+      datos.rol;
+  }
+
+
+  if (
+    Object.keys(
+      cambios
+    ).length ===
+    0
+  ) {
+    return;
+  }
+
+
   await updateDoc(
     referencia,
-    {
-      nombre,
-      apellido,
-      rol,
-    }
+    cambios
   );
 }
 
+
+// =====================================================
+// CAMBIAR ESTADO
+// =====================================================
+
 export async function cambiarEstadoPersonal(
   usuarioId: string,
-  nuevoEstado: boolean
+  activo: boolean
 ): Promise<void> {
   const administrador =
-    await validarAdministradorActual();
+    await obtenerAdministradorActual();
 
-  await validarPermiso(
-    "empleados.desactivar"
-  );
 
   const id =
     limpiarTexto(
       usuarioId
     );
 
-  if (!id) {
+
+  if (
+    !id
+  ) {
     throw new Error(
-      "El integrante seleccionado no es válido."
+      "No se pudo identificar al integrante."
     );
   }
+
+
+  if (
+    id ===
+    administrador.uid
+  ) {
+    throw new Error(
+      "No puedes cambiar el estado de tu propia cuenta."
+    );
+  }
+
 
   const referencia =
     doc(
       db,
-      "usuarios",
+      COLECCION_USUARIOS,
       id
     );
+
 
   const snapshot =
     await getDoc(
       referencia
     );
 
+
   if (
     !snapshot.exists()
   ) {
     throw new Error(
-      "El integrante seleccionado no existe."
+      "El integrante no existe."
     );
   }
+
 
   const datos =
     snapshot.data();
 
+
   if (
-    datos.laboratorioId !==
+    limpiarTexto(
+      datos.laboratorioId
+    ) !==
     administrador.laboratorioId
   ) {
     throw new Error(
-      "No puedes modificar personal de otro laboratorio."
+      "El integrante pertenece a otro laboratorio."
     );
   }
 
+
   if (
     !rolValido(
-      limpiarTexto(
-        datos.rol
-      )
+      datos.rol
     )
   ) {
     throw new Error(
-      "La cuenta seleccionada no corresponde al personal administrable."
+      "El usuario seleccionado no pertenece al personal administrable."
     );
   }
+
 
   await updateDoc(
     referencia,
     {
       activo:
-        nuevoEstado,
+        activo === true,
     }
   );
 }

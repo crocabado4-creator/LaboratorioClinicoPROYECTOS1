@@ -1194,6 +1194,22 @@ export default function Index() {
   />
 )}
 
+          {usuario.rol ===
+            "bioquimico" && (
+              <Modulo
+                icono="🧪"
+                titulo="Muestras"
+                descripcion="Registra y consulta las muestras del laboratorio."
+                color="#7C3AED"
+                fondo="#EDE9FE"
+                onPress={() =>
+                  router.push(
+                    "/muestras" as never
+                  )
+                }
+              />
+            )}
+
           {tienePermiso(
             "ventas.ver"
           ) && (
