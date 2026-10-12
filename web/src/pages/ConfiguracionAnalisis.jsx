@@ -1,12 +1,9 @@
 import { useEffect, useState } from "react";
-
 import {
   guardarConfiguracionAnalisis,
   obtenerConfiguracionAnalisis,
 } from "../services/configuracionAnalisisService";
-
 import "./ConfiguracionAnalisis.css";
-
 
 const formularioInicial = {
   tipoMuestra: "",
@@ -17,130 +14,91 @@ const formularioInicial = {
   instrucciones: "",
 };
 
-
-function ConfiguracionAnalisis({
-  analisis,
-  usuario,
-  volver,
-}) {
-  const [formulario, setFormulario] =
-    useState(formularioInicial);
-
-  const [cargando, setCargando] =
-    useState(true);
-
-  const [guardando, setGuardando] =
-    useState(false);
-
-  const [mensaje, setMensaje] =
-    useState(null);
-
+function ConfiguracionAnalisis({ analisis, usuario, volver }) {
+  const [formulario, setFormulario] = useState(formularioInicial);
+  const [cargando, setCargando] = useState(true);
+  const [guardando, setGuardando] = useState(false);
+  const [mensaje, setMensaje] = useState(null);
 
   useEffect(() => {
+    let activo = true;
+
     const cargarConfiguracion = async () => {
       try {
         setCargando(true);
         setMensaje(null);
 
-        if (!analisis?.id) {
-          throw new Error(
-            "No se pudo identificar el análisis seleccionado."
-          );
+        const analisisId = analisis?.id || analisis?.analisisId;
+
+        if (!analisisId) {
+          throw new Error("No se pudo identificar el análisis seleccionado.");
         }
 
         if (!usuario?.laboratorioId) {
-          throw new Error(
-            "No se pudo identificar el laboratorio."
-          );
+          throw new Error("No se pudo identificar el laboratorio.");
         }
 
-        const resultado =
-          await obtenerConfiguracionAnalisis(
-            analisis.id,
-            usuario.laboratorioId
-          );
-
-        setFormulario({
-          tipoMuestra:
-            resultado?.tipoMuestra || "",
-          preparacionPaciente:
-            resultado?.preparacionPaciente || "",
-          requiereAyuno:
-            resultado?.requiereAyuno === true,
-          horasAyuno:
-            resultado?.requiereAyuno
-              ? String(resultado?.horasAyuno || "")
-              : "",
-          tiempoEntrega:
-            resultado?.tiempoEntrega || "",
-          instrucciones:
-            resultado?.instrucciones || "",
-        });
-      } catch (error) {
-        console.error(
-          "Error cargando configuración del análisis:",
-          error
+        const resultado = await obtenerConfiguracionAnalisis(
+          analisisId,
+          usuario.laboratorioId
         );
 
-        setMensaje({
-          tipo: "error",
-          texto:
-            error?.message ||
-            "No se pudo cargar la configuración del análisis.",
+        if (!activo) return;
+
+        setFormulario({
+          tipoMuestra: resultado?.tipoMuestra || "",
+          preparacionPaciente: resultado?.preparacionPaciente || "",
+          requiereAyuno: resultado?.requiereAyuno === true,
+          horasAyuno: resultado?.requiereAyuno
+            ? String(resultado?.horasAyuno ?? "")
+            : "",
+          tiempoEntrega: resultado?.tiempoEntrega || "",
+          instrucciones: resultado?.instrucciones || "",
         });
+      } catch (error) {
+        console.error("Error cargando configuración:", error);
+
+        if (activo) {
+          setMensaje({
+            tipo: "error",
+            texto:
+              error?.message ||
+              "No se pudo cargar la configuración del análisis.",
+          });
+        }
       } finally {
-        setCargando(false);
+        if (activo) setCargando(false);
       }
     };
 
     cargarConfiguracion();
-  }, [
-    analisis?.id,
-    usuario?.laboratorioId,
-  ]);
 
+    return () => {
+      activo = false;
+    };
+  }, [analisis?.id, analisis?.analisisId, usuario?.laboratorioId]);
 
   useEffect(() => {
     if (!mensaje) return;
 
-    const temporizador = window.setTimeout(
-      () => setMensaje(null),
-      5000
-    );
+    const temporizador = window.setTimeout(() => {
+      setMensaje(null);
+    }, 5000);
 
-    return () =>
-      window.clearTimeout(temporizador);
+    return () => window.clearTimeout(temporizador);
   }, [mensaje]);
 
-
   const manejarCambio = (evento) => {
-    const {
-      name,
-      value,
-      type,
-      checked,
-    } = evento.target;
+    const { name, value, type, checked } = evento.target;
 
     setFormulario((actual) => ({
       ...actual,
-      [name]:
-        type === "checkbox"
-          ? checked
-          : value,
+      [name]: type === "checkbox" ? checked : value,
+      ...(name === "requiereAyuno" && !checked
+        ? { horasAyuno: "" }
+        : {}),
     }));
-
-    if (
-      name === "requiereAyuno" &&
-      !checked
-    ) {
-      setFormulario((actual) => ({
-        ...actual,
-        requiereAyuno: false,
-        horasAyuno: "",
-      }));
-    }
   };
-
 
   const validarFormulario = () => {
     if (!formulario.tipoMuestra.trim()) {
@@ -152,34 +110,41 @@ function ConfiguracionAnalisis({
     }
 
     if (formulario.requiereAyuno) {
-      const horas = Number(
-        formulario.horasAyuno
-      );
+      const horas = Number(formulario.horasAyuno);
 
       if (
         formulario.horasAyuno === "" ||
-        Number.isNaN(horas) ||
+        !Number.isInteger(horas) ||
         horas <= 0 ||
         horas > 48
       ) {
-        return "Las horas de ayuno deben ser mayores a 0 y menores o iguales a 48.";
+        return "Las horas de ayuno deben ser números enteros entre 1 y 48.";
       }
     }
 
     return "";
   };
 
-
   const guardar = async (evento) => {
     evento.preventDefault();
     setMensaje(null);
 
-    const error = validarFormulario();
+    const errorValidacion = validarFormulario();
 
-    if (error) {
+    if (errorValidacion) {
       setMensaje({
         tipo: "error",
-        texto: error,
+        texto: errorValidacion,
+      });
+      return;
+    }
+
+    const analisisId = analisis?.id || analisis?.analisisId;
+
+    if (!analisisId || !usuario?.laboratorioId) {
+      setMensaje({
+        tipo: "error",
+        texto: "No se pudo identificar el análisis o laboratorio.",
       });
       return;
     }
@@ -188,48 +153,41 @@ function ConfiguracionAnalisis({
       setGuardando(true);
 
       await guardarConfiguracionAnalisis(
-        analisis.id,
+        analisisId,
         usuario.laboratorioId,
         {
-          tipoMuestra:
-            formulario.tipoMuestra,
-          preparacionPaciente:
-            formulario.preparacionPaciente,
-          requiereAyuno:
-            formulario.requiereAyuno,
-          horasAyuno:
-            formulario.requiereAyuno
-              ? Number(formulario.horasAyuno)
-              : 0,
-          tiempoEntrega:
-            formulario.tiempoEntrega,
-          instrucciones:
-            formulario.instrucciones,
+          tipoMuestra: formulario.tipoMuestra.trim(),
+          preparacionPaciente: formulario.preparacionPaciente.trim(),
+          requiereAyuno: formulario.requiereAyuno,
+          horasAyuno: formulario.requiereAyuno
+            ? Number(formulario.horasAyuno)
+            : 0,
+          tiempoEntrega: formulario.tiempoEntrega.trim(),
+          instrucciones: formulario.instrucciones.trim(),
         }
       );
 
       setMensaje({
         tipo: "exito",
-        texto:
-          "Configuración guardada correctamente.",
+        texto: "Configuración guardada correctamente.",
       });
     } catch (error) {
-      console.error(
-        "Error guardando configuración:",
-        error
-      );
+      console.error("Error guardando configuración:", error);
 
       setMensaje({
         tipo: "error",
-        texto:
-          error?.message ||
-          "No se pudo guardar la configuración.",
+        texto: error?.message || "No se pudo guardar la configuración.",
       });
     } finally {
       setGuardando(false);
     }
   };
 
+  const regresar = () => {
+    if (typeof volver === "function") {
+      volver();
+    }
+  };
 
   if (cargando) {
     return (
@@ -243,55 +201,43 @@ function ConfiguracionAnalisis({
     );
   }
 
-
   return (
     <main className="ca-page">
       <div className="ca-container">
         <button
           type="button"
           className="ca-back-button"
-          onClick={() => {
-            if (typeof volver === "function") {
-              volver();
-            }
-          }}
+          onClick={regresar}
         >
           ← Volver a análisis
         </button>
 
         <header className="ca-header">
           <div>
-            <span className="ca-eyebrow">
-              CONFIGURACIÓN
-            </span>
+            <span className="ca-eyebrow">CONFIGURACIÓN</span>
 
-            <h1>
-              Configuración del análisis
-            </h1>
+            <h1>Configuración del análisis</h1>
 
             <p>
-              Define la información necesaria para el procesamiento del análisis seleccionado.
+              Define la información necesaria para el procesamiento
+              del análisis seleccionado.
             </p>
           </div>
 
-          <div className="ca-header-icon">
-            ⚙️
-          </div>
+          <div className="ca-header-icon">⚙️</div>
         </header>
 
         <section className="ca-analysis-card">
-          <div className="ca-analysis-icon">
-            🔬
-          </div>
+          <div className="ca-analysis-icon">🔬</div>
 
           <div>
             <span>ANÁLISIS SELECCIONADO</span>
-            <h2>{analisis?.nombre}</h2>
+
+            <h2>{analisis?.nombre || "Sin nombre"}</h2>
+
             <p>
               {analisis?.tipo || "Sin tipo"} · Bs{" "}
-              {Number(
-                analisis?.precio || 0
-              ).toFixed(2)}
+              {Number(analisis?.precio || 0).toFixed(2)}
             </p>
           </div>
         </section>
@@ -305,119 +251,75 @@ function ConfiguracionAnalisis({
             }`}
           >
             <span>
-              {mensaje.tipo === "error"
-                ? "!"
-                : "✓"}
+              {mensaje.tipo === "error" ? "!" : "✓"}
             </span>
 
             {mensaje.texto}
           </div>
         )}
 
-        <form
-          className="ca-form-card"
-          onSubmit={guardar}
-        >
+        <form className="ca-form-card" onSubmit={guardar}>
           <div className="ca-section-title">
-            <div className="ca-section-icon">
-              🧪
-            </div>
+            <div className="ca-section-icon">🧪</div>
 
             <div>
-              <h3>
-                Procesamiento y preparación
-              </h3>
-              <p>
-                Configura los datos operativos del análisis.
-              </p>
+              <h3>Procesamiento y preparación</h3>
+              <p>Configura los datos operativos del análisis.</p>
             </div>
           </div>
 
           <div className="ca-grid">
-            <Campo
-              label="Tipo de muestra"
-              obligatorio
-            >
+            <Campo label="Tipo de muestra" obligatorio>
               <select
                 name="tipoMuestra"
                 value={formulario.tipoMuestra}
                 onChange={manejarCambio}
                 disabled={guardando}
               >
-                <option value="">
-                  Seleccionar
-                </option>
-                <option value="Sangre">
-                  Sangre
-                </option>
-                <option value="Orina">
-                  Orina
-                </option>
-                <option value="Heces">
-                  Heces
-                </option>
-                <option value="Suero">
-                  Suero
-                </option>
-                <option value="Plasma">
-                  Plasma
-                </option>
-                <option value="Saliva">
-                  Saliva
-                </option>
-                <option value="Hisopado">
-                  Hisopado
-                </option>
-                <option value="Otro">
-                  Otro
-                </option>
+                <option value="">Seleccionar</option>
+                <option value="Sangre">Sangre</option>
+                <option value="Orina">Orina</option>
+                <option value="Heces">Heces</option>
+                <option value="Suero">Suero</option>
+                <option value="Plasma">Plasma</option>
+                <option value="Saliva">Saliva</option>
+                <option value="Hisopado">Hisopado</option>
+                <option value="Otro">Otro</option>
               </select>
             </Campo>
 
-            <Campo
-              label="Tiempo de entrega"
-              obligatorio
-            >
+            <Campo label="Tiempo de entrega" obligatorio>
               <input
                 type="text"
                 name="tiempoEntrega"
                 value={formulario.tiempoEntrega}
                 onChange={manejarCambio}
-                maxLength="80"
+                maxLength={80}
                 placeholder="Ej. 24 horas"
                 disabled={guardando}
               />
             </Campo>
 
-            <Campo
-              label="Preparación del paciente"
-              full
-            >
+            <Campo label="Preparación del paciente" full>
               <textarea
                 name="preparacionPaciente"
-                value={
-                  formulario.preparacionPaciente
-                }
+                value={formulario.preparacionPaciente}
                 onChange={manejarCambio}
-                rows="4"
-                maxLength="500"
+                rows={4}
+                maxLength={500}
                 placeholder="Ej. Evitar ejercicio intenso antes de la toma de muestra."
                 disabled={guardando}
               />
             </Campo>
 
             <div className="ca-field ca-field-full">
-              <label className="ca-field-label">
-                Ayuno
-              </label>
+              <label className="ca-field-label">Ayuno</label>
 
               <label className="ca-switch-row">
                 <input
                   type="checkbox"
                   name="requiereAyuno"
-                  checked={
-                    formulario.requiereAyuno
-                  }
+                  checked={formulario.requiereAyuno}
                   onChange={manejarCambio}
                   disabled={guardando}
                 />
@@ -441,35 +343,29 @@ function ConfiguracionAnalisis({
             </div>
 
             {formulario.requiereAyuno && (
-              <Campo
-                label="Horas de ayuno"
-                obligatorio
-              >
+              <Campo label="Horas de ayuno" obligatorio>
                 <input
                   type="number"
                   name="horasAyuno"
                   value={formulario.horasAyuno}
                   onChange={manejarCambio}
-                  min="1"
-                  max="48"
-                  step="1"
+                  min={1}
+                  max={48}
+                  step={1}
                   placeholder="Ej. 8"
                   disabled={guardando}
                 />
               </Campo>
             )}
 
-            <Campo
-              label="Instrucciones adicionales"
-              full
-            >
+            <Campo label="Instrucciones adicionales" full>
               <textarea
                 name="instrucciones"
                 value={formulario.instrucciones}
                 onChange={manejarCambio}
-                rows="5"
-                maxLength="700"
-                placeholder="Ej. Presentarse por la mañana y traer la orden médica cuando corresponda."
+                rows={5}
+                maxLength={700}
+                placeholder="Ej. Presentarse por la mañana y traer la orden médica."
                 disabled={guardando}
               />
             </Campo>
@@ -479,11 +375,7 @@ function ConfiguracionAnalisis({
             <button
               type="button"
               className="ca-secondary-button"
-              onClick={() => {
-                if (typeof volver === "function") {
-                  volver();
-                }
-              }}
+              onClick={regresar}
               disabled={guardando}
             >
               Cancelar
@@ -505,7 +397,6 @@ function ConfiguracionAnalisis({
   );
 }
 
-
 function Campo({
   label,
   obligatorio = false,
@@ -513,17 +404,11 @@ function Campo({
   children,
 }) {
   return (
-    <div
-      className={`ca-field ${
-        full ? "ca-field-full" : ""
-      }`}
-    >
+    <div className={`ca-field ${full ? "ca-field-full" : ""}`}>
       <label className="ca-field-label">
         {label}
         {obligatorio && (
-          <span className="ca-required">
-            *
-          </span>
+          <span className="ca-required">*</span>
         )}
       </label>
 
@@ -531,6 +416,5 @@ function Campo({
     </div>
   );
 }
-
 
 export default ConfiguracionAnalisis;

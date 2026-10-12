@@ -18,7 +18,6 @@ const formularioInicial = {
   nombre: "",
   direccion: "",
   telefono: "",
-  email: "",
 };
 
 
@@ -26,6 +25,7 @@ function SuperAdminLaboratorios({
   permisos = [],
   volver,
 }) {
+
   // =====================================================
   // PERMISOS
   // =====================================================
@@ -60,36 +60,30 @@ function SuperAdminLaboratorios({
     setLaboratorios,
   ] = useState([]);
 
-
   const [
     cargando,
     setCargando,
   ] = useState(true);
-
 
   const [
     guardando,
     setGuardando,
   ] = useState(false);
 
-
   const [
     mensaje,
     setMensaje,
   ] = useState(null);
-
 
   const [
     busqueda,
     setBusqueda,
   ] = useState("");
 
-
   const [
     mostrarFiltros,
     setMostrarFiltros,
   ] = useState(false);
-
 
   const [
     filtroEstado,
@@ -106,12 +100,10 @@ function SuperAdminLaboratorios({
     setMostrarFormulario,
   ] = useState(false);
 
-
   const [
     editandoId,
     setEditandoId,
   ] = useState(null);
-
 
   const [
     formulario,
@@ -154,12 +146,9 @@ function SuperAdminLaboratorios({
       texto,
     });
 
-
     window.setTimeout(
       () => {
-        setMensaje(
-          null
-        );
+        setMensaje(null);
       },
       3500
     );
@@ -178,23 +167,17 @@ function SuperAdminLaboratorios({
         return;
       }
 
-
       try {
         setCargando(true);
-
 
         const resultado =
           await obtenerLaboratorios();
 
-
         setLaboratorios(
-          Array.isArray(
-            resultado
-          )
+          Array.isArray(resultado)
             ? resultado
             : []
         );
-
 
       } catch (error) {
         console.error(
@@ -202,13 +185,11 @@ function SuperAdminLaboratorios({
           error
         );
 
-
         mostrarMensaje(
           "error",
           error?.message ||
             "No se pudieron cargar los laboratorios."
         );
-
 
       } finally {
         setCargando(false);
@@ -233,13 +214,10 @@ function SuperAdminLaboratorios({
       value,
     } = evento.target;
 
-
     setFormulario(
       (anterior) => ({
         ...anterior,
-
-        [name]:
-          value,
+        [name]: value,
       })
     );
   };
@@ -249,20 +227,19 @@ function SuperAdminLaboratorios({
   // NUEVO
   // =====================================================
 
-  const abrirNuevo =
-    () => {
-      setEditandoId(null);
+  const abrirNuevo = () => {
+    setEditandoId(null);
 
-      setFormulario(
-        formularioInicial
-      );
+    setFormulario(
+      formularioInicial
+    );
 
-      setMostrarFormulario(
-        true
-      );
+    setMostrarFormulario(
+      true
+    );
 
-      setMensaje(null);
-    };
+    setMensaje(null);
+  };
 
 
   // =====================================================
@@ -276,11 +253,9 @@ function SuperAdminLaboratorios({
       return;
     }
 
-
     setEditandoId(
       laboratorio.id
     );
-
 
     setFormulario({
       nombre:
@@ -294,17 +269,11 @@ function SuperAdminLaboratorios({
       telefono:
         laboratorio.telefono ||
         "",
-
-      email:
-        laboratorio.email ||
-        "",
     });
-
 
     setMostrarFormulario(
       true
     );
-
 
     window.scrollTo({
       top: 0,
@@ -346,7 +315,6 @@ function SuperAdminLaboratorios({
         return "Ingrese el nombre del laboratorio.";
       }
 
-
       if (
         formulario.direccion.trim() ===
         ""
@@ -354,35 +322,12 @@ function SuperAdminLaboratorios({
         return "Ingrese la dirección.";
       }
 
-
       if (
         formulario.telefono.trim() ===
         ""
       ) {
         return "Ingrese el teléfono.";
       }
-
-
-      if (
-        formulario.email.trim() ===
-        ""
-      ) {
-        return "Ingrese el correo electrónico.";
-      }
-
-
-      const correoValido =
-        /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-
-      if (
-        !correoValido.test(
-          formulario.email.trim()
-        )
-      ) {
-        return "Ingrese un correo electrónico válido.";
-      }
-
 
       return "";
     };
@@ -397,10 +342,8 @@ function SuperAdminLaboratorios({
   ) => {
     evento.preventDefault();
 
-
     const errorValidacion =
       validarFormulario();
-
 
     if (errorValidacion) {
       mostrarMensaje(
@@ -411,12 +354,11 @@ function SuperAdminLaboratorios({
       return;
     }
 
-
     try {
       setGuardando(true);
 
-
       if (editandoId) {
+
         if (!puedeEditar) {
           mostrarMensaje(
             "error",
@@ -426,20 +368,18 @@ function SuperAdminLaboratorios({
           return;
         }
 
-
         await actualizarLaboratorio(
           editandoId,
           formulario
         );
-
 
         mostrarMensaje(
           "exito",
           "Laboratorio actualizado correctamente."
         );
 
-
       } else {
+
         if (!puedeCrear) {
           mostrarMensaje(
             "error",
@@ -449,11 +389,9 @@ function SuperAdminLaboratorios({
           return;
         }
 
-
         await crearLaboratorio(
           formulario
         );
-
 
         mostrarMensaje(
           "exito",
@@ -461,12 +399,9 @@ function SuperAdminLaboratorios({
         );
       }
 
-
       cancelarFormulario();
 
-
       await cargarLaboratorios();
-
 
     } catch (error) {
       console.error(
@@ -474,13 +409,11 @@ function SuperAdminLaboratorios({
         error
       );
 
-
       mostrarMensaje(
         "error",
         error?.message ||
           "No se pudo guardar el laboratorio."
       );
-
 
     } finally {
       setGuardando(false);
@@ -496,16 +429,15 @@ function SuperAdminLaboratorios({
     async (
       laboratorio
     ) => {
+
       if (
         !puedeCambiarEstado
       ) {
         return;
       }
 
-
       const nuevoEstado =
         !laboratorio.activo;
-
 
       const confirmar =
         window.confirm(
@@ -514,18 +446,15 @@ function SuperAdminLaboratorios({
             : `¿Desea desactivar el laboratorio "${laboratorio.nombre}"?`
         );
 
-
       if (!confirmar) {
         return;
       }
-
 
       try {
         await cambiarEstadoLaboratorio(
           laboratorio.id,
           nuevoEstado
         );
-
 
         mostrarMensaje(
           "exito",
@@ -534,16 +463,13 @@ function SuperAdminLaboratorios({
             : "Laboratorio desactivado correctamente."
         );
 
-
         await cargarLaboratorios();
-
 
       } catch (error) {
         console.error(
           "Error al cambiar estado:",
           error
         );
-
 
         mostrarMensaje(
           "error",
@@ -560,21 +486,21 @@ function SuperAdminLaboratorios({
 
   const laboratoriosFiltrados =
     useMemo(() => {
+
       const texto =
         busqueda
           .trim()
           .toLowerCase();
 
-
       return laboratorios.filter(
         (laboratorio) => {
+
           const coincideBusqueda =
             texto === "" ||
             [
               laboratorio.nombre,
               laboratorio.direccion,
               laboratorio.telefono,
-              laboratorio.email,
               laboratorio.laboratorioId,
             ].some(
               (valor) =>
@@ -588,10 +514,8 @@ function SuperAdminLaboratorios({
                   )
             );
 
-
           let coincideEstado =
             true;
-
 
           if (
             filtroEstado ===
@@ -602,7 +526,6 @@ function SuperAdminLaboratorios({
               true;
           }
 
-
           if (
             filtroEstado ===
             "inactivo"
@@ -611,7 +534,6 @@ function SuperAdminLaboratorios({
               laboratorio.activo !==
               true;
           }
-
 
           return (
             coincideBusqueda &&
@@ -648,12 +570,13 @@ function SuperAdminLaboratorios({
   const formatearFecha = (
     fecha
   ) => {
+
     if (!fecha) {
       return "Sin fecha";
     }
 
-
     try {
+
       if (
         typeof fecha.toDate ===
         "function"
@@ -665,25 +588,22 @@ function SuperAdminLaboratorios({
           );
       }
 
-
       if (
         fecha.seconds
       ) {
         return new Date(
           fecha.seconds *
-            1000
+          1000
         ).toLocaleString(
           "es-BO"
         );
       }
-
 
       return new Date(
         fecha
       ).toLocaleString(
         "es-BO"
       );
-
 
     } catch {
       return "Sin fecha";
@@ -751,16 +671,13 @@ function SuperAdminLaboratorios({
             ← Dashboard
           </button>
 
-
           <span className="lab-eyebrow">
             HU-04 · SUPER ADMINISTRACIÓN
           </span>
 
-
           <h1>
             Gestión de laboratorios
           </h1>
-
 
           <p>
             Registra, consulta, modifica y controla los
@@ -812,11 +729,13 @@ function SuperAdminLaboratorios({
       <section className="lab-stats">
 
         <article>
+
           <div className="lab-stat-icon blue">
             🏥
           </div>
 
           <div>
+
             <span>
               Laboratorios
             </span>
@@ -828,16 +747,20 @@ function SuperAdminLaboratorios({
             <small>
               Total registrado
             </small>
+
           </div>
+
         </article>
 
 
         <article>
+
           <div className="lab-stat-icon green">
             ✓
           </div>
 
           <div>
+
             <span>
               Activos
             </span>
@@ -854,16 +777,20 @@ function SuperAdminLaboratorios({
             <small>
               En funcionamiento
             </small>
+
           </div>
+
         </article>
 
 
         <article>
+
           <div className="lab-stat-icon red">
             ×
           </div>
 
           <div>
+
             <span>
               Inactivos
             </span>
@@ -880,7 +807,9 @@ function SuperAdminLaboratorios({
             <small>
               Deshabilitados
             </small>
+
           </div>
+
         </article>
 
       </section>
@@ -891,6 +820,7 @@ function SuperAdminLaboratorios({
       ================================================= */}
 
       {mostrarFormulario && (
+
         <section className="lab-form-card">
 
           <div className="lab-section-title">
@@ -910,7 +840,6 @@ function SuperAdminLaboratorios({
               </h2>
 
             </div>
-
 
             <button
               type="button"
@@ -995,27 +924,6 @@ function SuperAdminLaboratorios({
             </div>
 
 
-            <div className="lab-field">
-
-              <label>
-                Correo electrónico *
-              </label>
-
-              <input
-                type="email"
-                name="email"
-                value={
-                  formulario.email
-                }
-                onChange={
-                  manejarCambio
-                }
-                placeholder="laboratorio@correo.com"
-              />
-
-            </div>
-
-
             <div className="lab-form-actions">
 
               <button
@@ -1078,7 +986,7 @@ function SuperAdminLaboratorios({
                 evento.target.value
               )
             }
-            placeholder="Buscar por nombre, dirección, teléfono o correo..."
+            placeholder="Buscar por nombre, dirección o teléfono..."
           />
 
         </div>
@@ -1114,11 +1022,13 @@ function SuperAdminLaboratorios({
       ================================================= */}
 
       {mostrarFiltros && (
+
         <section className="lab-filters">
 
           <div className="lab-filter-header">
 
             <div>
+
               <span>
                 FILTROS
               </span>
@@ -1126,6 +1036,7 @@ function SuperAdminLaboratorios({
               <h3>
                 Filtrar laboratorios
               </h3>
+
             </div>
 
 
@@ -1161,6 +1072,7 @@ function SuperAdminLaboratorios({
                   )
                 }
               >
+
                 <option value="todos">
                   Todos
                 </option>
@@ -1212,6 +1124,7 @@ function SuperAdminLaboratorios({
 
 
         {cargando ? (
+
           <div className="lab-empty">
 
             <div className="lab-spinner" />
@@ -1224,6 +1137,7 @@ function SuperAdminLaboratorios({
 
         ) : laboratoriosFiltrados.length ===
           0 ? (
+
           <div className="lab-empty">
 
             <div className="lab-empty-icon">
@@ -1242,6 +1156,7 @@ function SuperAdminLaboratorios({
           </div>
 
         ) : (
+
           <div className="lab-table-wrapper">
 
             <table className="lab-table">
@@ -1252,10 +1167,6 @@ function SuperAdminLaboratorios({
 
                   <th>
                     Laboratorio
-                  </th>
-
-                  <th>
-                    Correo
                   </th>
 
                   <th>
@@ -1279,6 +1190,7 @@ function SuperAdminLaboratorios({
 
                 {laboratoriosFiltrados.map(
                   (laboratorio) => (
+
                     <tr
                       key={
                         laboratorio.id
@@ -1292,7 +1204,6 @@ function SuperAdminLaboratorios({
                           <div className="lab-avatar">
                             🏥
                           </div>
-
 
                           <div>
 
@@ -1309,12 +1220,6 @@ function SuperAdminLaboratorios({
 
                         </div>
 
-                      </td>
-
-
-                      <td>
-                        {laboratorio.email ||
-                          "Sin correo"}
                       </td>
 
 
@@ -1379,6 +1284,7 @@ function SuperAdminLaboratorios({
                           {/* EDITAR */}
 
                           {puedeEditar && (
+
                             <button
                               type="button"
                               className="lab-action edit"
@@ -1390,12 +1296,14 @@ function SuperAdminLaboratorios({
                             >
                               ✎ Editar
                             </button>
+
                           )}
 
 
                           {/* ACTIVAR / DESACTIVAR */}
 
                           {puedeCambiarEstado && (
+
                             <button
                               type="button"
                               className={
@@ -1413,6 +1321,7 @@ function SuperAdminLaboratorios({
                                 ? "Desactivar"
                                 : "Activar"}
                             </button>
+
                           )}
 
                         </div>
@@ -1438,6 +1347,7 @@ function SuperAdminLaboratorios({
       ================================================= */}
 
       {laboratorioVer && (
+
         <div className="lab-modal-overlay">
 
           <section className="lab-modal small">
@@ -1445,6 +1355,7 @@ function SuperAdminLaboratorios({
             <div className="lab-modal-header">
 
               <div>
+
                 <span>
                   VISTA RÁPIDA
                 </span>
@@ -1452,6 +1363,7 @@ function SuperAdminLaboratorios({
                 <h2>
                   Laboratorio
                 </h2>
+
               </div>
 
 
@@ -1476,15 +1388,9 @@ function SuperAdminLaboratorios({
                 🏥
               </div>
 
-
               <h3>
                 {laboratorioVer.nombre}
               </h3>
-
-
-              <p>
-                {laboratorioVer.email}
-              </p>
 
 
               <span
@@ -1539,6 +1445,7 @@ function SuperAdminLaboratorios({
       ================================================= */}
 
       {laboratorioDetalle && (
+
         <div className="lab-modal-overlay">
 
           <section className="lab-modal">
@@ -1589,14 +1496,6 @@ function SuperAdminLaboratorios({
                   laboratorioDetalle.activo
                     ? "Activo"
                     : "Inactivo"
-                }
-              />
-
-
-              <Detalle
-                titulo="Correo electrónico"
-                valor={
-                  laboratorioDetalle.email
                 }
               />
 
@@ -1739,6 +1638,7 @@ function Detalle({
   valor,
   completo = false,
 }) {
+
   return (
     <div
       className={

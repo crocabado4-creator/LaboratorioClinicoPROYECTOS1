@@ -119,10 +119,6 @@ export async function obtenerLaboratorios() {
             datos.telefono ||
             "",
 
-          email:
-            datos.email ||
-            "",
-
           logoUrl:
             datos.logoUrl ||
             "",
@@ -206,6 +202,7 @@ export async function obtenerLaboratorioPorId(
 
 // =====================================================
 // CREAR LABORATORIO
+// SIN CORREO
 // =====================================================
 
 export async function crearLaboratorio(
@@ -228,11 +225,6 @@ export async function crearLaboratorio(
       datos?.telefono
     );
 
-  const email =
-    limpiarTexto(
-      datos?.email
-    ).toLowerCase();
-
 
   if (!nombre) {
     throw new Error(
@@ -249,12 +241,6 @@ export async function crearLaboratorio(
   if (!telefono) {
     throw new Error(
       "El teléfono es obligatorio."
-    );
-  }
-
-  if (!email) {
-    throw new Error(
-      "El correo electrónico es obligatorio."
     );
   }
 
@@ -277,8 +263,6 @@ export async function crearLaboratorio(
     direccion,
 
     telefono,
-
-    email,
 
     logoUrl:
       "",
@@ -303,6 +287,7 @@ export async function crearLaboratorio(
 
 // =====================================================
 // ACTUALIZAR LABORATORIO
+// SIN CORREO
 // =====================================================
 
 export async function actualizarLaboratorio(
@@ -333,11 +318,6 @@ export async function actualizarLaboratorio(
       datos?.telefono
     );
 
-  const email =
-    limpiarTexto(
-      datos?.email
-    ).toLowerCase();
-
 
   if (!nombre) {
     throw new Error(
@@ -354,12 +334,6 @@ export async function actualizarLaboratorio(
   if (!telefono) {
     throw new Error(
       "El teléfono es obligatorio."
-    );
-  }
-
-  if (!email) {
-    throw new Error(
-      "El correo electrónico es obligatorio."
     );
   }
 
@@ -393,7 +367,6 @@ export async function actualizarLaboratorio(
       nombre,
       direccion,
       telefono,
-      email,
     }
   );
 

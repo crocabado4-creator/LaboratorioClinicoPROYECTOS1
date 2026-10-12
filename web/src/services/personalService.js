@@ -902,3 +902,42 @@ export async function cambiarEstadoPersonal(
 
   return true;
 }
+export async function restablecerPasswordPersonal(usuarioId, nuevaPassword) {
+  if (!auth.currentUser) {
+    throw new Error("Debes iniciar sesión.");
+  }
+
+  if (!passwordSeguro(nuevaPassword)) {
+    throw new Error(
+      "La contraseña debe tener mínimo 8 caracteres, mayúscula, minúscula, número y carácter especial."
+    );
+  }
+
+  const token = await auth.currentUser.getIdToken();
+
+  let respuesta;
+
+  try {
+    respuesta = await fetch("http://localhost:3001/cambiar-password", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`
+      },
+      body: JSON.stringify({
+        usuarioId,
+        nuevaPassword
+      })
+    });
+  } catch {
+    throw new Error("No se pudo conectar con el backend.");
+  }
+
+  const datos = await respuesta.json();
+
+  if (!respuesta.ok) {
+    throw new Error(datos.error || "No se pudo cambiar la contraseña.");
+  }
+
+  return datos;
+}

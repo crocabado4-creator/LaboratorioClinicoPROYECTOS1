@@ -12,7 +12,8 @@ import {
   obtenerAdministradores,
   obtenerLaboratoriosAdministradores,
   passwordSeguro,
-} from "../services/administradoresService";
+  restablecerPasswordUsuario,
+} from "../services/administradoresService";   
 
 import "./SuperAdminAdministradores.css";
 
@@ -24,7 +25,7 @@ const formularioInicial = {
   laboratorioId: "",
   password: "",
   confirmarPassword: "",
-  requiereVerificacionEmail: true,
+  requiereVerificacionEmail: false,
 };
 
 
@@ -67,6 +68,11 @@ function SuperAdminAdministradores({
     cargando,
     setCargando,
   ] = useState(true);
+
+  const [usuarioPassword, setUsuarioPassword] = useState(null);
+  const [nuevaPassword, setNuevaPassword] = useState("");
+  const [confirmarNuevaPassword, setConfirmarNuevaPassword] = useState("");
+  const [verNuevaPassword, setVerNuevaPassword] = useState(false);
 
   const [
     guardando,
@@ -700,6 +706,39 @@ function SuperAdminAdministradores({
     };
 
 
+  const abrirRestablecerPassword = (administrador) => {
+    setUsuarioPassword(administrador);
+    setNuevaPassword("");
+    setConfirmarNuevaPassword("");
+    setVerNuevaPassword(false);
+    setMensaje(null);
+  };
+
+  const guardarNuevaPassword = async (evento) => {
+    evento.preventDefault();
+    if (!usuarioPassword?.id) return;
+    if (!passwordSeguro(nuevaPassword)) {
+      mostrarMensaje("error", "La contraseña debe tener mínimo 8 caracteres, mayúscula, minúscula, número y carácter especial.");
+      return;
+    }
+    if (nuevaPassword !== confirmarNuevaPassword) {
+      mostrarMensaje("error", "Las contraseñas no coinciden.");
+      return;
+    }
+    try {
+      setGuardando(true);
+      await restablecerPasswordUsuario(usuarioPassword.id, nuevaPassword);
+      setUsuarioPassword(null);
+      setNuevaPassword("");
+      setConfirmarNuevaPassword("");
+      mostrarMensaje("exito", "Contraseña actualizada correctamente.");
+    } catch (error) {
+      mostrarMensaje("error", error?.message || "No se pudo cambiar la contraseña.");
+    } finally {
+      setGuardando(false);
+    }
+  };
+
   const formatearFecha = (
     fecha
   ) => {
@@ -738,6 +777,7 @@ function SuperAdminAdministradores({
       return "No registrada";
     }
   };
+  
 
 
   if (!puedeVer) {
@@ -1198,6 +1238,19 @@ function SuperAdminAdministradores({
                             </button>
                           )}
 
+                          <button
+                            type="button"
+                            className="admins-action edit"
+                            onClick={() =>
+                              abrirRestablecerPassword(
+                                administrador
+                              )
+                            }
+                            disabled={guardando}
+                          >
+                            🔑 Restablecer contraseña
+                          </button>
+
                           {puedeCambiarEstado && (
                             <button
                               type="button"
@@ -1229,6 +1282,49 @@ function SuperAdminAdministradores({
         )}
       </section>
 
+
+      {usuarioPassword && (
+        <div className="admins-modal-overlay">
+          <section className="admins-modal admins-form-modal">
+            <div className="admins-modal-header">
+              <div>
+                <h2>Restablecer contraseña</h2>
+                <p>{usuarioPassword.nombre} {usuarioPassword.apellido} — {usuarioPassword.email}</p>
+              </div>
+              <button type="button" className="admins-close" disabled={guardando} onClick={() => setUsuarioPassword(null)}>×</button>
+            </div>
+            <form className="admins-form" onSubmit={guardarNuevaPassword}>
+              <div className="admins-form-section">
+                <div className="admins-field">
+                  <label>Nueva contraseña *</label>
+                  <div className="admins-password">
+                    <input type={verNuevaPassword ? "text" : "password"} value={nuevaPassword} onChange={(e) => setNuevaPassword(e.target.value)} autoComplete="new-password" required />
+                    <button type="button" onClick={() => setVerNuevaPassword(!verNuevaPassword)}>{verNuevaPassword ? "Ocultar" : "Ver"}</button>
+                  </div>
+                </div>
+                <div className="admins-field">
+                  <label>Confirmar nueva contraseña *</label>
+                  <input type={verNuevaPassword ? "text" : "password"} value={confirmarNuevaPassword} onChange={(e) => setConfirmarNuevaPassword(e.target.value)} autoComplete="new-password" required />
+                </div>
+                <div className="admins-password-rules">
+                  <strong>Requisitos de contraseña:</strong>
+                  <div>
+                    <ReglaPassword correcta={nuevaPassword.length >= 8} texto="Mínimo 8 caracteres" />
+                    <ReglaPassword correcta={/[A-Z]/.test(nuevaPassword)} texto="Una mayúscula" />
+                    <ReglaPassword correcta={/[a-z]/.test(nuevaPassword)} texto="Una minúscula" />
+                    <ReglaPassword correcta={/[0-9]/.test(nuevaPassword)} texto="Un número" />
+                    <ReglaPassword correcta={/[^A-Za-z0-9]/.test(nuevaPassword)} texto="Un carácter especial" />
+                  </div>
+                </div>
+              </div>
+              <div className="admins-form-actions">
+                <button type="button" className="admins-secondary" disabled={guardando} onClick={() => setUsuarioPassword(null)}>Cancelar</button>
+                <button type="submit" className="admins-primary" disabled={guardando}>{guardando ? "Guardando..." : "Guardar nueva contraseña"}</button>
+              </div>
+            </form>
+          </section>
+        </div>
+      )}
 
       {modoFormulario && (
         <div className="admins-modal-overlay">

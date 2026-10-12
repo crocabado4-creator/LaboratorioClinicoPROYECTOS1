@@ -15,6 +15,7 @@ function GestionSolicitudes({ usuario, onVolver }) {
   const [analisis, setAnalisis] = useState([]);
   const [solicitudes, setSolicitudes] = useState([]);
   const [pacienteId, setPacienteId] = useState("");
+  const [busquedaPaciente, setBusquedaPaciente] = useState("");
   const [seleccionados, setSeleccionados] = useState([]);
   const [busqueda, setBusqueda] = useState("");
   const [detalle, setDetalle] = useState(null);
@@ -63,6 +64,26 @@ function GestionSolicitudes({ usuario, onVolver }) {
 
     cargarDatos();
   }, [laboratorioId]);
+
+  // Buscar pacientes en tiempo real por nombre, apellido o carnet.
+  const pacientesFiltrados = useMemo(() => {
+    const normalizar = (valor) => String(valor ?? "")
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .trim();
+
+    const texto = normalizar(busquedaPaciente);
+    if (!texto) return pacientes;
+
+    return pacientes.filter((paciente) => {
+      const nombres = normalizar(paciente.nombres);
+      const apellidos = normalizar(paciente.apellidos);
+      const ci = normalizar(paciente.ci);
+      return nombres.includes(texto) || apellidos.includes(texto) ||
+        ci.includes(texto) || `${nombres} ${apellidos}`.includes(texto);
+    });
+  }, [pacientes, busquedaPaciente]);
 
   const analisisFiltrados = useMemo(() => {
     const texto = busqueda.trim().toLowerCase();
@@ -160,6 +181,7 @@ function GestionSolicitudes({ usuario, onVolver }) {
       );
 
       setPacienteId("");
+      setBusquedaPaciente("");
       setSeleccionados([]);
       setBusqueda("");
       setMensaje("Solicitud registrada correctamente.");
@@ -270,6 +292,25 @@ function GestionSolicitudes({ usuario, onVolver }) {
         </div>
 
         <div className="gs-field">
+          <label htmlFor="gs-buscar-paciente">Buscar por nombre, apellido o carnet</label>
+          <input
+            id="gs-buscar-paciente"
+            type="text"
+            value={busquedaPaciente}
+            onChange={(e) => setBusquedaPaciente(e.target.value)}
+            placeholder="Ej.: Juan, Pérez o 1234567"
+            autoComplete="off"
+          />
+          {busquedaPaciente.trim() && (
+            <small>
+              {pacientesFiltrados.length === 0
+                ? "No se encontraron pacientes."
+                : `${pacientesFiltrados.length} paciente(s) encontrado(s).`}
+            </small>
+          )}
+        </div>
+
+        <div className="gs-field">
           <label htmlFor="gs-paciente">Paciente</label>
           <select
             id="gs-paciente"
@@ -277,12 +318,21 @@ function GestionSolicitudes({ usuario, onVolver }) {
             onChange={(e) => setPacienteId(e.target.value)}
           >
             <option value="">Seleccione un paciente</option>
-            {pacientes.map((paciente) => (
+            {pacientesFiltrados.map((paciente) => (
               <option
-                key={paciente.id}
+                key={paciente.pacienteId || paciente.id}
                 value={paciente.pacienteId || paciente.id}
               >
                 {paciente.nombres} {paciente.apellidos} - CI {paciente.ci}
+              </option>
+            ))}
+            {pacienteId && !pacientesFiltrados.some(
+              (paciente) => (paciente.pacienteId || paciente.id) === pacienteId
+            ) && pacientes.filter(
+              (paciente) => (paciente.pacienteId || paciente.id) === pacienteId
+            ).map((paciente) => (
+              <option key={pacienteId} value={pacienteId}>
+                {paciente.nombres} {paciente.apellidos} - CI {paciente.ci} (seleccionado)
               </option>
             ))}
           </select>
