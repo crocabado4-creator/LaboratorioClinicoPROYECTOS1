@@ -39,6 +39,8 @@ import {
   type LaboratorioAdministrador,
 } from "../services/administradoresService";
 
+import CambiarPasswordModal from "../components/CambiarPasswordModal";
+
 type FiltroEstado =
   | "todos"
   | "activo"
@@ -208,6 +210,9 @@ export default function AdministradoresScreen() {
     mostrarConfirmacionPassword,
     setMostrarConfirmacionPassword,
   ] = useState(false);
+
+  const [administradorPassword, setAdministradorPassword] =
+    useState<AdministradorSistema | null>(null);
 
   const puedeCrear =
     permisos.includes(
@@ -1723,6 +1728,17 @@ export default function AdministradoresScreen() {
                         </Pressable>
                       )}
 
+                      {puedeEditar && (
+                        <Pressable
+                          style={[styles.action, styles.editAction]}
+                          onPress={() => setAdministradorPassword(administrador)}
+                        >
+                          <Text style={styles.editActionText}>
+                            Cambiar contraseña
+                          </Text>
+                        </Pressable>
+                      )}
+
                       {puedeCambiarEstado && (
                         <Pressable
                           style={[
@@ -2628,6 +2644,19 @@ export default function AdministradoresScreen() {
           </View>
         </View>
       </Modal>
+
+      <CambiarPasswordModal
+        visible={administradorPassword !== null}
+        usuarioId={administradorPassword?.id || ""}
+        nombreUsuario={administradorPassword
+          ? `${administradorPassword.nombre} ${administradorPassword.apellido}`
+          : ""}
+        onClose={() => setAdministradorPassword(null)}
+        onSuccess={() => {
+          setAdministradorPassword(null);
+          cargarDatos(false);
+        }}
+      />
     </SafeAreaView>
   );
 }

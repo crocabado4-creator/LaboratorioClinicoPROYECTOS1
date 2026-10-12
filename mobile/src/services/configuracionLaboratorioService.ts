@@ -4,10 +4,7 @@ import {
   updateDoc,
 } from "firebase/firestore";
 
-import {
-  auth,
-  db,
-} from "../firebase/firebase";
+import { auth, db } from "../firebase/firebase";
 
 export type ConfiguracionLaboratorio = {
   id: string;
@@ -27,53 +24,38 @@ export type DatosConfiguracionLaboratorio = {
   nombre: string;
   direccion: string;
   telefono: string;
-  email: string;
+  email?: string;
 };
 
-function limpiarTexto(
-  valor: unknown
-): string {
-  return typeof valor === "string"
-    ? valor.trim()
-    : "";
+// ========================================
+// UTILIDADES
+// ========================================
+
+function limpiarTexto(valor: unknown): string {
+  return typeof valor === "string" ? valor.trim() : "";
 }
 
-function correoValido(
-  correo: string
-): boolean {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(
-    correo
-  );
+function correoValido(correo: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(correo);
 }
 
-function telefonoValido(
-  telefono: string
-): boolean {
-  return /^[0-9+\-\s()]{6,20}$/.test(
-    telefono
-  );
+function telefonoValido(telefono: string): boolean {
+  return /^[0-9+\-\s()]{6,20}$/.test(telefono);
 }
+
+// ========================================
+// VALIDAR ADMINISTRADOR
+// ========================================
 
 async function validarAdministradorActual() {
-  const firebaseUser =
-    auth.currentUser;
+  const firebaseUser = auth.currentUser;
 
   if (!firebaseUser) {
-    throw new Error(
-      "No existe una sesión autenticada."
-    );
+    throw new Error("No existe una sesión autenticada.");
   }
 
-  const usuarioRef = doc(
-    db,
-    "usuarios",
-    firebaseUser.uid
-  );
-
-  const usuarioSnap =
-    await getDoc(
-      usuarioRef
-    );
+  const usuarioRef = doc(db, "usuarios", firebaseUser.uid);
+  const usuarioSnap = await getDoc(usuarioRef);
 
   if (!usuarioSnap.exists()) {
     throw new Error(
@@ -81,30 +63,19 @@ async function validarAdministradorActual() {
     );
   }
 
-  const datos =
-    usuarioSnap.data();
+  const datos = usuarioSnap.data();
 
-  if (
-    datos.activo !== true
-  ) {
-    throw new Error(
-      "Tu cuenta se encuentra inactiva."
-    );
+  if (datos.activo !== true) {
+    throw new Error("Tu cuenta se encuentra inactiva.");
   }
 
-  if (
-    datos.rol !==
-    "administrador"
-  ) {
+  if (datos.rol !== "administrador") {
     throw new Error(
       "Solo el Administrador del Laboratorio puede acceder a esta configuración."
     );
   }
 
-  const laboratorioId =
-    limpiarTexto(
-      datos.laboratorioId
-    );
+  const laboratorioId = limpiarTexto(datos.laboratorioId);
 
   if (!laboratorioId) {
     throw new Error(
@@ -113,16 +84,19 @@ async function validarAdministradorActual() {
   }
 
   return {
-    uid:
-      firebaseUser.uid,
-
+    uid: firebaseUser.uid,
     laboratorioId,
   };
 }
 
-export async function obtenerConfiguracionLaboratorio(): Promise<ConfiguracionLaboratorio> {
-  const administrador =
-    await validarAdministradorActual();
+// ========================================
+// OBTENER CONFIGURACIÓN
+// ========================================
+
+export async function obtenerConfiguracionLaboratorio():
+  Promise<ConfiguracionLaboratorio> {
+
+  const administrador = await validarAdministradorActual();
 
   const laboratorioRef = doc(
     db,
@@ -130,10 +104,7 @@ export async function obtenerConfiguracionLaboratorio(): Promise<ConfiguracionLa
     administrador.laboratorioId
   );
 
-  const laboratorioSnap =
-    await getDoc(
-      laboratorioRef
-    );
+  const laboratorioSnap = await getDoc(laboratorioRef);
 
   if (!laboratorioSnap.exists()) {
     throw new Error(
@@ -141,125 +112,70 @@ export async function obtenerConfiguracionLaboratorio(): Promise<ConfiguracionLa
     );
   }
 
-  const datos =
-    laboratorioSnap.data();
+  const datos = laboratorioSnap.data();
 
   return {
-    id:
-      laboratorioSnap.id,
+    id: laboratorioSnap.id,
 
     laboratorioId:
-      limpiarTexto(
-        datos.laboratorioId
-      ) ||
-      laboratorioSnap.id,
+      limpiarTexto(datos.laboratorioId) || laboratorioSnap.id,
 
-    nombre:
-      limpiarTexto(
-        datos.nombre
-      ),
+    nombre: limpiarTexto(datos.nombre),
 
-    direccion:
-      limpiarTexto(
-        datos.direccion
-      ),
+    direccion: limpiarTexto(datos.direccion),
 
-    telefono:
-      limpiarTexto(
-        datos.telefono
-      ),
+    telefono: limpiarTexto(datos.telefono),
 
-    email:
-      limpiarTexto(
-        datos.email
-      ),
+    email: limpiarTexto(datos.email),
 
-    logoUrl:
-      limpiarTexto(
-        datos.logoUrl
-      ),
+    logoUrl: limpiarTexto(datos.logoUrl),
 
-    nombreVisible:
-      limpiarTexto(
-        datos.nombreVisible
-      ),
+    nombreVisible: limpiarTexto(datos.nombreVisible),
 
     colorPrimario:
-      limpiarTexto(
-        datos.colorPrimario
-      ) ||
-      "#2563EB",
+      limpiarTexto(datos.colorPrimario) || "#2563EB",
 
     colorSecundario:
-      limpiarTexto(
-        datos.colorSecundario
-      ) ||
-      "#14B8A6",
+      limpiarTexto(datos.colorSecundario) || "#14B8A6",
 
-    activo:
-      datos.activo === true,
+    activo: datos.activo === true,
   };
 }
+
+// ========================================
+// ACTUALIZAR CONFIGURACIÓN
+// ========================================
 
 export async function actualizarConfiguracionLaboratorio(
   datos: DatosConfiguracionLaboratorio
 ): Promise<void> {
-  const administrador =
-    await validarAdministradorActual();
 
-  const nombre =
-    limpiarTexto(
-      datos.nombre
-    );
+  const administrador = await validarAdministradorActual();
 
-  const direccion =
-    limpiarTexto(
-      datos.direccion
-    );
+  const nombre = limpiarTexto(datos.nombre);
+  const direccion = limpiarTexto(datos.direccion);
+  const telefono = limpiarTexto(datos.telefono);
+  const email = limpiarTexto(datos.email).toLowerCase();
 
-  const telefono =
-    limpiarTexto(
-      datos.telefono
-    );
-
-  const email =
-    limpiarTexto(
-      datos.email
-    ).toLowerCase();
-
-  if (
-    nombre.length < 2
-  ) {
+  if (nombre.length < 2) {
     throw new Error(
       "Ingresa un nombre válido para el laboratorio."
     );
   }
 
-  if (
-    direccion.length < 4
-  ) {
-    throw new Error(
-      "Ingresa una dirección válida."
-    );
+  if (direccion.length < 4) {
+    throw new Error("Ingresa una dirección válida.");
   }
 
-  if (
-    !telefonoValido(
-      telefono
-    )
-  ) {
-    throw new Error(
-      "Ingresa un número de teléfono válido."
-    );
+  if (!telefonoValido(telefono)) {
+    throw new Error("Ingresa un número de teléfono válido.");
   }
 
-  if (
-    !correoValido(
-      email
-    )
-  ) {
+  // CORRECCIÓN: correo opcional.
+
+  if (email !== "" && !correoValido(email)) {
     throw new Error(
-      "Ingresa un correo electrónico válido."
+      "El correo electrónico ingresado no es válido."
     );
   }
 
@@ -269,10 +185,7 @@ export async function actualizarConfiguracionLaboratorio(
     administrador.laboratorioId
   );
 
-  const laboratorioSnap =
-    await getDoc(
-      laboratorioRef
-    );
+  const laboratorioSnap = await getDoc(laboratorioRef);
 
   if (!laboratorioSnap.exists()) {
     throw new Error(
@@ -280,22 +193,16 @@ export async function actualizarConfiguracionLaboratorio(
     );
   }
 
-  if (
-    laboratorioSnap.data().activo !==
-    true
-  ) {
+  if (laboratorioSnap.data().activo !== true) {
     throw new Error(
       "El laboratorio se encuentra inactivo."
     );
   }
 
-  await updateDoc(
-    laboratorioRef,
-    {
-      nombre,
-      direccion,
-      telefono,
-      email,
-    }
-  );
+  await updateDoc(laboratorioRef, {
+    nombre,
+    direccion,
+    telefono,
+    email,
+  });
 }

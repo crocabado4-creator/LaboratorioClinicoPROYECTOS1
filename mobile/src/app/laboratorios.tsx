@@ -7,6 +7,7 @@ import {
 
 import {
   ActivityIndicator,
+  Alert,
   Image,
   KeyboardAvoidingView,
   Modal,
@@ -22,9 +23,7 @@ import {
   View,
 } from "react-native";
 
-import {
-  useRouter,
-} from "expo-router";
+import { useRouter } from "expo-router";
 
 import {
   actualizarLaboratorio,
@@ -33,6 +32,10 @@ import {
   obtenerLaboratorios,
   type Laboratorio,
 } from "../services/laboratoriosService";
+
+// =====================================================
+// TIPOS
+// =====================================================
 
 type FiltroEstado =
   | "todos"
@@ -45,123 +48,80 @@ type ModoFormulario =
   | null;
 
 type Mensaje = {
-  tipo:
-    | "exito"
-    | "error";
-
-  texto:
-    string;
+  tipo: "exito" | "error";
+  texto: string;
 } | null;
 
-const formularioInicial = {
+type FormularioLaboratorio = {
+  nombre: string;
+  direccion: string;
+  telefono: string;
+};
+
+// =====================================================
+// FORMULARIO INICIAL
+// =====================================================
+
+const formularioInicial: FormularioLaboratorio = {
   nombre: "",
   direccion: "",
   telefono: "",
-  email: "",
 };
 
+// =====================================================
+// PANTALLA PRINCIPAL
+// =====================================================
+
 export default function LaboratoriosScreen() {
-  const router =
-    useRouter();
+  const router = useRouter();
 
-  const [
-    laboratorios,
-    setLaboratorios,
-  ] = useState<Laboratorio[]>(
-    []
-  );
+  const [laboratorios, setLaboratorios] =
+    useState<Laboratorio[]>([]);
 
-  const [
-    cargando,
-    setCargando,
-  ] = useState(true);
+  const [cargando, setCargando] =
+    useState(true);
 
-  const [
-    refrescando,
-    setRefrescando,
-  ] = useState(false);
+  const [refrescando, setRefrescando] =
+    useState(false);
 
-  const [
-    guardando,
-    setGuardando,
-  ] = useState(false);
+  const [guardando, setGuardando] =
+    useState(false);
 
-  const [
-    mensaje,
-    setMensaje,
-  ] = useState<Mensaje>(
-    null
-  );
+  const [mensaje, setMensaje] =
+    useState<Mensaje>(null);
 
-  const [
-    busqueda,
-    setBusqueda,
-  ] = useState("");
+  const [busqueda, setBusqueda] =
+    useState("");
 
-  const [
-    filtroEstado,
-    setFiltroEstado,
-  ] =
-    useState<FiltroEstado>(
-      "todos"
+  const [filtroEstado, setFiltroEstado] =
+    useState<FiltroEstado>("todos");
+
+  const [mostrarFiltros, setMostrarFiltros] =
+    useState(false);
+
+  const [modoFormulario, setModoFormulario] =
+    useState<ModoFormulario>(null);
+
+  const [formulario, setFormulario] =
+    useState<FormularioLaboratorio>(
+      formularioInicial
     );
 
-  const [
-    mostrarFiltros,
-    setMostrarFiltros,
-  ] = useState(false);
+  const [laboratorioEditar, setLaboratorioEditar] =
+    useState<Laboratorio | null>(null);
 
-  const [
-    modoFormulario,
-    setModoFormulario,
-  ] =
-    useState<ModoFormulario>(
-      null
-    );
+  const [laboratorioDetalle, setLaboratorioDetalle] =
+    useState<Laboratorio | null>(null);
 
-  const [
-    formulario,
-    setFormulario,
-  ] = useState(
-    formularioInicial
-  );
+  const [laboratorioEstado, setLaboratorioEstado] =
+    useState<Laboratorio | null>(null);
 
-  const [
-    laboratorioEditar,
-    setLaboratorioEditar,
-  ] =
-    useState<Laboratorio | null>(
-      null
-    );
-
-  const [
-    laboratorioVer,
-    setLaboratorioVer,
-  ] =
-    useState<Laboratorio | null>(
-      null
-    );
-
-  const [
-    laboratorioDetalle,
-    setLaboratorioDetalle,
-  ] =
-    useState<Laboratorio | null>(
-      null
-    );
-
-  const [
-    laboratorioEstado,
-    setLaboratorioEstado,
-  ] =
-    useState<Laboratorio | null>(
-      null
-    );
+  // ===================================================
+  // MENSAJES
+  // ===================================================
 
   const mostrarMensaje = (
-    tipo:
-      | "exito"
-      | "error",
+    tipo: "exito" | "error",
     texto: string
   ) => {
     setMensaje({
@@ -175,1147 +135,775 @@ export default function LaboratoriosScreen() {
       return;
     }
 
-    const temporizador =
-      setTimeout(
-        () => {
-          setMensaje(
-            null
-          );
-        },
-        4000
-      );
+    const temporizador = setTimeout(() => {
+      setMensaje(null);
+    }, 5000);
 
     return () => {
-      clearTimeout(
-        temporizador
-      );
+      clearTimeout(temporizador);
     };
   }, [mensaje]);
 
-  const cargarDatos =
-    useCallback(
-      async (
-        mostrarCarga = true
-      ) => {
-        try {
-          if (
-            mostrarCarga
-          ) {
-            setCargando(
-              true
-            );
-          }
+  // ===================================================
+  // CARGAR LABORATORIOS
+  // ===================================================
 
-          const resultado =
-            await obtenerLaboratorios();
-
-          setLaboratorios(
-            resultado
-          );
-        } catch (error) {
-          console.error(
-            "Error cargando laboratorios:",
-            error
-          );
-
-          mostrarMensaje(
-            "error",
-            error instanceof
-            Error
-              ? error.message
-              : "No se pudieron cargar los laboratorios."
-          );
-        } finally {
-          setCargando(
-            false
-          );
-
-          setRefrescando(
-            false
-          );
+  const cargarDatos = useCallback(
+    async (mostrarCarga = true) => {
+      try {
+        if (mostrarCarga) {
+          setCargando(true);
         }
-      },
-      []
-    );
+
+        const resultado =
+          await obtenerLaboratorios();
+
+        setLaboratorios(resultado);
+      } catch (error) {
+        console.error(
+          "Error cargando laboratorios:",
+          error
+        );
+
+        mostrarMensaje(
+          "error",
+          error instanceof Error
+            ? error.message
+            : "No se pudieron cargar los laboratorios."
+        );
+      } finally {
+        setCargando(false);
+        setRefrescando(false);
+      }
+    },
+    []
+  );
 
   useEffect(() => {
     cargarDatos();
   }, [cargarDatos]);
 
-  const refrescar =
-    async () => {
-      setRefrescando(
-        true
-      );
+  // ===================================================
+  // REFRESCAR
+  // ===================================================
 
-      await cargarDatos(
-        false
-      );
-    };
+  const refrescar = async () => {
+    setRefrescando(true);
 
-  const laboratoriosFiltrados =
-    useMemo(() => {
-      const texto =
-        busqueda
-          .trim()
+    await cargarDatos(false);
+  };
+
+  // ===================================================
+  // FILTRAR LABORATORIOS EN TIEMPO REAL
+  // ===================================================
+
+  const laboratoriosFiltrados = useMemo(() => {
+    const texto = busqueda
+      .trim()
+      .toLowerCase();
+
+    return laboratorios.filter(
+      (laboratorio) => {
+        const contenido = [
+          laboratorio.nombre,
+          laboratorio.nombreVisible,
+          laboratorio.direccion,
+          laboratorio.telefono,
+          laboratorio.laboratorioId,
+        ]
+          .join(" ")
           .toLowerCase();
 
-      return laboratorios.filter(
-        (laboratorio) => {
-          const coincideBusqueda =
-            texto === "" ||
-            [
-              laboratorio.nombre,
-              laboratorio.nombreVisible,
-              laboratorio.email,
-              laboratorio.telefono,
-              laboratorio.direccion,
-              laboratorio.laboratorioId,
-            ].some(
-              (valor) =>
-                String(
-                  valor || ""
-                )
-                  .toLowerCase()
-                  .includes(
-                    texto
-                  )
-            );
+        const coincideBusqueda =
+          texto === "" ||
+          contenido.includes(texto);
 
-          let coincideEstado =
-            true;
+        let coincideEstado = true;
 
-          if (
-            filtroEstado ===
-            "activo"
-          ) {
-            coincideEstado =
-              laboratorio.activo ===
-              true;
-          }
-
-          if (
-            filtroEstado ===
-            "inactivo"
-          ) {
-            coincideEstado =
-              laboratorio.activo ===
-              false;
-          }
-
-          return (
-            coincideBusqueda &&
-            coincideEstado
-          );
+        if (filtroEstado === "activo") {
+          coincideEstado =
+            laboratorio.activo === true;
         }
-      );
-    }, [
-      laboratorios,
-      busqueda,
-      filtroEstado,
-    ]);
+
+        if (filtroEstado === "inactivo") {
+          coincideEstado =
+            laboratorio.activo === false;
+        }
+
+        return (
+          coincideBusqueda &&
+          coincideEstado
+        );
+      }
+    );
+  }, [
+    laboratorios,
+    busqueda,
+    filtroEstado,
+  ]);
+
+  // ===================================================
+  // ESTADÍSTICAS
+  // ===================================================
 
   const cantidadActivos =
     laboratorios.filter(
-      (item) =>
-        item.activo
+      (item) => item.activo
     ).length;
 
   const cantidadInactivos =
     laboratorios.filter(
-      (item) =>
-        !item.activo
+      (item) => !item.activo
     ).length;
 
   const cantidadPersonalizados =
     laboratorios.filter(
       (item) =>
         Boolean(
-          item.nombreVisible ||
-            item.logoUrl
+          item.nombreVisible?.trim()
+        ) ||
+        Boolean(
+          item.logoUrl?.trim()
         )
     ).length;
 
-  const limpiarFiltros =
-    () => {
-      setBusqueda("");
-      setFiltroEstado(
-        "todos"
-      );
-    };
+  // ===================================================
+  // ACTUALIZAR FORMULARIO
+  // ===================================================
 
-  const abrirCrear =
-    () => {
-      setFormulario(
-        formularioInicial
-      );
+  const actualizarCampo = (
+    campo: keyof FormularioLaboratorio,
+    valor: string
+  ) => {
+    setFormulario((anterior) => ({
+      ...anterior,
+      [campo]: valor,
+    }));
+  };
 
-      setLaboratorioEditar(
-        null
-      );
+  // ===================================================
+  // ABRIR CREAR
+  // ===================================================
 
-      setModoFormulario(
-        "crear"
-      );
+  const abrirCrear = () => {
+    setFormulario({
+      ...formularioInicial,
+    });
 
-      setMensaje(
-        null
-      );
-    };
+    setLaboratorioEditar(null);
+
+    setModoFormulario("crear");
+
+    setMensaje(null);
+  };
+
+  // ===================================================
+  // ABRIR EDITAR
+  // ===================================================
 
   const abrirEditar = (
-    laboratorio:
-      Laboratorio
+    laboratorio: Laboratorio
   ) => {
+    setFormulario({
+      nombre:
+        laboratorio.nombre || "",
+
+      direccion:
+        laboratorio.direccion || "",
+
+      telefono:
+        laboratorio.telefono || "",
+    });
+
     setLaboratorioEditar(
       laboratorio
     );
 
+    setModoFormulario("editar");
+
+    setMensaje(null);
+  };
+
+  // ===================================================
+  // CERRAR FORMULARIO
+  // ===================================================
+
+  const cerrarFormulario = () => {
+    if (guardando) {
+      return;
+    }
+
+    setModoFormulario(null);
+
+    setLaboratorioEditar(null);
+
     setFormulario({
-      nombre:
-        laboratorio.nombre,
-
-      direccion:
-        laboratorio.direccion,
-
-      telefono:
-        laboratorio.telefono,
-
-      email:
-        laboratorio.email,
+      ...formularioInicial,
     });
-
-    setModoFormulario(
-      "editar"
-    );
-
-    setMensaje(
-      null
-    );
   };
 
-  const cerrarFormulario =
-    () => {
-      if (
-        guardando
-      ) {
-        return;
-      }
+  // ===================================================
+  // VALIDAR FORMULARIO SIN CORREO
+  // ===================================================
 
-      setModoFormulario(
-        null
-      );
+  const validarFormulario = (): string => {
+    if (
+      formulario.nombre.trim().length < 2
+    ) {
+      return "Ingresa un nombre válido.";
+    }
 
-      setLaboratorioEditar(
-        null
-      );
+    if (
+      formulario.direccion.trim().length < 4
+    ) {
+      return "Ingresa una dirección válida.";
+    }
 
-      setFormulario(
-        formularioInicial
-      );
-    };
+    if (
+      !/^[0-9+\-\s()]{6,20}$/.test(
+        formulario.telefono.trim()
+      )
+    ) {
+      return "Ingresa un teléfono válido.";
+    }
 
-  const actualizarCampo = (
-    campo:
-      keyof typeof formularioInicial,
-    valor: string
-  ) => {
-    setFormulario(
-      (anterior) => ({
-        ...anterior,
-        [campo]:
-          valor,
-      })
-    );
+    return "";
   };
 
-  const validarFormulario =
-    (): string => {
-      if (
-        formulario.nombre
-          .trim()
-          .length < 2
-      ) {
-        return "Ingresa un nombre válido.";
-      }
+  // ===================================================
+  // GUARDAR LABORATORIO
+  // ===================================================
+
+  const guardarLaboratorio = async () => {
+    if (guardando) {
+      return;
+    }
+
+    const validacion =
+      validarFormulario();
+
+    if (validacion) {
+      Alert.alert(
+        "Datos incorrectos",
+        validacion
+      );
+
+      return;
+    }
+
+    try {
+      setGuardando(true);
+
+      const datos = {
+        nombre:
+          formulario.nombre.trim(),
+
+        direccion:
+          formulario.direccion.trim(),
+
+        telefono:
+          formulario.telefono.trim(),
+      };
 
       if (
-        formulario.direccion
-          .trim()
-          .length < 4
+        modoFormulario === "crear"
       ) {
-        return "Ingresa una dirección válida.";
-      }
+        await crearLaboratorio(datos);
 
-      if (
-        !/^[0-9+\-\s()]{6,20}$/.test(
-          formulario.telefono.trim()
-        )
-      ) {
-        return "Ingresa un teléfono válido.";
-      }
-
-      if (
-        !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(
-          formulario.email
-            .trim()
-            .toLowerCase()
-        )
-      ) {
-        return "Ingresa un correo electrónico válido.";
-      }
-
-      return "";
-    };
-
-  const guardar =
-    async () => {
-      const validacion =
-        validarFormulario();
-
-      if (validacion) {
         mostrarMensaje(
-          "error",
-          validacion
+          "exito",
+          "Laboratorio registrado correctamente."
         );
-
-        return;
-      }
-
-      try {
-        setGuardando(
-          true
-        );
-
-        if (
-          modoFormulario ===
-          "crear"
-        ) {
-          await crearLaboratorio(
-            formulario
-          );
-
-          mostrarMensaje(
-            "exito",
-            "Laboratorio registrado correctamente."
-          );
-        } else if (
-          modoFormulario ===
-            "editar" &&
-          laboratorioEditar
-        ) {
-          await actualizarLaboratorio(
-            laboratorioEditar.id,
-            formulario
-          );
-
-          mostrarMensaje(
-            "exito",
-            "Laboratorio actualizado correctamente."
-          );
-        }
-
-        setModoFormulario(
-          null
-        );
-
-        setLaboratorioEditar(
-          null
-        );
-
-        setFormulario(
-          formularioInicial
-        );
-
-        await cargarDatos(
-          false
-        );
-      } catch (error) {
-        console.error(
-          "Error guardando laboratorio:",
-          error
+      } else if (
+        modoFormulario === "editar" &&
+        laboratorioEditar
+      ) {
+        await actualizarLaboratorio(
+          laboratorioEditar.id,
+          datos
         );
 
         mostrarMensaje(
-          "error",
-          error instanceof
-          Error
-            ? error.message
-            : "No se pudo guardar el laboratorio."
-        );
-      } finally {
-        setGuardando(
-          false
+          "exito",
+          "Laboratorio actualizado correctamente."
         );
       }
-    };
 
-  const confirmarEstado = (
-    laboratorio:
-      Laboratorio
+      setModoFormulario(null);
+
+      setLaboratorioEditar(null);
+
+      setFormulario({
+        ...formularioInicial,
+      });
+
+      await cargarDatos(false);
+    } catch (error) {
+      console.error(
+        "Error guardando laboratorio:",
+        error
+      );
+
+      const texto =
+        error instanceof Error
+          ? error.message
+          : "No se pudo guardar el laboratorio.";
+
+      mostrarMensaje(
+        "error",
+        texto
+      );
+
+      Alert.alert(
+        "Error",
+        texto
+      );
+    } finally {
+      setGuardando(false);
+    }
+  };
+
+  // ===================================================
+  // CONFIRMAR CAMBIO DE ESTADO
+  // ===================================================
+
+  const confirmarCambioEstado = (
+    laboratorio: Laboratorio
   ) => {
     setLaboratorioEstado(
       laboratorio
     );
   };
 
-  const ejecutarCambioEstado =
-    async () => {
-      if (
-        !laboratorioEstado
-      ) {
-        return;
-      }
+  // ===================================================
+  // ACTIVAR / DESACTIVAR
+  // ===================================================
 
-      try {
-        setGuardando(
-          true
-        );
-
-        const nuevoEstado =
-          !laboratorioEstado.activo;
-
-        await cambiarEstadoLaboratorio(
-          laboratorioEstado.id,
-          nuevoEstado
-        );
-
-        setLaboratorioEstado(
-          null
-        );
-
-        await cargarDatos(
-          false
-        );
-
-        mostrarMensaje(
-          "exito",
-          nuevoEstado
-            ? "Laboratorio activado correctamente."
-            : "Laboratorio desactivado correctamente."
-        );
-      } catch (error) {
-        console.error(
-          "Error cambiando estado:",
-          error
-        );
-
-        mostrarMensaje(
-          "error",
-          error instanceof
-          Error
-            ? error.message
-            : "No se pudo cambiar el estado."
-        );
-      } finally {
-        setGuardando(
-          false
-        );
-      }
-    };
-
-  const formatearFecha = (
-    fecha: unknown
-  ): string => {
-    if (!fecha) {
-      return "No registrada";
+  const ejecutarCambioEstado = async () => {
+    if (
+      !laboratorioEstado ||
+      guardando
+    ) {
+      return;
     }
 
+    const laboratorio =
+      laboratorioEstado;
+
+    const nuevoEstado =
+      !laboratorio.activo;
+
     try {
-      if (
-        typeof fecha ===
-          "object" &&
-        fecha !== null &&
-        "toDate" in fecha &&
-        typeof (
-          fecha as {
-            toDate?: unknown;
-          }
-        ).toDate ===
-          "function"
-      ) {
-        const convertir =
-          fecha as {
-            toDate:
-              () => Date;
-          };
+      setGuardando(true);
 
-        return convertir
-          .toDate()
-          .toLocaleString(
-            "es-BO"
-          );
-      }
+      await cambiarEstadoLaboratorio(
+        laboratorio.id,
+        nuevoEstado
+      );
 
-      if (
-        typeof fecha ===
-          "object" &&
-        fecha !== null &&
-        "seconds" in fecha
-      ) {
-        const segundos =
-          Number(
-            (
-              fecha as {
-                seconds:
-                  number;
-              }
-            ).seconds
-          );
+      setLaboratorioEstado(null);
 
-        return new Date(
-          segundos *
-            1000
-        ).toLocaleString(
-          "es-BO"
-        );
-      }
+      mostrarMensaje(
+        "exito",
+        nuevoEstado
+          ? "Laboratorio activado correctamente."
+          : "Laboratorio desactivado correctamente."
+      );
 
-      return "No registrada";
-    } catch {
-      return "No registrada";
+      await cargarDatos(false);
+    } catch (error) {
+      console.error(
+        "Error cambiando estado:",
+        error
+      );
+
+      const texto =
+        error instanceof Error
+          ? error.message
+          : "No se pudo cambiar el estado.";
+
+      mostrarMensaje(
+        "error",
+        texto
+      );
+
+      Alert.alert(
+        "Error",
+        texto
+      );
+    } finally {
+      setGuardando(false);
     }
   };
 
-  if (cargando) {
-    return (
-      <SafeAreaView
-        style={
-          styles.loadingPage
-        }
-      >
-        <StatusBar
-          barStyle="dark-content"
-          backgroundColor="#f8fafc"
-        />
+  // ===================================================
+  // INTERFAZ PRINCIPAL
+  // ===================================================
 
-        <View
-          style={
-            styles.loadingIcon
-          }
+  return (
+    <SafeAreaView style={styles.contenedor}>
+      <StatusBar barStyle="dark-content" />
+
+      {/* ENCABEZADO */}
+
+      <View style={styles.encabezado}>
+        <Pressable
+          style={styles.botonVolver}
+          onPress={() => router.back()}
         >
-          <Text
-            style={
-              styles.loadingEmoji
-            }
-          >
-            🏥
+          <Text style={styles.botonVolverTexto}>
+            ‹
+          </Text>
+        </Pressable>
+
+        <View style={styles.encabezadoCentro}>
+          <Text style={styles.encabezadoTitulo}>
+            Laboratorios
+          </Text>
+
+          <Text style={styles.encabezadoSubtitulo}>
+            Administración de laboratorios
           </Text>
         </View>
 
-        <ActivityIndicator
-          size="large"
-          color="#2563eb"
-        />
-
-        <Text
-          style={
-            styles.loadingTitle
-          }
+        <Pressable
+          style={styles.botonAgregarEncabezado}
+          onPress={abrirCrear}
         >
-          Laboratorios
-        </Text>
+          <Text style={styles.botonAgregarTexto}>
+            +
+          </Text>
+        </Pressable>
+      </View>
 
-        <Text
-          style={
-            styles.loadingText
-          }
+      {/* MENSAJES */}
+
+      {mensaje && (
+        <View
+          style={[
+            styles.mensaje,
+            mensaje.tipo === "exito"
+              ? styles.mensajeExito
+              : styles.mensajeError,
+          ]}
         >
-          Cargando establecimientos...
-        </Text>
-      </SafeAreaView>
-    );
-  }
+          <Text
+            style={[
+              styles.mensajeTexto,
+              {
+                color:
+                  mensaje.tipo === "exito"
+                    ? "#166534"
+                    : "#991B1B",
+              },
+            ]}
+          >
+            {mensaje.texto}
+          </Text>
 
-  return (
-    <SafeAreaView
-      style={
-        styles.page
-      }
-    >
-      <StatusBar
-        barStyle="light-content"
-        backgroundColor="#1e3a8a"
-      />
+          <Pressable
+            onPress={() =>
+              setMensaje(null)
+            }
+          >
+            <Text style={styles.cerrarMensaje}>
+              ×
+            </Text>
+          </Pressable>
+        </View>
+      )}
+
+      {/* CONTENIDO */}
 
       <ScrollView
-        contentContainerStyle={
-          styles.scroll
-        }
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={
-          false
-        }
+        contentContainerStyle={styles.contenido}
         refreshControl={
           <RefreshControl
-            refreshing={
-              refrescando
-            }
-            onRefresh={
-              refrescar
-            }
-            tintColor="#2563eb"
+            refreshing={refrescando}
+            onRefresh={refrescar}
+            colors={["#2563EB"]}
           />
         }
       >
-        <View
-          style={
-            styles.header
-          }
-        >
-          <View
-            style={
-              styles.headerTop
-            }
-          >
-            <Pressable
-              style={
-                styles.backButton
-              }
-              onPress={() =>
-                router.back()
-              }
-            >
-              <Text
-                style={
-                  styles.backText
-                }
-              >
-                ‹
-              </Text>
-            </Pressable>
+        {/* BANNER */}
 
-            <View
-              style={
-                styles.headerText
-              }
-            >
-              <Text
-                style={
-                  styles.headerEyebrow
-                }
-              >
-                ADMINISTRACIÓN
-              </Text>
+        <View style={styles.banner}>
+          <Text style={styles.bannerEtiqueta}>
+            PANEL DE CONTROL
+          </Text>
 
-              <Text
-                style={
-                  styles.headerTitle
-                }
-              >
-                Laboratorios
-              </Text>
+          <Text style={styles.bannerTitulo}>
+            Gestión de laboratorios
+          </Text>
 
-              <Text
-                style={
-                  styles.headerDescription
-                }
-              >
-                Administra los establecimientos registrados en la plataforma.
-              </Text>
-            </View>
-
-            <View
-              style={
-                styles.headerIcon
-              }
-            >
-              <Text
-                style={
-                  styles.headerEmoji
-                }
-              >
-                🏥
-              </Text>
-            </View>
-          </View>
+          <Text style={styles.bannerDescripcion}>
+            Registra, consulta y administra
+            los laboratorios del sistema.
+          </Text>
 
           <Pressable
-            style={
-              styles.newButton
-            }
-            onPress={
-              abrirCrear
-            }
+            style={styles.bannerBoton}
+            onPress={abrirCrear}
           >
-            <Text
-              style={
-                styles.newButtonText
-              }
-            >
+            <Text style={styles.bannerBotonTexto}>
               + Nuevo laboratorio
             </Text>
           </Pressable>
         </View>
 
-        {mensaje && (
-          <View
-            style={[
-              styles.message,
+        {/* ESTADÍSTICAS */}
 
-              mensaje.tipo ===
-                "exito"
-                ? styles.messageSuccess
-                : styles.messageError,
-            ]}
-          >
-            <Text
-              style={[
-                styles.messageSymbol,
-
-                mensaje.tipo ===
-                  "exito"
-                  ? styles.messageSuccessText
-                  : styles.messageErrorText,
-              ]}
-            >
-              {mensaje.tipo ===
-              "exito"
-                ? "✓"
-                : "!"}
+        <View style={styles.estadisticas}>
+          <View style={styles.estadistica}>
+            <Text style={styles.estadisticaNumero}>
+              {laboratorios.length}
             </Text>
 
-            <Text
-              style={[
-                styles.messageText,
-
-                mensaje.tipo ===
-                  "exito"
-                  ? styles.messageSuccessText
-                  : styles.messageErrorText,
-              ]}
-            >
-              {mensaje.texto}
+            <Text style={styles.estadisticaTitulo}>
+              Total
             </Text>
           </View>
-        )}
 
-        <View
-          style={
-            styles.stats
-          }
-        >
-          <Stat
-            icono="🏥"
-            titulo="Laboratorios"
-            valor={
-              laboratorios.length
-            }
-            fondo="#dbeafe"
-            color="#1d4ed8"
-          />
+          <View style={styles.estadistica}>
+            <Text
+              style={[
+                styles.estadisticaNumero,
+                {
+                  color: "#16A34A",
+                },
+              ]}
+            >
+              {cantidadActivos}
+            </Text>
 
-          <Stat
-            icono="✓"
-            titulo="Activos"
-            valor={
-              cantidadActivos
-            }
-            fondo="#dcfce7"
-            color="#15803d"
-          />
+            <Text style={styles.estadisticaTitulo}>
+              Activos
+            </Text>
+          </View>
 
-          <Stat
-            icono="○"
-            titulo="Inactivos"
-            valor={
-              cantidadInactivos
-            }
-            fondo="#fee2e2"
-            color="#b91c1c"
-          />
+          <View style={styles.estadistica}>
+            <Text
+              style={[
+                styles.estadisticaNumero,
+                {
+                  color: "#DC2626",
+                },
+              ]}
+            >
+              {cantidadInactivos}
+            </Text>
 
-          <Stat
-            icono="🎨"
-            titulo="Personalizados"
-            valor={
-              cantidadPersonalizados
-            }
-            fondo="#ede9fe"
-            color="#6d28d9"
-          />
+            <Text style={styles.estadisticaTitulo}>
+              Inactivos
+            </Text>
+          </View>
         </View>
 
-        <View
-          style={
-            styles.toolbar
-          }
-        >
-          <View
-            style={
-              styles.search
-            }
-          >
-            <Text>
-              🔎
-            </Text>
+        {/* PERSONALIZACIÓN */}
 
-            <TextInput
-              style={
-                styles.searchInput
-              }
-              value={
-                busqueda
-              }
-              onChangeText={
-                setBusqueda
-              }
-              placeholder="Buscar nombre, correo, teléfono..."
-              placeholderTextColor="#94a3b8"
-              autoCapitalize="none"
-              autoCorrect={
-                false
-              }
-            />
-          </View>
+        <View style={styles.personalizados}>
+          <Text style={styles.personalizadosTexto}>
+            Laboratorios personalizados:{" "}
+            {cantidadPersonalizados}
+          </Text>
+        </View>
+
+        {/* BUSCADOR */}
+
+        <View style={styles.buscadorContenedor}>
+          <Text style={styles.seccionTitulo}>
+            Lista de laboratorios
+          </Text>
+
+          <Text style={styles.seccionDescripcion}>
+            Busca por nombre, dirección,
+            teléfono o identificador.
+          </Text>
+
+          <TextInput
+            style={styles.buscador}
+            value={busqueda}
+            onChangeText={setBusqueda}
+            placeholder="Buscar laboratorio..."
+            placeholderTextColor="#94A3B8"
+            autoCapitalize="none"
+          />
 
           <Pressable
-            style={[
-              styles.filterButton,
-
-              mostrarFiltros &&
-                styles.filterButtonActive,
-            ]}
+            style={styles.botonFiltros}
             onPress={() =>
               setMostrarFiltros(
                 !mostrarFiltros
               )
             }
           >
-            <Text
-              style={[
-                styles.filterButtonText,
-
-                mostrarFiltros &&
-                  styles.filterButtonTextActive,
-              ]}
-            >
-              ⚙ Filtros
+            <Text style={styles.botonFiltrosTexto}>
+              {mostrarFiltros
+                ? "Ocultar filtros ▲"
+                : "Mostrar filtros ▼"}
             </Text>
           </Pressable>
-        </View>
 
-        {mostrarFiltros && (
-          <View
-            style={
-              styles.filters
-            }
-          >
-            <View
-              style={
-                styles.filtersHeader
-              }
-            >
-              <Text
-                style={
-                  styles.filtersTitle
-                }
-              >
-                Filtrar resultados
-              </Text>
-
-              <Pressable
-                onPress={
-                  limpiarFiltros
-                }
-              >
-                <Text
-                  style={
-                    styles.clearFilters
+          {mostrarFiltros && (
+            <View style={styles.filtros}>
+              {(
+                [
+                  "todos",
+                  "activo",
+                  "inactivo",
+                ] as const
+              ).map((filtro) => (
+                <Pressable
+                  key={filtro}
+                  style={[
+                    styles.filtro,
+                    filtroEstado === filtro &&
+                      styles.filtroActivo,
+                  ]}
+                  onPress={() =>
+                    setFiltroEstado(filtro)
                   }
                 >
-                  Limpiar
-                </Text>
-              </Pressable>
+                  <Text
+                    style={[
+                      styles.filtroTexto,
+                      filtroEstado === filtro &&
+                        styles.filtroTextoActivo,
+                    ]}
+                  >
+                    {filtro === "todos"
+                      ? "Todos"
+                      : filtro === "activo"
+                      ? "Activos"
+                      : "Inactivos"}
+                  </Text>
+                </Pressable>
+              ))}
             </View>
+          )}
 
-            <Text
-              style={
-                styles.filterLabel
-              }
-            >
-              Estado
-            </Text>
-
-            <View
-              style={
-                styles.chips
-              }
-            >
-              <Filtro
-                titulo="Todos"
-                activo={
-                  filtroEstado ===
-                  "todos"
-                }
-                onPress={() =>
-                  setFiltroEstado(
-                    "todos"
-                  )
-                }
-              />
-
-              <Filtro
-                titulo="Activos"
-                activo={
-                  filtroEstado ===
-                  "activo"
-                }
-                onPress={() =>
-                  setFiltroEstado(
-                    "activo"
-                  )
-                }
-              />
-
-              <Filtro
-                titulo="Inactivos"
-                activo={
-                  filtroEstado ===
-                  "inactivo"
-                }
-                onPress={() =>
-                  setFiltroEstado(
-                    "inactivo"
-                  )
-                }
-              />
-            </View>
-          </View>
-        )}
-
-        <View
-          style={
-            styles.listHeader
-          }
-        >
-          <View>
-            <Text
-              style={
-                styles.listTitle
-              }
-            >
-              Establecimientos registrados
-            </Text>
-
-            <Text
-              style={
-                styles.listSubtitle
-              }
-            >
-              Consulta y administra los laboratorios de la plataforma.
-            </Text>
-          </View>
-
-          <View
-            style={
-              styles.resultBadge
-            }
-          >
-            <Text
-              style={
-                styles.resultText
-              }
-            >
-              {laboratoriosFiltrados.length}
-            </Text>
-          </View>
+          <Text style={styles.resultados}>
+            {laboratoriosFiltrados.length} resultados
+          </Text>
         </View>
 
-        {laboratoriosFiltrados.length ===
-        0 ? (
-          <View
-            style={
-              styles.empty
-            }
-          >
-            <Text
-              style={
-                styles.emptyEmoji
-              }
-            >
-              🔎
+        {/* LISTADO */}
+
+        {cargando ? (
+          <View style={styles.cargando}>
+            <ActivityIndicator
+              size="large"
+              color="#2563EB"
+            />
+
+            <Text style={styles.cargandoTexto}>
+              Cargando laboratorios...
+            </Text>
+          </View>
+        ) : laboratoriosFiltrados.length === 0 ? (
+          <View style={styles.vacio}>
+            <Text style={styles.vacioIcono}>
+              🏥
             </Text>
 
-            <Text
-              style={
-                styles.emptyTitle
-              }
-            >
+            <Text style={styles.vacioTitulo}>
               No se encontraron laboratorios
             </Text>
 
-            <Text
-              style={
-                styles.emptyText
-              }
-            >
-              Cambia la búsqueda o los filtros aplicados.
+            <Text style={styles.vacioDescripcion}>
+              Registra un laboratorio o modifica
+              los filtros de búsqueda.
             </Text>
-
-            <Pressable
-              onPress={
-                limpiarFiltros
-              }
-            >
-              <Text
-                style={
-                  styles.emptyAction
-                }
-              >
-                Limpiar filtros
-              </Text>
-            </Pressable>
           </View>
         ) : (
           laboratoriosFiltrados.map(
             (laboratorio) => (
               <View
-                key={
-                  laboratorio.id
-                }
-                style={
-                  styles.card
-                }
+                key={laboratorio.id}
+                style={styles.tarjeta}
               >
-                <View
-                  style={
-                    styles.cardTop
-                  }
-                >
-                  <View
-                    style={
-                      styles.labLogo
-                    }
-                  >
+                <View style={styles.tarjetaEncabezado}>
+                  <View style={styles.iconoLaboratorio}>
                     {laboratorio.logoUrl ? (
                       <Image
                         source={{
-                          uri:
-                            laboratorio.logoUrl,
+                          uri: laboratorio.logoUrl,
                         }}
-                        style={
-                          styles.labLogoImage
-                        }
+                        style={styles.logoLaboratorio}
                         resizeMode="contain"
                       />
                     ) : (
-                      <Text
-                        style={
-                          styles.labEmoji
-                        }
-                      >
-                        🧪
+                      <Text style={styles.iconoTexto}>
+                        🏥
                       </Text>
                     )}
                   </View>
 
-                  <View
-                    style={
-                      styles.labInfo
-                    }
-                  >
-                    <Text
-                      style={
-                        styles.labName
-                      }
-                    >
+                  <View style={styles.tarjetaInfo}>
+                    <Text style={styles.tarjetaTitulo}>
                       {laboratorio.nombre}
                     </Text>
 
-                    <Text
-                      style={
-                        styles.labEmail
-                      }
-                    >
-                      {laboratorio.email ||
-                        "Sin correo"}
+                    <Text style={styles.tarjetaSubtitulo}>
+                      {laboratorio.nombreVisible ||
+                        "Sin nombre personalizado"}
                     </Text>
-
-                    <View
-                      style={
-                        styles.cardBadges
-                      }
-                    >
-                      <View
-                        style={
-                          laboratorio.activo
-                            ? styles.activeBadge
-                            : styles.inactiveBadge
-                        }
-                      >
-                        <Text
-                          style={
-                            laboratorio.activo
-                              ? styles.activeText
-                              : styles.inactiveText
-                          }
-                        >
-                          ●{" "}
-                          {laboratorio.activo
-                            ? "Activo"
-                            : "Inactivo"}
-                        </Text>
-                      </View>
-                    </View>
                   </View>
                 </View>
 
+                {/* ESTADO */}
+
                 <View
-                  style={
-                    styles.shortInfo
-                  }
+                  style={[
+                    styles.estadoEtiqueta,
+                    laboratorio.activo
+                      ? styles.estadoActivo
+                      : styles.estadoInactivo,
+                  ]}
                 >
                   <Text
-                    style={
-                      styles.shortInfoText
-                    }
+                    style={[
+                      styles.estadoTexto,
+                      {
+                        color: laboratorio.activo
+                          ? "#166534"
+                          : "#991B1B",
+                      },
+                    ]}
                   >
-                    📍{" "}
-                    {laboratorio.direccion ||
-                      "Sin dirección"}
-                  </Text>
-
-                  <Text
-                    style={
-                      styles.shortInfoText
-                    }
-                  >
-                    ☎{" "}
-                    {laboratorio.telefono ||
-                      "Sin teléfono"}
+                    {laboratorio.activo
+                      ? "● Activo"
+                      : "● Inactivo"}
                   </Text>
                 </View>
 
-                <View
-                  style={
-                    styles.actions
-                  }
-                >
-                  <Pressable
-                    style={[
-                      styles.action,
-                      styles.viewAction,
-                    ]}
-                    onPress={() =>
-                      setLaboratorioVer(
-                        laboratorio
-                      )
-                    }
-                  >
-                    <Text
-                      style={
-                        styles.viewActionText
-                      }
-                    >
-                      👁 Ver
-                    </Text>
-                  </Pressable>
+                <View style={styles.separador} />
 
+                {/* DATOS */}
+
+                <Text style={styles.tarjetaDato}>
+                  Dirección:{" "}
+                  {laboratorio.direccion ||
+                    "No registrada"}
+                </Text>
+
+                <Text style={styles.tarjetaDato}>
+                  Teléfono:{" "}
+                  {laboratorio.telefono ||
+                    "No registrado"}
+                </Text>
+
+                <Text style={styles.tarjetaDato}>
+                  ID: {laboratorio.laboratorioId}
+                </Text>
+
+                {/* ACCIONES */}
+
+                <View style={styles.acciones}>
                   <Pressable
                     style={[
-                      styles.action,
-                      styles.detailAction,
+                      styles.accion,
+                      styles.accionVer,
                     ]}
                     onPress={() =>
                       setLaboratorioDetalle(
@@ -1323,61 +911,47 @@ export default function LaboratoriosScreen() {
                       )
                     }
                   >
-                    <Text
-                      style={
-                        styles.detailActionText
-                      }
-                    >
-                      📄 Ver detalle
+                    <Text style={styles.accionTextoVer}>
+                      Ver
                     </Text>
                   </Pressable>
-                </View>
 
-                <View
-                  style={
-                    styles.actions
-                  }
-                >
                   <Pressable
                     style={[
-                      styles.action,
-                      styles.editAction,
+                      styles.accion,
+                      styles.accionEditar,
                     ]}
                     onPress={() =>
-                      abrirEditar(
-                        laboratorio
-                      )
+                      abrirEditar(laboratorio)
                     }
                   >
-                    <Text
-                      style={
-                        styles.editActionText
-                      }
-                    >
-                      ✎ Editar
+                    <Text style={styles.accionTextoEditar}>
+                      Editar
                     </Text>
                   </Pressable>
 
                   <Pressable
                     style={[
-                      styles.action,
-
+                      styles.accion,
                       laboratorio.activo
-                        ? styles.disableAction
-                        : styles.enableAction,
+                        ? styles.accionDesactivar
+                        : styles.accionActivar,
                     ]}
                     onPress={() =>
-                      confirmarEstado(
+                      confirmarCambioEstado(
                         laboratorio
                       )
                     }
                   >
                     <Text
-                      style={
-                        laboratorio.activo
-                          ? styles.disableActionText
-                          : styles.enableActionText
-                      }
+                      style={[
+                        styles.accionTextoEstado,
+                        {
+                          color: laboratorio.activo
+                            ? "#B91C1C"
+                            : "#166534",
+                        },
+                      ]}
                     >
                       {laboratorio.activo
                         ? "Desactivar"
@@ -1391,651 +965,353 @@ export default function LaboratoriosScreen() {
         )}
       </ScrollView>
 
+      {/* ============================================= */}
+      {/* MODAL CREAR / EDITAR */}
+      {/* ============================================= */}
+
       <Modal
-        visible={
-          modoFormulario !==
-          null
-        }
+        visible={modoFormulario !== null}
         transparent
         animationType="slide"
-        onRequestClose={
-          cerrarFormulario
-        }
+        onRequestClose={cerrarFormulario}
       >
         <KeyboardAvoidingView
-          style={
-            styles.modalOverlay
-          }
+          style={styles.modalOverlay}
           behavior={
-            Platform.OS ===
-            "ios"
+            Platform.OS === "ios"
               ? "padding"
               : undefined
           }
         >
-          <ScrollView
-            contentContainerStyle={
-              styles.modalScroll
-            }
-            keyboardShouldPersistTaps="handled"
-          >
-            <View
-              style={
-                styles.modal
+          <View style={styles.modalContenedor}>
+            <View style={styles.modalEncabezado}>
+              <View>
+                <Text style={styles.modalTitulo}>
+                  {modoFormulario === "crear"
+                    ? "Nuevo laboratorio"
+                    : "Editar laboratorio"}
+                </Text>
+
+                <Text style={styles.modalSubtitulo}>
+                  Completa los datos del laboratorio
+                </Text>
+              </View>
+
+              <Pressable
+                onPress={cerrarFormulario}
+                disabled={guardando}
+              >
+                <Text style={styles.modalCerrar}>
+                  ×
+                </Text>
+              </Pressable>
+            </View>
+
+            <ScrollView
+              keyboardShouldPersistTaps="handled"
+              contentContainerStyle={
+                styles.modalContenido
               }
             >
-              <ModalHeader
-                titulo={
-                  modoFormulario ===
-                  "crear"
-                    ? "Nuevo laboratorio"
-                    : "Editar laboratorio"
-                }
-                subtitulo={
-                  modoFormulario ===
-                  "crear"
-                    ? "Registra un nuevo establecimiento."
-                    : "Actualiza la información del laboratorio."
-                }
-                cerrar={
-                  cerrarFormulario
-                }
-              />
+              {/* NOMBRE */}
 
-              <Campo
-                titulo="Nombre *"
-                valor={
-                  formulario.nombre
-                }
-                onChange={(
-                  valor
-                ) =>
+              <Text style={styles.campoEtiqueta}>
+                Nombre del laboratorio *
+              </Text>
+
+              <TextInput
+                style={styles.campo}
+                placeholder="Ej. Laboratorio Central"
+                placeholderTextColor="#94A3B8"
+                value={formulario.nombre}
+                onChangeText={(valor) =>
                   actualizarCampo(
                     "nombre",
                     valor
                   )
                 }
-                placeholder="Nombre del laboratorio"
               />
 
-              <Campo
-                titulo="Dirección *"
-                valor={
-                  formulario.direccion
-                }
-                onChange={(
-                  valor
-                ) =>
+              {/* DIRECCIÓN */}
+
+              <Text style={styles.campoEtiqueta}>
+                Dirección *
+              </Text>
+
+              <TextInput
+                style={styles.campo}
+                placeholder="Dirección del laboratorio"
+                placeholderTextColor="#94A3B8"
+                value={formulario.direccion}
+                onChangeText={(valor) =>
                   actualizarCampo(
                     "direccion",
                     valor
                   )
                 }
-                placeholder="Dirección"
-                multiline
               />
 
-              <Campo
-                titulo="Teléfono *"
-                valor={
-                  formulario.telefono
-                }
-                onChange={(
-                  valor
-                ) =>
+              {/* TELÉFONO */}
+
+              <Text style={styles.campoEtiqueta}>
+                Teléfono *
+              </Text>
+
+              <TextInput
+                style={styles.campo}
+                placeholder="Número de teléfono"
+                placeholderTextColor="#94A3B8"
+                value={formulario.telefono}
+                onChangeText={(valor) =>
                   actualizarCampo(
                     "telefono",
                     valor
                   )
                 }
-                placeholder="Teléfono"
                 keyboardType="phone-pad"
               />
 
-              <Campo
-                titulo="Correo electrónico *"
-                valor={
-                  formulario.email
-                }
-                onChange={(
-                  valor
-                ) =>
-                  actualizarCampo(
-                    "email",
-                    valor
-                  )
-                }
-                placeholder="correo@laboratorio.com"
-                keyboardType="email-address"
-              />
+              {/* SIN CORREO ELECTRÓNICO */}
 
-              {modoFormulario ===
-                "editar" &&
-                laboratorioEditar && (
-                  <View
-                    style={
-                      styles.lockedBox
-                    }
-                  >
-                    <Text
-                      style={
-                        styles.lockedLabel
-                      }
-                    >
-                      Identificador
-                    </Text>
+              <View style={styles.informacion}>
+                <Text style={styles.informacionTexto}>
+                  El laboratorio se registrará sin
+                  correo electrónico. Después podrás
+                  asignarle un administrador desde
+                  el módulo Administradores.
+                </Text>
+              </View>
 
-                    <Text
-                      style={
-                        styles.lockedValue
-                      }
-                    >
-                      {
-                        laboratorioEditar.laboratorioId
-                      }
-                    </Text>
-                  </View>
-                )}
+              {/* BOTONES */}
 
-              <View
-                style={
-                  styles.modalActions
-                }
-              >
+              <View style={styles.modalAcciones}>
                 <Pressable
-                  style={
-                    styles.cancelButton
-                  }
-                  onPress={
-                    cerrarFormulario
-                  }
-                  disabled={
-                    guardando
-                  }
+                  style={styles.botonCancelar}
+                  onPress={cerrarFormulario}
+                  disabled={guardando}
                 >
-                  <Text
-                    style={
-                      styles.cancelText
-                    }
-                  >
+                  <Text style={styles.botonCancelarTexto}>
                     Cancelar
                   </Text>
                 </Pressable>
 
                 <Pressable
                   style={[
-                    styles.saveButton,
-
+                    styles.botonGuardar,
                     guardando &&
-                      styles.disabled,
+                      styles.botonDeshabilitado,
                   ]}
-                  onPress={
-                    guardar
-                  }
-                  disabled={
-                    guardando
-                  }
+                  onPress={guardarLaboratorio}
+                  disabled={guardando}
                 >
                   {guardando ? (
                     <ActivityIndicator
-                      size="small"
-                      color="#ffffff"
+                      color="#FFFFFF"
                     />
                   ) : (
-                    <Text
-                      style={
-                        styles.saveText
-                      }
-                    >
-                      {modoFormulario ===
-                      "crear"
+                    <Text style={styles.botonGuardarTexto}>
+                      {modoFormulario === "crear"
                         ? "Registrar"
-                        : "Guardar cambios"}
+                        : "Guardar"}
                     </Text>
                   )}
                 </Pressable>
               </View>
-            </View>
-          </ScrollView>
+            </ScrollView>
+          </View>
         </KeyboardAvoidingView>
       </Modal>
 
+      {/* ============================================= */}
+      {/* MODAL DETALLES */}
+      {/* ============================================= */}
+
       <Modal
-        visible={
-          laboratorioVer !==
-          null
-        }
+        visible={laboratorioDetalle !== null}
         transparent
         animationType="fade"
         onRequestClose={() =>
-          setLaboratorioVer(
-            null
-          )
+          setLaboratorioDetalle(null)
         }
       >
-        <View
-          style={
-            styles.modalOverlay
-          }
-        >
-          <View
-            style={[
-              styles.modal,
-              styles.smallModal,
-            ]}
-          >
-            {laboratorioVer && (
-              <>
-                <ModalHeader
-                  titulo="Laboratorio"
-                  subtitulo="Vista rápida"
-                  cerrar={() =>
-                    setLaboratorioVer(
-                      null
-                    )
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContenedor}>
+            <View style={styles.modalEncabezado}>
+              <Text style={styles.modalTitulo}>
+                Detalles del laboratorio
+              </Text>
+
+              <Pressable
+                onPress={() =>
+                  setLaboratorioDetalle(null)
+                }
+              >
+                <Text style={styles.modalCerrar}>
+                  ×
+                </Text>
+              </Pressable>
+            </View>
+
+            {laboratorioDetalle && (
+              <ScrollView
+                contentContainerStyle={
+                  styles.modalContenido
+                }
+              >
+                {laboratorioDetalle.logoUrl ? (
+                  <Image
+                    source={{
+                      uri: laboratorioDetalle.logoUrl,
+                    }}
+                    style={styles.logoDetalle}
+                    resizeMode="contain"
+                  />
+                ) : (
+                  <View style={styles.logoDetalleVacio}>
+                    <Text style={styles.logoDetalleTexto}>
+                      🏥
+                    </Text>
+                  </View>
+                )}
+
+                <Detalle
+                  titulo="Nombre"
+                  valor={laboratorioDetalle.nombre}
+                />
+
+                <Detalle
+                  titulo="Nombre visible"
+                  valor={
+                    laboratorioDetalle.nombreVisible ||
+                    "No configurado"
                   }
                 />
 
-                <View
-                  style={
-                    styles.profile
+                <Detalle
+                  titulo="Dirección"
+                  valor={laboratorioDetalle.direccion}
+                />
+
+                <Detalle
+                  titulo="Teléfono"
+                  valor={laboratorioDetalle.telefono}
+                />
+
+                <Detalle
+                  titulo="ID del laboratorio"
+                  valor={laboratorioDetalle.laboratorioId}
+                />
+
+                <Detalle
+                  titulo="Estado"
+                  valor={
+                    laboratorioDetalle.activo
+                      ? "Activo"
+                      : "Inactivo"
                   }
-                >
-                  <View
-                    style={
-                      styles.profileLogo
-                    }
-                  >
-                    {laboratorioVer.logoUrl ? (
-                      <Image
-                        source={{
-                          uri:
-                            laboratorioVer.logoUrl,
-                        }}
-                        style={
-                          styles.profileImage
-                        }
-                        resizeMode="contain"
-                      />
-                    ) : (
-                      <Text
-                        style={
-                          styles.profileEmoji
-                        }
-                      >
-                        🧪
-                      </Text>
-                    )}
-                  </View>
+                />
 
-                  <Text
-                    style={
-                      styles.profileName
-                    }
-                  >
-                    {laboratorioVer.nombre}
-                  </Text>
+                <Detalle
+                  titulo="Color primario"
+                  valor={laboratorioDetalle.colorPrimario}
+                />
 
-                  <Text
-                    style={
-                      styles.profileEmail
-                    }
-                  >
-                    {laboratorioVer.email}
-                  </Text>
-
-                  <View
-                    style={
-                      laboratorioVer.activo
-                        ? styles.activeBadge
-                        : styles.inactiveBadge
-                    }
-                  >
-                    <Text
-                      style={
-                        laboratorioVer.activo
-                          ? styles.activeText
-                          : styles.inactiveText
-                      }
-                    >
-                      ●{" "}
-                      {laboratorioVer.activo
-                        ? "Activo"
-                        : "Inactivo"}
-                    </Text>
-                  </View>
-                </View>
+                <Detalle
+                  titulo="Color secundario"
+                  valor={laboratorioDetalle.colorSecundario}
+                />
 
                 <Pressable
-                  style={
-                    styles.fullButton
-                  }
+                  style={[
+                    styles.botonGuardar,
+                    {
+                      marginTop: 20,
+                    },
+                  ]}
                   onPress={() =>
-                    setLaboratorioVer(
-                      null
-                    )
+                    setLaboratorioDetalle(null)
                   }
                 >
-                  <Text
-                    style={
-                      styles.fullButtonText
-                    }
-                  >
+                  <Text style={styles.botonGuardarTexto}>
                     Cerrar
                   </Text>
                 </Pressable>
-              </>
+              </ScrollView>
             )}
           </View>
         </View>
       </Modal>
 
+      {/* ============================================= */}
+      {/* MODAL ACTIVAR / DESACTIVAR */}
+      {/* ============================================= */}
+
       <Modal
-        visible={
-          laboratorioDetalle !==
-          null
-        }
+        visible={laboratorioEstado !== null}
         transparent
         animationType="fade"
-        onRequestClose={() =>
-          setLaboratorioDetalle(
-            null
-          )
-        }
-      >
-        <View
-          style={
-            styles.modalOverlay
+        onRequestClose={() => {
+          if (!guardando) {
+            setLaboratorioEstado(null);
           }
-        >
-          <ScrollView
-            contentContainerStyle={
-              styles.modalScroll
-            }
-          >
-            <View
-              style={
-                styles.modal
-              }
-            >
-              {laboratorioDetalle && (
-                <>
-                  <ModalHeader
-                    titulo="Detalle del laboratorio"
-                    subtitulo="Información completa del establecimiento."
-                    cerrar={() =>
-                      setLaboratorioDetalle(
-                        null
-                      )
-                    }
+        }}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.confirmacion}>
+            <Text style={styles.confirmacionIcono}>
+              {laboratorioEstado?.activo
+                ? "⚠️"
+                : "✓"}
+            </Text>
+
+            <Text style={styles.confirmacionTitulo}>
+              {laboratorioEstado?.activo
+                ? "Desactivar laboratorio"
+                : "Activar laboratorio"}
+            </Text>
+
+            <Text style={styles.confirmacionDescripcion}>
+              ¿Estás seguro de que deseas{" "}
+              {laboratorioEstado?.activo
+                ? "desactivar"
+                : "activar"}{" "}
+              el laboratorio{" "}
+              {laboratorioEstado?.nombre}?
+            </Text>
+
+            <View style={styles.modalAcciones}>
+              <Pressable
+                style={styles.botonCancelar}
+                onPress={() =>
+                  setLaboratorioEstado(null)
+                }
+                disabled={guardando}
+              >
+                <Text style={styles.botonCancelarTexto}>
+                  Cancelar
+                </Text>
+              </Pressable>
+
+              <Pressable
+                style={[
+                  styles.botonGuardar,
+                  guardando &&
+                    styles.botonDeshabilitado,
+                ]}
+                onPress={ejecutarCambioEstado}
+                disabled={guardando}
+              >
+                {guardando ? (
+                  <ActivityIndicator
+                    color="#FFFFFF"
                   />
-
-                  <View
-                    style={
-                      styles.detailGrid
-                    }
-                  >
-                    <Detalle
-                      titulo="Nombre"
-                      valor={
-                        laboratorioDetalle.nombre
-                      }
-                    />
-
-                    <Detalle
-                      titulo="Estado"
-                      valor={
-                        laboratorioDetalle.activo
-                          ? "Activo"
-                          : "Inactivo"
-                      }
-                    />
-
-                    <Detalle
-                      titulo="Correo"
-                      valor={
-                        laboratorioDetalle.email
-                      }
-                    />
-
-                    <Detalle
-                      titulo="Teléfono"
-                      valor={
-                        laboratorioDetalle.telefono
-                      }
-                    />
-
-                    <Detalle
-                      titulo="Dirección"
-                      valor={
-                        laboratorioDetalle.direccion
-                      }
-                    />
-
-                    <Detalle
-                      titulo="Nombre visible"
-                      valor={
-                        laboratorioDetalle.nombreVisible ||
-                        "No configurado"
-                      }
-                    />
-
-                    <Detalle
-                      titulo="Color principal"
-                      valor={
-                        laboratorioDetalle.colorPrimario
-                      }
-                    />
-
-                    <Detalle
-                      titulo="Color secundario"
-                      valor={
-                        laboratorioDetalle.colorSecundario
-                      }
-                    />
-
-                    <Detalle
-                      titulo="Fecha de registro"
-                      valor={
-                        formatearFecha(
-                          laboratorioDetalle.fechaRegistro
-                        )
-                      }
-                    />
-
-                    <Detalle
-                      titulo="Laboratorio ID"
-                      valor={
-                        laboratorioDetalle.laboratorioId
-                      }
-                    />
-                  </View>
-
-                  <View
-                    style={
-                      styles.identityPreview
-                    }
-                  >
-                    <View
-                      style={[
-                        styles.identityHeader,
-                        {
-                          backgroundColor:
-                            laboratorioDetalle.colorPrimario,
-                        },
-                      ]}
-                    >
-                      <View
-                        style={[
-                          styles.identityCircle,
-                          {
-                            backgroundColor:
-                              laboratorioDetalle.colorSecundario,
-                          },
-                        ]}
-                      />
-
-                      <Text
-                        style={
-                          styles.identityTitle
-                        }
-                      >
-                        {laboratorioDetalle.nombreVisible ||
-                          laboratorioDetalle.nombre}
-                      </Text>
-                    </View>
-                  </View>
-
-                  <Pressable
-                    style={
-                      styles.fullButton
-                    }
-                    onPress={() =>
-                      setLaboratorioDetalle(
-                        null
-                      )
-                    }
-                  >
-                    <Text
-                      style={
-                        styles.fullButtonText
-                      }
-                    >
-                      Cerrar
-                    </Text>
-                  </Pressable>
-                </>
-              )}
-            </View>
-          </ScrollView>
-        </View>
-      </Modal>
-
-      <Modal
-        visible={
-          laboratorioEstado !==
-          null
-        }
-        transparent
-        animationType="fade"
-        onRequestClose={() =>
-          setLaboratorioEstado(
-            null
-          )
-        }
-      >
-        <View
-          style={
-            styles.modalOverlay
-          }
-        >
-          <View
-            style={[
-              styles.modal,
-              styles.confirmModal,
-            ]}
-          >
-            {laboratorioEstado && (
-              <>
-                <View
-                  style={
-                    laboratorioEstado.activo
-                      ? styles.confirmIconDanger
-                      : styles.confirmIconSuccess
-                  }
-                >
-                  <Text
-                    style={
-                      styles.confirmEmoji
-                    }
-                  >
-                    {laboratorioEstado.activo
-                      ? "!"
-                      : "✓"}
+                ) : (
+                  <Text style={styles.botonGuardarTexto}>
+                    Confirmar
                   </Text>
-                </View>
-
-                <Text
-                  style={
-                    styles.confirmTitle
-                  }
-                >
-                  {laboratorioEstado.activo
-                    ? "Desactivar laboratorio"
-                    : "Activar laboratorio"}
-                </Text>
-
-                <Text
-                  style={
-                    styles.confirmText
-                  }
-                >
-                  {laboratorioEstado.activo
-                    ? `¿Deseas desactivar ${laboratorioEstado.nombre}?`
-                    : `¿Deseas activar ${laboratorioEstado.nombre}?`}
-                </Text>
-
-                <View
-                  style={
-                    styles.modalActions
-                  }
-                >
-                  <Pressable
-                    style={
-                      styles.cancelButton
-                    }
-                    onPress={() =>
-                      setLaboratorioEstado(
-                        null
-                      )
-                    }
-                    disabled={
-                      guardando
-                    }
-                  >
-                    <Text
-                      style={
-                        styles.cancelText
-                      }
-                    >
-                      Cancelar
-                    </Text>
-                  </Pressable>
-
-                  <Pressable
-                    style={[
-                      laboratorioEstado.activo
-                        ? styles.confirmDangerButton
-                        : styles.confirmSuccessButton,
-
-                      guardando &&
-                        styles.disabled,
-                    ]}
-                    onPress={
-                      ejecutarCambioEstado
-                    }
-                    disabled={
-                      guardando
-                    }
-                  >
-                    {guardando ? (
-                      <ActivityIndicator
-                        color="#ffffff"
-                        size="small"
-                      />
-                    ) : (
-                      <Text
-                        style={
-                          styles.confirmButtonText
-                        }
-                      >
-                        Confirmar
-                      </Text>
-                    )}
-                  </Pressable>
-                </View>
-              </>
-            )}
+                )}
+              </Pressable>
+            </View>
           </View>
         </View>
       </Modal>
@@ -2043,226 +1319,9 @@ export default function LaboratoriosScreen() {
   );
 }
 
-function Stat({
-  icono,
-  titulo,
-  valor,
-  fondo,
-  color,
-}: {
-  icono: string;
-  titulo: string;
-  valor: number;
-  fondo: string;
-  color: string;
-}) {
-  return (
-    <View
-      style={
-        styles.stat
-      }
-    >
-      <View
-        style={[
-          styles.statIcon,
-          {
-            backgroundColor:
-              fondo,
-          },
-        ]}
-      >
-        <Text>
-          {icono}
-        </Text>
-      </View>
-
-      <Text
-        style={[
-          styles.statValue,
-          {
-            color,
-          },
-        ]}
-      >
-        {valor}
-      </Text>
-
-      <Text
-        style={
-          styles.statTitle
-        }
-      >
-        {titulo}
-      </Text>
-    </View>
-  );
-}
-
-function Filtro({
-  titulo,
-  activo,
-  onPress,
-}: {
-  titulo: string;
-  activo: boolean;
-  onPress:
-    () => void;
-}) {
-  return (
-    <Pressable
-      style={[
-        styles.chip,
-
-        activo &&
-          styles.chipActive,
-      ]}
-      onPress={
-        onPress
-      }
-    >
-      <Text
-        style={[
-          styles.chipText,
-
-          activo &&
-            styles.chipTextActive,
-        ]}
-      >
-        {titulo}
-      </Text>
-    </Pressable>
-  );
-}
-
-function Campo({
-  titulo,
-  valor,
-  onChange,
-  placeholder,
-  multiline = false,
-  keyboardType = "default",
-}: {
-  titulo: string;
-  valor: string;
-  onChange:
-    (
-      valor:
-        string
-    ) => void;
-  placeholder:
-    string;
-  multiline?:
-    boolean;
-  keyboardType?:
-    | "default"
-    | "email-address"
-    | "phone-pad";
-}) {
-  return (
-    <View
-      style={
-        styles.field
-      }
-    >
-      <Text
-        style={
-          styles.fieldLabel
-        }
-      >
-        {titulo}
-      </Text>
-
-      <TextInput
-        style={[
-          styles.fieldInput,
-
-          multiline &&
-            styles.fieldMultiline,
-        ]}
-        value={
-          valor
-        }
-        onChangeText={
-          onChange
-        }
-        placeholder={
-          placeholder
-        }
-        placeholderTextColor="#94a3b8"
-        multiline={
-          multiline
-        }
-        keyboardType={
-          keyboardType
-        }
-        autoCapitalize={
-          keyboardType ===
-          "email-address"
-            ? "none"
-            : "sentences"
-        }
-      />
-    </View>
-  );
-}
-
-function ModalHeader({
-  titulo,
-  subtitulo,
-  cerrar,
-}: {
-  titulo: string;
-  subtitulo: string;
-  cerrar:
-    () => void;
-}) {
-  return (
-    <View
-      style={
-        styles.modalHeader
-      }
-    >
-      <View
-        style={
-          styles.modalHeaderText
-        }
-      >
-        <Text
-          style={
-            styles.modalTitle
-          }
-        >
-          {titulo}
-        </Text>
-
-        <Text
-          style={
-            styles.modalSubtitle
-          }
-        >
-          {subtitulo}
-        </Text>
-      </View>
-
-      <Pressable
-        style={
-          styles.modalClose
-        }
-        onPress={
-          cerrar
-        }
-      >
-        <Text
-          style={
-            styles.modalCloseText
-          }
-        >
-          ×
-        </Text>
-      </Pressable>
-    </View>
-  );
-}
+// =====================================================
+// COMPONENTE DETALLE
+// =====================================================
 
 function Detalle({
   titulo,
@@ -2272,1140 +1331,636 @@ function Detalle({
   valor: string;
 }) {
   return (
-    <View
-      style={
-        styles.detailItem
-      }
-    >
-      <Text
-        style={
-          styles.detailLabel
-        }
-      >
+    <View style={styles.detalleFila}>
+      <Text style={styles.detalleTitulo}>
         {titulo}
       </Text>
 
-      <Text
-        style={
-          styles.detailValue
-        }
-      >
-        {valor ||
-          "No registrado"}
+      <Text style={styles.detalleValor}>
+        {valor || "No registrado"}
       </Text>
     </View>
   );
 }
 
-const styles =
-  StyleSheet.create({
-    page: {
-      flex: 1,
-      backgroundColor:
-        "#f1f5f9",
-    },
-
-    scroll: {
-      paddingBottom: 45,
-    },
-
-    header: {
-      paddingHorizontal: 17,
-      paddingTop: 24,
-      paddingBottom: 29,
-      backgroundColor:
-        "#1e3a8a",
-    },
-
-    headerTop: {
-      flexDirection:
-        "row",
-      alignItems:
-        "center",
-    },
-
-    backButton: {
-      width: 42,
-      height: 42,
-      alignItems:
-        "center",
-      justifyContent:
-        "center",
-      marginRight: 10,
-      borderRadius: 13,
-      backgroundColor:
-        "rgba(255,255,255,.12)",
-    },
-
-    backText: {
-      marginTop: -4,
-      color:
-        "#ffffff",
-      fontSize: 33,
-    },
-
-    headerText: {
-      flex: 1,
-    },
-
-    headerEyebrow: {
-      color:
-        "#bfdbfe",
-      fontSize: 8,
-      fontWeight:
-        "900",
-      letterSpacing: 1,
-    },
-
-    headerTitle: {
-      marginTop: 4,
-      color:
-        "#ffffff",
-      fontSize: 27,
-      fontWeight:
-        "900",
-    },
-
-    headerDescription: {
-      marginTop: 4,
-      color:
-        "#dbeafe",
-      fontSize: 9,
-      lineHeight: 14,
-    },
-
-    headerIcon: {
-      width: 53,
-      height: 53,
-      alignItems:
-        "center",
-      justifyContent:
-        "center",
-      marginLeft: 8,
-      borderRadius: 16,
-      backgroundColor:
-        "rgba(255,255,255,.12)",
-    },
-
-    headerEmoji: {
-      fontSize: 24,
-    },
-
-    newButton: {
-      minHeight: 46,
-      alignItems:
-        "center",
-      justifyContent:
-        "center",
-      marginTop: 19,
-      borderRadius: 12,
-      backgroundColor:
-        "#ffffff",
-    },
-
-    newButtonText: {
-      color:
-        "#1d4ed8",
-      fontSize: 10,
-      fontWeight:
-        "900",
-    },
-
-    message: {
-      flexDirection:
-        "row",
-      alignItems:
-        "center",
-      gap: 8,
-      marginHorizontal: 14,
-      marginTop: 13,
-      padding: 12,
-      borderWidth: 1,
-      borderRadius: 11,
-    },
-
-    messageSuccess: {
-      backgroundColor:
-        "#ecfdf5",
-      borderColor:
-        "#a7f3d0",
-    },
-
-    messageError: {
-      backgroundColor:
-        "#fff1f2",
-      borderColor:
-        "#fecaca",
-    },
-
-    messageSymbol: {
-      fontWeight:
-        "900",
-    },
-
-    messageText: {
-      flex: 1,
-      fontSize: 9,
-      fontWeight:
-        "700",
-    },
-
-    messageSuccessText: {
-      color:
-        "#047857",
-    },
-
-    messageErrorText: {
-      color:
-        "#b91c1c",
-    },
-
-    stats: {
-      flexDirection:
-        "row",
-      flexWrap:
-        "wrap",
-      gap: 9,
-      paddingHorizontal: 14,
-      marginTop: 15,
-    },
-
-    stat: {
-      width:
-        "48.5%",
-      padding: 13,
-      borderWidth: 1,
-      borderColor:
-        "#e2e8f0",
-      borderRadius: 15,
-      backgroundColor:
-        "#ffffff",
-    },
-
-    statIcon: {
-      width: 35,
-      height: 35,
-      alignItems:
-        "center",
-      justifyContent:
-        "center",
-      borderRadius: 10,
-    },
-
-    statValue: {
-      marginTop: 8,
-      fontSize: 21,
-      fontWeight:
-        "900",
-    },
-
-    statTitle: {
-      color:
-        "#64748b",
-      fontSize: 8,
-      fontWeight:
-        "700",
-    },
-
-    toolbar: {
-      flexDirection:
-        "row",
-      gap: 8,
-      paddingHorizontal: 14,
-      marginTop: 19,
-    },
-
-    search: {
-      minHeight: 48,
-      flex: 1,
-      flexDirection:
-        "row",
-      alignItems:
-        "center",
-      gap: 8,
-      paddingHorizontal: 12,
-      borderWidth: 1,
-      borderColor:
-        "#e2e8f0",
-      borderRadius: 12,
-      backgroundColor:
-        "#ffffff",
-    },
-
-    searchInput: {
-      flex: 1,
-      fontSize: 10,
-      color:
-        "#0f172a",
-    },
-
-    filterButton: {
-      justifyContent:
-        "center",
-      paddingHorizontal: 12,
-      borderWidth: 1,
-      borderColor:
-        "#cbd5e1",
-      borderRadius: 12,
-      backgroundColor:
-        "#ffffff",
-    },
-
-    filterButtonActive: {
-      borderColor:
-        "#2563eb",
-      backgroundColor:
-        "#eff6ff",
-    },
-
-    filterButtonText: {
-      color:
-        "#475569",
-      fontSize: 8,
-      fontWeight:
-        "800",
-    },
-
-    filterButtonTextActive: {
-      color:
-        "#1d4ed8",
-    },
-
-    filters: {
-      marginHorizontal: 14,
-      marginTop: 9,
-      padding: 14,
-      borderWidth: 1,
-      borderColor:
-        "#dbeafe",
-      borderRadius: 13,
-      backgroundColor:
-        "#ffffff",
-    },
-
-    filtersHeader: {
-      flexDirection:
-        "row",
-      justifyContent:
-        "space-between",
-      marginBottom: 12,
-    },
-
-    filtersTitle: {
-      fontSize: 11,
-      fontWeight:
-        "900",
-      color:
-        "#0f172a",
-    },
-
-    clearFilters: {
-      color:
-        "#2563eb",
-      fontSize: 8,
-      fontWeight:
-        "800",
-    },
-
-    filterLabel: {
-      marginBottom: 7,
-      color:
-        "#64748b",
-      fontSize: 8,
-      fontWeight:
-        "800",
-    },
-
-    chips: {
-      flexDirection:
-        "row",
-      flexWrap:
-        "wrap",
-      gap: 7,
-    },
-
-    chip: {
-      paddingHorizontal: 11,
-      paddingVertical: 8,
-      borderWidth: 1,
-      borderColor:
-        "#e2e8f0",
-      borderRadius: 20,
-    },
-
-    chipActive: {
-      borderColor:
-        "#2563eb",
-      backgroundColor:
-        "#eff6ff",
-    },
-
-    chipText: {
-      color:
-        "#64748b",
-      fontSize: 8,
-      fontWeight:
-        "700",
-    },
-
-    chipTextActive: {
-      color:
-        "#1d4ed8",
-    },
-
-    listHeader: {
-      flexDirection:
-        "row",
-      alignItems:
-        "center",
-      justifyContent:
-        "space-between",
-      paddingHorizontal: 15,
-      marginTop: 23,
-      marginBottom: 11,
-    },
-
-    listTitle: {
-      color:
-        "#0f172a",
-      fontSize: 16,
-      fontWeight:
-        "900",
-    },
-
-    listSubtitle: {
-      maxWidth: 270,
-      marginTop: 3,
-      color:
-        "#64748b",
-      fontSize: 8,
-    },
-
-    resultBadge: {
-      minWidth: 31,
-      height: 31,
-      alignItems:
-        "center",
-      justifyContent:
-        "center",
-      borderRadius: 16,
-      backgroundColor:
-        "#dbeafe",
-    },
-
-    resultText: {
-      color:
-        "#1d4ed8",
-      fontSize: 9,
-      fontWeight:
-        "900",
-    },
-
-    card: {
-      marginHorizontal: 14,
-      marginBottom: 11,
-      padding: 14,
-      borderWidth: 1,
-      borderColor:
-        "#e2e8f0",
-      borderRadius: 16,
-      backgroundColor:
-        "#ffffff",
-    },
-
-    cardTop: {
-      flexDirection:
-        "row",
-    },
-
-    labLogo: {
-      width: 51,
-      height: 51,
-      alignItems:
-        "center",
-      justifyContent:
-        "center",
-      overflow:
-        "hidden",
-      marginRight: 11,
-      borderRadius: 14,
-      backgroundColor:
-        "#eff6ff",
-    },
-
-    labLogoImage: {
-      width: 45,
-      height: 45,
-    },
-
-    labEmoji: {
-      fontSize: 23,
-    },
-
-    labInfo: {
-      flex: 1,
-    },
-
-    labName: {
-      color:
-        "#0f172a",
-      fontSize: 13,
-      fontWeight:
-        "900",
-    },
-
-    labEmail: {
-      marginTop: 3,
-      color:
-        "#64748b",
-      fontSize: 8,
-    },
-
-    cardBadges: {
-      flexDirection:
-        "row",
-      marginTop: 7,
-    },
-
-    activeBadge: {
-      alignSelf:
-        "flex-start",
-      paddingHorizontal: 8,
-      paddingVertical: 5,
-      borderRadius: 14,
-      backgroundColor:
-        "#dcfce7",
-    },
-
-    inactiveBadge: {
-      alignSelf:
-        "flex-start",
-      paddingHorizontal: 8,
-      paddingVertical: 5,
-      borderRadius: 14,
-      backgroundColor:
-        "#fee2e2",
-    },
-
-    activeText: {
-      color:
-        "#15803d",
-      fontSize: 8,
-      fontWeight:
-        "800",
-    },
-
-    inactiveText: {
-      color:
-        "#b91c1c",
-      fontSize: 8,
-      fontWeight:
-        "800",
-    },
-
-    shortInfo: {
-      gap: 5,
-      marginTop: 12,
-      padding: 10,
-      borderRadius: 10,
-      backgroundColor:
-        "#f8fafc",
-    },
-
-    shortInfoText: {
-      color:
-        "#475569",
-      fontSize: 8,
-    },
-
-    actions: {
-      flexDirection:
-        "row",
-      gap: 7,
-      marginTop: 9,
-    },
-
-    action: {
-      minHeight: 39,
-      flex: 1,
-      alignItems:
-        "center",
-      justifyContent:
-        "center",
-      borderRadius: 9,
-    },
-
-    viewAction: {
-      backgroundColor:
-        "#e0f2fe",
-    },
-
-    viewActionText: {
-      color:
-        "#0369a1",
-      fontSize: 8,
-      fontWeight:
-        "900",
-    },
-
-    detailAction: {
-      backgroundColor:
-        "#ede9fe",
-    },
-
-    detailActionText: {
-      color:
-        "#6d28d9",
-      fontSize: 8,
-      fontWeight:
-        "900",
-    },
-
-    editAction: {
-      backgroundColor:
-        "#fef3c7",
-    },
-
-    editActionText: {
-      color:
-        "#a16207",
-      fontSize: 8,
-      fontWeight:
-        "900",
-    },
-
-    disableAction: {
-      backgroundColor:
-        "#fee2e2",
-    },
-
-    disableActionText: {
-      color:
-        "#b91c1c",
-      fontSize: 8,
-      fontWeight:
-        "900",
-    },
-
-    enableAction: {
-      backgroundColor:
-        "#dcfce7",
-    },
-
-    enableActionText: {
-      color:
-        "#15803d",
-      fontSize: 8,
-      fontWeight:
-        "900",
-    },
-
-    empty: {
-      alignItems:
-        "center",
-      marginHorizontal: 14,
-      padding: 35,
-      borderWidth: 1,
-      borderColor:
-        "#e2e8f0",
-      borderRadius: 15,
-      backgroundColor:
-        "#ffffff",
-    },
-
-    emptyEmoji: {
-      fontSize: 35,
-    },
-
-    emptyTitle: {
-      marginTop: 9,
-      color:
-        "#334155",
-      fontSize: 13,
-      fontWeight:
-        "900",
-    },
-
-    emptyText: {
-      marginTop: 4,
-      color:
-        "#64748b",
-      fontSize: 8,
-      textAlign:
-        "center",
-    },
-
-    emptyAction: {
-      marginTop: 11,
-      color:
-        "#2563eb",
-      fontSize: 8,
-      fontWeight:
-        "900",
-    },
-
-    loadingPage: {
-      flex: 1,
-      alignItems:
-        "center",
-      justifyContent:
-        "center",
-      backgroundColor:
-        "#f8fafc",
-    },
-
-    loadingIcon: {
-      width: 68,
-      height: 68,
-      alignItems:
-        "center",
-      justifyContent:
-        "center",
-      marginBottom: 17,
-      borderRadius: 20,
-      backgroundColor:
-        "#dbeafe",
-    },
-
-    loadingEmoji: {
-      fontSize: 31,
-    },
-
-    loadingTitle: {
-      marginTop: 14,
-      color:
-        "#0f172a",
-      fontSize: 18,
-      fontWeight:
-        "900",
-    },
-
-    loadingText: {
-      marginTop: 4,
-      color:
-        "#64748b",
-      fontSize: 9,
-    },
-
-    modalOverlay: {
-      flex: 1,
-      justifyContent:
-        "center",
-      padding: 17,
-      backgroundColor:
-        "rgba(15,23,42,.7)",
-    },
-
-    modalScroll: {
-      flexGrow: 1,
-      justifyContent:
-        "center",
-      paddingVertical: 20,
-    },
-
-    modal: {
-      width:
-        "100%",
-      maxWidth: 520,
-      alignSelf:
-        "center",
-      padding: 19,
-      borderRadius: 20,
-      backgroundColor:
-        "#ffffff",
-    },
-
-    smallModal: {
-      maxWidth: 420,
-    },
-
-    confirmModal: {
-      maxWidth: 400,
-      alignItems:
-        "stretch",
-    },
-
-    modalHeader: {
-      flexDirection:
-        "row",
-      justifyContent:
-        "space-between",
-      marginBottom: 18,
-      paddingBottom: 14,
-      borderBottomWidth: 1,
-      borderBottomColor:
-        "#e2e8f0",
-    },
-
-    modalHeaderText: {
-      flex: 1,
-      paddingRight: 10,
-    },
-
-    modalTitle: {
-      color:
-        "#0f172a",
-      fontSize: 18,
-      fontWeight:
-        "900",
-    },
-
-    modalSubtitle: {
-      marginTop: 4,
-      color:
-        "#64748b",
-      fontSize: 8,
-      lineHeight: 13,
-    },
-
-    modalClose: {
-      width: 35,
-      height: 35,
-      alignItems:
-        "center",
-      justifyContent:
-        "center",
-      borderRadius: 10,
-      backgroundColor:
-        "#f1f5f9",
-    },
-
-    modalCloseText: {
-      color:
-        "#475569",
-      fontSize: 21,
-    },
-
-    field: {
-      marginBottom: 13,
-    },
-
-    fieldLabel: {
-      marginBottom: 6,
-      color:
-        "#334155",
-      fontSize: 9,
-      fontWeight:
-        "800",
-    },
-
-    fieldInput: {
-      minHeight: 49,
-      paddingHorizontal: 12,
-      borderWidth: 1,
-      borderColor:
-        "#cbd5e1",
-      borderRadius: 10,
-      color:
-        "#0f172a",
-      fontSize: 10,
-      backgroundColor:
-        "#ffffff",
-    },
-
-    fieldMultiline: {
-      minHeight: 80,
-      paddingTop: 12,
-      textAlignVertical:
-        "top",
-    },
-
-    lockedBox: {
-      padding: 11,
-      borderRadius: 10,
-      backgroundColor:
-        "#f8fafc",
-    },
-
-    lockedLabel: {
-      color:
-        "#64748b",
-      fontSize: 8,
-      fontWeight:
-        "800",
-    },
-
-    lockedValue: {
-      marginTop: 3,
-      color:
-        "#334155",
-      fontSize: 8,
-    },
-
-    modalActions: {
-      flexDirection:
-        "row",
-      gap: 8,
-      marginTop: 16,
-    },
-
-    cancelButton: {
-      minHeight: 45,
-      flex: 1,
-      alignItems:
-        "center",
-      justifyContent:
-        "center",
-      borderWidth: 1,
-      borderColor:
-        "#cbd5e1",
-      borderRadius: 10,
-      backgroundColor:
-        "#ffffff",
-    },
-
-    cancelText: {
-      color:
-        "#475569",
-      fontSize: 9,
-      fontWeight:
-        "800",
-    },
-
-    saveButton: {
-      minHeight: 45,
-      flex: 1,
-      alignItems:
-        "center",
-      justifyContent:
-        "center",
-      borderRadius: 10,
-      backgroundColor:
-        "#2563eb",
-    },
-
-    saveText: {
-      color:
-        "#ffffff",
-      fontSize: 9,
-      fontWeight:
-        "900",
-    },
-
-    disabled: {
-      opacity: 0.55,
-    },
-
-    profile: {
-      alignItems:
-        "center",
-      paddingVertical: 15,
-    },
-
-    profileLogo: {
-      width: 78,
-      height: 78,
-      alignItems:
-        "center",
-      justifyContent:
-        "center",
-      overflow:
-        "hidden",
-      borderRadius: 22,
-      backgroundColor:
-        "#eff6ff",
-    },
-
-    profileImage: {
-      width: 68,
-      height: 68,
-    },
-
-    profileEmoji: {
-      fontSize: 35,
-    },
-
-    profileName: {
-      marginTop: 12,
-      color:
-        "#0f172a",
-      fontSize: 17,
-      fontWeight:
-        "900",
-      textAlign:
-        "center",
-    },
-
-    profileEmail: {
-      marginTop: 4,
-      marginBottom: 9,
-      color:
-        "#64748b",
-      fontSize: 9,
-    },
-
-    fullButton: {
-      minHeight: 45,
-      alignItems:
-        "center",
-      justifyContent:
-        "center",
-      marginTop: 10,
-      borderRadius: 10,
-      backgroundColor:
-        "#2563eb",
-    },
-
-    fullButtonText: {
-      color:
-        "#ffffff",
-      fontSize: 9,
-      fontWeight:
-        "900",
-    },
-
-    detailGrid: {
-      gap: 8,
-    },
-
-    detailItem: {
-      padding: 11,
-      borderRadius: 10,
-      backgroundColor:
-        "#f8fafc",
-    },
-
-    detailLabel: {
-      color:
-        "#64748b",
-      fontSize: 7,
-      fontWeight:
-        "800",
-      textTransform:
-        "uppercase",
-    },
-
-    detailValue: {
-      marginTop: 3,
-      color:
-        "#0f172a",
-      fontSize: 9,
-      fontWeight:
-        "700",
-    },
-
-    identityPreview: {
-      overflow:
-        "hidden",
-      marginTop: 13,
-      borderRadius: 12,
-    },
-
-    identityHeader: {
-      position:
-        "relative",
-      overflow:
-        "hidden",
-      minHeight: 80,
-      justifyContent:
-        "center",
-      padding: 15,
-    },
-
-    identityCircle: {
-      position:
-        "absolute",
-      width: 100,
-      height: 100,
-      right: -30,
-      top: -30,
-      borderRadius: 50,
-      opacity: 0.55,
-    },
-
-    identityTitle: {
-      color:
-        "#ffffff",
-      fontSize: 14,
-      fontWeight:
-        "900",
-    },
-
-    confirmIconDanger: {
-      width: 58,
-      height: 58,
-      alignSelf:
-        "center",
-      alignItems:
-        "center",
-      justifyContent:
-        "center",
-      marginBottom: 13,
-      borderRadius: 18,
-      backgroundColor:
-        "#fee2e2",
-    },
-
-    confirmIconSuccess: {
-      width: 58,
-      height: 58,
-      alignSelf:
-        "center",
-      alignItems:
-        "center",
-      justifyContent:
-        "center",
-      marginBottom: 13,
-      borderRadius: 18,
-      backgroundColor:
-        "#dcfce7",
-    },
-
-    confirmEmoji: {
-      fontSize: 23,
-      fontWeight:
-        "900",
-    },
-
-    confirmTitle: {
-      color:
-        "#0f172a",
-      fontSize: 17,
-      fontWeight:
-        "900",
-      textAlign:
-        "center",
-    },
-
-    confirmText: {
-      marginTop: 6,
-      color:
-        "#64748b",
-      fontSize: 9,
-      lineHeight: 14,
-      textAlign:
-        "center",
-    },
-
-    confirmDangerButton: {
-      minHeight: 45,
-      flex: 1,
-      alignItems:
-        "center",
-      justifyContent:
-        "center",
-      borderRadius: 10,
-      backgroundColor:
-        "#dc2626",
-    },
-
-    confirmSuccessButton: {
-      minHeight: 45,
-      flex: 1,
-      alignItems:
-        "center",
-      justifyContent:
-        "center",
-      borderRadius: 10,
-      backgroundColor:
-        "#16a34a",
-    },
-
-    confirmButtonText: {
-      color:
-        "#ffffff",
-      fontSize: 9,
-      fontWeight:
-        "900",
-    },
-  });
+// =====================================================
+// ESTILOS COMPLETOS
+// =====================================================
+
+const styles = StyleSheet.create({
+  contenedor: {
+    flex: 1,
+    backgroundColor: "#F4F7FB",
+  },
+
+  encabezado: {
+    backgroundColor: "#FFFFFF",
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: "#E2E8F0",
+  },
+
+  botonVolver: {
+    width: 40,
+    height: 40,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 12,
+    backgroundColor: "#F1F5F9",
+  },
+
+  botonVolverTexto: {
+    fontSize: 30,
+    color: "#334155",
+    marginTop: -5,
+  },
+
+  encabezadoCentro: {
+    flex: 1,
+    marginLeft: 12,
+  },
+
+  encabezadoTitulo: {
+    fontSize: 19,
+    fontWeight: "800",
+    color: "#0F172A",
+  },
+
+  encabezadoSubtitulo: {
+    fontSize: 12,
+    color: "#64748B",
+    marginTop: 3,
+  },
+
+  botonAgregarEncabezado: {
+    width: 40,
+    height: 40,
+    backgroundColor: "#2563EB",
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  botonAgregarTexto: {
+    color: "#FFFFFF",
+    fontSize: 27,
+    fontWeight: "600",
+  },
+
+  contenido: {
+    padding: 16,
+    paddingBottom: 40,
+  },
+
+  mensaje: {
+    padding: 13,
+    marginHorizontal: 16,
+    marginTop: 12,
+    borderRadius: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+
+  mensajeExito: {
+    backgroundColor: "#DCFCE7",
+    borderWidth: 1,
+    borderColor: "#BBF7D0",
+  },
+
+  mensajeError: {
+    backgroundColor: "#FEE2E2",
+    borderWidth: 1,
+    borderColor: "#FECACA",
+  },
+
+  mensajeTexto: {
+    fontSize: 13,
+    fontWeight: "600",
+    flex: 1,
+  },
+
+  cerrarMensaje: {
+    fontSize: 24,
+    color: "#64748B",
+    marginLeft: 12,
+  },
+
+  banner: {
+    backgroundColor: "#1D4ED8",
+    borderRadius: 18,
+    padding: 22,
+    marginBottom: 18,
+  },
+
+  bannerEtiqueta: {
+    fontSize: 11,
+    fontWeight: "800",
+    color: "#BFDBFE",
+    letterSpacing: 1,
+  },
+
+  bannerTitulo: {
+    color: "#FFFFFF",
+    fontSize: 23,
+    fontWeight: "800",
+    marginTop: 10,
+  },
+
+  bannerDescripcion: {
+    color: "#DBEAFE",
+    fontSize: 13,
+    lineHeight: 20,
+    marginTop: 8,
+  },
+
+  bannerBoton: {
+    backgroundColor: "#FFFFFF",
+    paddingHorizontal: 16,
+    paddingVertical: 13,
+    borderRadius: 10,
+    alignSelf: "flex-start",
+    marginTop: 18,
+  },
+
+  bannerBotonTexto: {
+    color: "#1D4ED8",
+    fontSize: 13,
+    fontWeight: "800",
+  },
+
+  estadisticas: {
+    flexDirection: "row",
+    gap: 10,
+    marginBottom: 12,
+  },
+
+  estadistica: {
+    flex: 1,
+    backgroundColor: "#FFFFFF",
+    padding: 14,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    alignItems: "center",
+  },
+
+  estadisticaNumero: {
+    fontSize: 25,
+    fontWeight: "900",
+    color: "#2563EB",
+  },
+
+  estadisticaTitulo: {
+    fontSize: 11,
+    color: "#64748B",
+    fontWeight: "600",
+    marginTop: 5,
+  },
+
+  personalizados: {
+    backgroundColor: "#EFF6FF",
+    padding: 13,
+    borderRadius: 10,
+    marginBottom: 20,
+  },
+
+  personalizadosTexto: {
+    fontSize: 12,
+    color: "#1D4ED8",
+    fontWeight: "600",
+  },
+
+  buscadorContenedor: {
+    marginBottom: 18,
+  },
+
+  seccionTitulo: {
+    fontSize: 19,
+    fontWeight: "800",
+    color: "#0F172A",
+  },
+
+  seccionDescripcion: {
+    fontSize: 12,
+    color: "#64748B",
+    marginTop: 5,
+    marginBottom: 14,
+  },
+
+  buscador: {
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#CBD5E1",
+    borderRadius: 12,
+    height: 50,
+    paddingHorizontal: 15,
+    color: "#0F172A",
+    fontSize: 14,
+  },
+
+  botonFiltros: {
+    alignSelf: "flex-start",
+    paddingVertical: 12,
+  },
+
+  botonFiltrosTexto: {
+    color: "#2563EB",
+    fontSize: 13,
+    fontWeight: "700",
+  },
+
+  filtros: {
+    flexDirection: "row",
+    gap: 8,
+    marginBottom: 12,
+  },
+
+  filtro: {
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#CBD5E1",
+    borderRadius: 10,
+  },
+
+  filtroActivo: {
+    backgroundColor: "#2563EB",
+    borderColor: "#2563EB",
+  },
+
+  filtroTexto: {
+    fontSize: 12,
+    color: "#475569",
+    fontWeight: "700",
+  },
+
+  filtroTextoActivo: {
+    color: "#FFFFFF",
+  },
+
+  resultados: {
+    fontSize: 12,
+    color: "#64748B",
+  },
+
+  cargando: {
+    padding: 40,
+    alignItems: "center",
+  },
+
+  cargandoTexto: {
+    marginTop: 12,
+    color: "#64748B",
+  },
+
+  vacio: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    padding: 30,
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+  },
+
+  vacioIcono: {
+    fontSize: 42,
+  },
+
+  vacioTitulo: {
+    fontSize: 17,
+    fontWeight: "800",
+    color: "#0F172A",
+    textAlign: "center",
+    marginTop: 12,
+  },
+
+  vacioDescripcion: {
+    fontSize: 13,
+    color: "#64748B",
+    textAlign: "center",
+    marginTop: 8,
+    lineHeight: 20,
+  },
+
+  tarjeta: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    padding: 17,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+  },
+
+  tarjetaEncabezado: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+
+  iconoLaboratorio: {
+    width: 55,
+    height: 55,
+    backgroundColor: "#EFF6FF",
+    borderRadius: 13,
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "hidden",
+  },
+
+  iconoTexto: {
+    fontSize: 28,
+  },
+
+  logoLaboratorio: {
+    width: 48,
+    height: 48,
+  },
+
+  tarjetaInfo: {
+    flex: 1,
+    marginLeft: 12,
+  },
+
+  tarjetaTitulo: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: "#0F172A",
+  },
+
+  tarjetaSubtitulo: {
+    fontSize: 12,
+    color: "#64748B",
+    marginTop: 5,
+  },
+
+  estadoEtiqueta: {
+    alignSelf: "flex-start",
+    paddingHorizontal: 11,
+    paddingVertical: 7,
+    borderRadius: 8,
+    marginTop: 15,
+  },
+
+  estadoActivo: {
+    backgroundColor: "#DCFCE7",
+  },
+
+  estadoInactivo: {
+    backgroundColor: "#FEE2E2",
+  },
+
+  estadoTexto: {
+    fontSize: 12,
+    fontWeight: "800",
+  },
+
+  separador: {
+    height: 1,
+    backgroundColor: "#E2E8F0",
+    marginVertical: 15,
+  },
+
+  tarjetaDato: {
+    fontSize: 12,
+    color: "#475569",
+    marginBottom: 8,
+    lineHeight: 19,
+  },
+
+  acciones: {
+    flexDirection: "row",
+    gap: 8,
+    marginTop: 12,
+  },
+
+  accion: {
+    flex: 1,
+    paddingVertical: 11,
+    borderRadius: 9,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  accionVer: {
+    backgroundColor: "#EFF6FF",
+  },
+
+  accionEditar: {
+    backgroundColor: "#FEF3C7",
+  },
+
+  accionDesactivar: {
+    backgroundColor: "#FEE2E2",
+  },
+
+  accionActivar: {
+    backgroundColor: "#DCFCE7",
+  },
+
+  accionTextoVer: {
+    color: "#1D4ED8",
+    fontWeight: "800",
+    fontSize: 12,
+  },
+
+  accionTextoEditar: {
+    color: "#92400E",
+    fontWeight: "800",
+    fontSize: 12,
+  },
+
+  accionTextoEstado: {
+    fontWeight: "800",
+    fontSize: 12,
+  },
+
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(15,23,42,0.65)",
+    justifyContent: "center",
+    padding: 16,
+  },
+
+  modalContenedor: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 18,
+    maxHeight: "90%",
+    overflow: "hidden",
+  },
+
+  modalEncabezado: {
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: "#E2E8F0",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+
+  modalTitulo: {
+    fontSize: 19,
+    fontWeight: "800",
+    color: "#0F172A",
+  },
+
+  modalSubtitulo: {
+    fontSize: 12,
+    color: "#64748B",
+    marginTop: 5,
+  },
+
+  modalCerrar: {
+    fontSize: 28,
+    color: "#64748B",
+    paddingHorizontal: 5,
+  },
+
+  modalContenido: {
+    padding: 20,
+    paddingBottom: 30,
+  },
+
+  campoEtiqueta: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#334155",
+    marginBottom: 8,
+    marginTop: 10,
+  },
+
+  campo: {
+    backgroundColor: "#F8FAFC",
+    borderWidth: 1,
+    borderColor: "#CBD5E1",
+    borderRadius: 10,
+    height: 50,
+    paddingHorizontal: 14,
+    fontSize: 14,
+    color: "#0F172A",
+  },
+
+  informacion: {
+    backgroundColor: "#EFF6FF",
+    borderRadius: 10,
+    padding: 14,
+    marginTop: 20,
+  },
+
+  informacionTexto: {
+    fontSize: 12,
+    color: "#1D4ED8",
+    lineHeight: 19,
+  },
+
+  modalAcciones: {
+    flexDirection: "row",
+    gap: 10,
+    marginTop: 24,
+  },
+
+  botonCancelar: {
+    flex: 1,
+    paddingVertical: 15,
+    backgroundColor: "#F1F5F9",
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  botonCancelarTexto: {
+    color: "#475569",
+    fontWeight: "800",
+    fontSize: 13,
+  },
+
+  botonGuardar: {
+    flex: 1,
+    backgroundColor: "#2563EB",
+    paddingVertical: 15,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  botonGuardarTexto: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontWeight: "800",
+  },
+
+  botonDeshabilitado: {
+    opacity: 0.6,
+  },
+
+  detalleFila: {
+    borderBottomWidth: 1,
+    borderBottomColor: "#E2E8F0",
+    paddingVertical: 12,
+  },
+
+  detalleTitulo: {
+    fontSize: 12,
+    color: "#64748B",
+    fontWeight: "600",
+  },
+
+  detalleValor: {
+    fontSize: 14,
+    color: "#0F172A",
+    fontWeight: "700",
+    marginTop: 5,
+  },
+
+  logoDetalle: {
+    width: 100,
+    height: 100,
+    alignSelf: "center",
+    marginBottom: 20,
+  },
+
+  logoDetalleVacio: {
+    width: 90,
+    height: 90,
+    borderRadius: 20,
+    backgroundColor: "#EFF6FF",
+    alignSelf: "center",
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 20,
+  },
+
+  logoDetalleTexto: {
+    fontSize: 45,
+  },
+
+  confirmacion: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 18,
+    padding: 25,
+  },
+
+  confirmacionIcono: {
+    fontSize: 40,
+    textAlign: "center",
+  },
+
+  confirmacionTitulo: {
+    fontSize: 19,
+    fontWeight: "800",
+    color: "#0F172A",
+    textAlign: "center",
+    marginTop: 12,
+  },
+
+  confirmacionDescripcion: {
+    fontSize: 13,
+    color: "#64748B",
+    textAlign: "center",
+    lineHeight: 21,
+    marginTop: 12,
+  },
+});

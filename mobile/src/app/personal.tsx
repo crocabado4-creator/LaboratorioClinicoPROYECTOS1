@@ -39,6 +39,8 @@ import {
   type PersonalSistema,
 } from "../services/personalService";
 
+import CambiarPasswordModal from "../components/CambiarPasswordModal";
+
 type FiltroRol =
   | "todos"
   | "recepcionista"
@@ -217,6 +219,8 @@ export default function PersonalScreen() {
     mostrarConfirmarPassword,
     setMostrarConfirmarPassword,
   ] = useState(false);
+
+  const [personalPassword, setPersonalPassword] = useState<PersonalSistema | null>(null);
 
   const puedeCrear =
     permisos.includes(
@@ -1760,6 +1764,17 @@ export default function PersonalScreen() {
                         </Pressable>
                       )}
 
+                      {puedeEditar && (
+                        <Pressable
+                          style={[styles.action, styles.editAction]}
+                          onPress={() => setPersonalPassword(integrante)}
+                        >
+                          <Text style={styles.editActionText}>
+                            Cambiar contraseña
+                          </Text>
+                        </Pressable>
+                      )}
+
                       {puedeCambiarEstado && (
                         <Pressable
                           style={[
@@ -2656,6 +2671,16 @@ export default function PersonalScreen() {
           </View>
         </View>
       </Modal>
+      <CambiarPasswordModal
+        visible={personalPassword !== null}
+        usuarioId={personalPassword?.id ?? ""}
+        nombreUsuario={personalPassword ? `${personalPassword.nombre} ${personalPassword.apellido}`.trim() : ""}
+        onClose={() => setPersonalPassword(null)}
+        onSuccess={() => {
+          setPersonalPassword(null);
+          void cargarDatos(false);
+        }}
+      />
     </SafeAreaView>
   );
 }
