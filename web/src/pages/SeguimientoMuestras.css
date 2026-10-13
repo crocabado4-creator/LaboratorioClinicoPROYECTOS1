@@ -1,0 +1,279 @@
+.sm-contenedor {
+  padding: 25px;
+  background: #f4f7fb;
+  min-height: 100%;
+  font-family: Arial, sans-serif;
+}
+
+.sm-encabezado {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 25px;
+}
+
+.sm-encabezado h1 {
+  color: #17365d;
+  margin: 0 0 8px;
+}
+
+.sm-encabezado p {
+  color: #64748b;
+}
+
+.sm-volver {
+  padding: 11px 18px;
+  background: #334155;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.sm-resumen {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 15px;
+  margin-bottom: 25px;
+}
+
+.sm-tarjeta {
+  background: white;
+  padding: 20px;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+}
+
+.sm-tarjeta span {
+  display: block;
+  color: #64748b;
+  margin-bottom: 10px;
+}
+
+.sm-tarjeta strong {
+  font-size: 30px;
+  color: #17365d;
+}
+
+.sm-filtros {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+
+.sm-filtros input,
+.sm-filtros select {
+  padding: 12px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+}
+
+.sm-filtros input {
+  flex: 1;
+  min-width: 250px;
+}
+
+.sm-filtros button {
+  background: #2563eb;
+  color: white;
+  border: none;
+  padding: 11px 18px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.sm-tabla-contenedor {
+  background: white;
+  border-radius: 12px;
+  overflow-x: auto;
+}
+
+.sm-tabla {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.sm-tabla th {
+  background: #17365d;
+  color: white;
+  padding: 15px;
+  text-align: left;
+}
+
+.sm-tabla td {
+  padding: 14px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.sm-acciones {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.sm-iniciar,
+.sm-finalizar,
+.sm-historial {
+  border: none;
+  border-radius: 7px;
+  padding: 9px 13px;
+  color: white;
+  cursor: pointer;
+}
+
+.sm-iniciar {
+  background: #2563eb;
+}
+
+.sm-finalizar {
+  background: #16a34a;
+}
+
+.sm-historial {
+  background: #64748b;
+}
+
+.sm-estado {
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-weight: bold;
+  background: #e2e8f0;
+}
+
+.sm-tomada {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.sm-aceptada {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.sm-rechazada {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.sm-en_proceso {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.sm-procesada {
+  background: #ccfbf1;
+  color: #0f766e;
+}
+
+.sm-vacio {
+  text-align: center;
+  padding: 30px;
+  color: #64748b;
+}
+
+.sm-exito,
+.sm-error {
+  padding: 13px;
+  border-radius: 8px;
+  margin-bottom: 15px;
+}
+
+.sm-exito {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.sm-error {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.sm-modal-fondo {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.sm-modal {
+  width: 90%;
+  max-width: 500px;
+  background: white;
+  padding: 25px;
+  border-radius: 12px;
+  max-height: 85vh;
+  overflow-y: auto;
+}
+
+.sm-modal h2 {
+  color: #17365d;
+}
+
+.sm-modal label {
+  display: block;
+  margin: 15px 0 8px;
+}
+
+.sm-modal textarea {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  box-sizing: border-box;
+}
+
+.sm-modal-acciones {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+.sm-cancelar,
+.sm-confirmar {
+  padding: 10px 15px;
+  border: none;
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.sm-cancelar {
+  background: #e2e8f0;
+}
+
+.sm-confirmar {
+  background: #2563eb;
+  color: white;
+}
+
+.sm-lista-historial {
+  margin: 20px 0;
+}
+
+.sm-item-historial {
+  padding: 15px;
+  background: #f8fafc;
+  border-left: 4px solid #2563eb;
+  margin-bottom: 12px;
+  border-radius: 6px;
+}
+
+@media (max-width: 1000px) {
+  .sm-resumen {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@media (max-width: 600px) {
+  .sm-resumen {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .sm-contenedor {
+    padding: 12px;
+  }
+}

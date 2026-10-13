@@ -19,7 +19,7 @@ import GestionPacientes from "./GestionPacientes";
 import GestionAnalisis from "./GestionAnalisis";
 import GestionSolicitudes from "./GestionSolicitudes";
 import GestionVentas from "./GestionVentas";
-import GestionMuestras from "./GestionMuestras";
+import ModuloMuestras from "./ModuloMuestras";
 
 
 import SuperAdminDashboard from "./SuperAdminDashboard";
@@ -550,7 +550,7 @@ if (vista === "ventas") {
 
 
 // =====================================================
-// HU-22, HU-23 - GESTIÓN DE MUESTRAS
+// HU-22, HU-23, HU-24 - GESTIÓN Y VALIDACIÓN DE MUESTRAS
 // =====================================================
 
 if (
@@ -558,7 +558,7 @@ if (
   usuario.rol === "bioquimico"
 ) {
   return (
-    <GestionMuestras
+    <ModuloMuestras
       usuario={usuario}
       onVolver={() =>
         setVista("dashboard")
@@ -1207,7 +1207,7 @@ if (
               <ModuloCard
                 icono="🧪"
                 titulo="Muestras"
-                descripcion="Registra la toma e identificación de muestras."
+                descripcion="Registra, identifica, acepta y rechaza muestras antes de su procesamiento."
                 fondo="#CCFBF1"
                 color="#0F766E"
                 onClick={() =>

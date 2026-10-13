@@ -1244,14 +1244,15 @@ function GestionMuestras({
             codigoMuestra:
               codigo,
 
-            estado:
-              "tomada",
+            estado: "tomada",
 
-            aceptada:
-              true,
+            aceptada: false,
 
-            motivoRechazo:
-              "",
+            motivoRechazo: "",
+
+            validadoPor: null, 
+
+            fechaValidacion: null,
 
             fechaToma:
               serverTimestamp(),
