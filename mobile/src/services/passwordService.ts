@@ -1,10 +1,5 @@
 import { getAuth } from "firebase/auth";
-import { Platform } from "react-native";
-
-export type ResultadoCambioPassword = {
-  ok: boolean;
-  mensaje: string;
-};
+import { API_URL } from "../config/api";
 
 export function validarPasswordNueva(password: string): boolean {
   return (
@@ -17,50 +12,27 @@ export function validarPasswordNueva(password: string): boolean {
   );
 }
 
-// =====================================
-// DIRECCIÓN DEL BACKEND
-// =====================================
-
-// Android Emulator:
-// http://10.0.2.2:3001
-//
-// Navegador Web:
-// http://localhost:3001
-//
-// Celular físico:
-// Usar la IP local de tu computadora.
-
-const API_URL =
-  Platform.OS === "android"
-    ? "http://10.0.2.2:3001"
-    : "http://localhost:3001";
-
-// =====================================
-// CAMBIAR CONTRASEÑA
-// =====================================
-
 export async function cambiarPasswordUsuario(
-  uidObjetivo: string,
+  usuarioId: string,
   nuevaPassword: string
-): Promise<ResultadoCambioPassword> {
+): Promise<string> {
+  const usuarioActual = getAuth().currentUser;
 
-  if (!uidObjetivo || !uidObjetivo.trim()) {
-    throw new Error("Selecciona un usuario.");
+  if (!usuarioActual) {
+    throw new Error("Tu sesión ha terminado. Inicia sesión nuevamente.");
+  }
+
+  if (!usuarioId?.trim()) {
+    throw new Error("No se recibió el UID del empleado.");
   }
 
   if (!validarPasswordNueva(nuevaPassword)) {
     throw new Error(
-      "La contraseña debe tener mínimo 8 caracteres, mayúscula, minúscula, número y símbolo."
+      "La contraseña debe tener mínimo 8 caracteres, mayúscula, minúscula, número y carácter especial."
     );
   }
 
-  const usuarioActual = getAuth().currentUser;
-
-  if (!usuarioActual) {
-    throw new Error("Debes iniciar sesión.");
-  }
-
-  const token = await usuarioActual.getIdToken();
+  const token = await usuarioActual.getIdToken(true);
 
   let respuesta: Response;
 
@@ -72,20 +44,17 @@ export async function cambiarPasswordUsuario(
         Authorization: `Bearer ${token}`
       },
       body: JSON.stringify({
-        usuarioId: uidObjetivo.trim(),
+        usuarioId: usuarioId.trim(),
         nuevaPassword
       })
     });
-  } catch (error) {
-    console.error("Error de conexión:", error);
-
+  } catch {
     throw new Error(
-      `No se pudo conectar con el backend (${API_URL}). Verifica que esté ejecutándose en el puerto 3001.`
+      `No se pudo conectar al backend en ${API_URL}.`
     );
   }
 
   let datos: {
-    ok?: boolean;
     correcto?: boolean;
     mensaje?: string;
     error?: string;
@@ -94,23 +63,24 @@ export async function cambiarPasswordUsuario(
   try {
     datos = await respuesta.json();
   } catch {
-    throw new Error("El servidor devolvió una respuesta inválida.");
+    throw new Error(
+      `El backend devolvió una respuesta inválida. Código: ${respuesta.status}`
+    );
   }
 
   if (!respuesta.ok) {
     throw new Error(
-      datos.error ||
-      datos.mensaje ||
-      "No se pudo cambiar la contraseña."
+      datos.error || `Error del backend: ${respuesta.status}`
     );
   }
 
-  if (datos.ok !== true && datos.correcto !== true) {
-    throw new Error("El servidor no confirmó el cambio de contraseña.");
+  if (datos.correcto !== true) {
+    throw new Error(
+      "Firebase no confirmó el cambio de contraseña."
+    );
   }
 
-  return {
-    ok: true,
-    mensaje: datos.mensaje || "Contraseña cambiada correctamente."
-  };
+  return datos.mensaje || "Contraseña actualizada correctamente.";
 }
+
+export const restablecerPasswordUsuario = cambiarPasswordUsuario;

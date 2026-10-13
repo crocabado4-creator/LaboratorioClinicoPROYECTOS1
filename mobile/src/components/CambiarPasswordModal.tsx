@@ -31,6 +31,18 @@ type Props = {
 };
 
 // =====================================================
+// MOSTRAR MENSAJES EN WEB Y MOBILE
+// =====================================================
+
+function mostrarMensaje(titulo: string, mensaje: string) {
+  if (Platform.OS === "web") {
+    window.alert(`${titulo}\n\n${mensaje}`);
+  } else {
+    Alert.alert(titulo, mensaje);
+  }
+}
+
+// =====================================================
 // COMPONENTE CAMBIAR CONTRASEÑA
 // =====================================================
 
@@ -52,6 +64,16 @@ export default function CambiarPasswordModal({
   const [guardando, setGuardando] = useState(false);
 
   // ===================================================
+  // LIMPIAR FORMULARIO
+  // ===================================================
+
+  const limpiarFormulario = () => {
+    setPassword("");
+    setConfirmarPassword("");
+    setMostrarPassword(false);
+  };
+
+  // ===================================================
   // CERRAR MODAL
   // ===================================================
 
@@ -60,10 +82,7 @@ export default function CambiarPasswordModal({
       return;
     }
 
-    setPassword("");
-    setConfirmarPassword("");
-    setMostrarPassword(false);
-
+    limpiarFormulario();
     onClose();
   };
 
@@ -72,80 +91,119 @@ export default function CambiarPasswordModal({
   // ===================================================
 
   const guardarPassword = async () => {
-    if (!usuarioId.trim()) {
-      Alert.alert(
+    if (guardando) {
+      return;
+    }
+
+    // Validar usuario seleccionado
+    if (!usuarioId || !usuarioId.trim()) {
+      mostrarMensaje(
         "Error",
         "No se ha seleccionado ningún usuario."
       );
+
       return;
     }
 
+    // Validar contraseña vacía
     if (!password.trim()) {
-      Alert.alert(
+      mostrarMensaje(
         "Error",
         "Ingresa una nueva contraseña."
       );
+
       return;
     }
 
+    // Validar seguridad
     if (!validarPasswordNueva(password)) {
-      Alert.alert(
+      mostrarMensaje(
         "Contraseña inválida",
         "La contraseña debe tener mínimo 8 caracteres, una mayúscula, una minúscula, un número y un carácter especial."
       );
+
       return;
     }
 
+    // Validar confirmación
     if (!confirmarPassword.trim()) {
-      Alert.alert(
+      mostrarMensaje(
         "Error",
         "Debes confirmar la contraseña."
       );
+
       return;
     }
 
+    // Validar coincidencia
     if (password !== confirmarPassword) {
-      Alert.alert(
+      mostrarMensaje(
         "Error",
         "Las contraseñas no coinciden."
       );
+
       return;
     }
+
+    // =================================================
+    // GUARDAR CONTRASEÑA EN FIREBASE AUTHENTICATION
+    // =================================================
 
     try {
       setGuardando(true);
 
-      const resultado = await cambiarPasswordUsuario(
-        usuarioId,
+      console.log(
+        "Iniciando cambio de contraseña para UID:",
+        usuarioId
+      );
+
+      // El servicio devuelve un mensaje de éxito (string).
+      // Si ocurre un error, lanza una excepción.
+      const mensaje = await cambiarPasswordUsuario(
+        usuarioId.trim(),
         password
       );
 
-      if (resultado.ok) {
-        setPassword("");
-        setConfirmarPassword("");
-        setMostrarPassword(false);
+      console.log(
+        "Contraseña actualizada correctamente:",
+        mensaje
+      );
 
-        onClose();
+      // Limpiar formulario después del éxito
+      limpiarFormulario();
 
-        onSuccess?.();
+      // Cerrar modal
+      onClose();
 
-        Alert.alert(
-          "Contraseña actualizada",
-          `La contraseña de ${nombreUsuario} se cambió correctamente.`
-        );
+      // Actualizar información en pantalla
+      if (onSuccess) {
+        onSuccess();
       }
+
+      // Confirmar al usuario
+      mostrarMensaje(
+        "Contraseña actualizada",
+        `La contraseña de ${
+          nombreUsuario || "el usuario"
+        } se cambió correctamente.`
+      );
+
     } catch (error) {
       console.error(
         "Error al cambiar contraseña:",
         error
       );
 
-      Alert.alert(
-        "Error",
+      const mensajeError =
         error instanceof Error
           ? error.message
-          : "No se pudo cambiar la contraseña."
+          : "No se pudo cambiar la contraseña.";
+
+      mostrarMensaje(
+        "Error al cambiar contraseña",
+        mensajeError
       );
+
     } finally {
       setGuardando(false);
     }

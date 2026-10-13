@@ -1,1824 +1,933 @@
-import {
-  useEffect,
-  useMemo,
-  useState,
-} from "react";
-
+import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
   Modal,
+  Platform,
   Pressable,
-  SafeAreaView,
   ScrollView,
-  StatusBar,
   StyleSheet,
   Text,
   View,
 } from "react-native";
 
-import {
-  useRouter,
-} from "expo-router";
+import { router } from "expo-router";
+import { getAuth } from "firebase/auth";
 
 import {
+  addDoc,
   collection,
   doc,
   getDoc,
   getDocs,
   query,
   serverTimestamp,
-  setDoc,
   where,
-  type DocumentData,
-  type QueryDocumentSnapshot,
 } from "firebase/firestore";
 
-import {
-  auth,
-  db,
-} from "../firebase/firebase";
+import { db } from "../firebase/firebase";
 
+// =====================================================
+// TIPOS
+// =====================================================
 
-type UsuarioActual = {
+type Orden = {
   id: string;
-  rol: string;
-  laboratorioId: string;
-};
-
-
-type PacienteResumen = {
-  id: string;
+  codigo: string;
   pacienteId: string;
-  nombres: string;
-  apellidos: string;
+  paciente: string;
+  analisisIds: string[];
 };
 
-
-type AnalisisOrden = {
-  analisisId: string;
+type Analisis = {
+  id: string;
   nombre: string;
 };
 
-
-type OrdenMuestra = {
+type Muestra = {
   id: string;
-  ordenId: string;
-  solicitudId: string;
-  laboratorioId: string;
-  pacienteId: string;
-  estado: string;
-  analisis: AnalisisOrden[];
-};
-
-
-type MuestraItem = {
-  id: string;
-  muestraId: string;
-  laboratorioId: string;
-  solicitudId: string;
+  codigo: string;
   ordenId: string;
   pacienteId: string;
+  paciente: string;
   analisisId: string;
-  analisisNombre: string;
-  bioquimicoId: string;
-  tipo: string;
-  codigoEtiqueta: string;
+  analisis: string;
+  tipoMuestra: string;
   estado: string;
-  fechaToma: unknown;
+  fechaToma: string;
 };
 
+type Selector = "orden" | "analisis" | "tipo" | null;
 
-const TIPOS_MUESTRA: string[] = [
-  "Sangre",
-  "Suero",
-  "Plasma",
-  "Orina",
-  "Heces",
-  "Hisopado",
-  "Otro",
-];
+// =====================================================
+// FUNCIONES
+// =====================================================
 
-
-function limpiarTexto(
-  valor: unknown
-): string {
-  if (
-    valor === null ||
-    valor === undefined
-  ) {
-    return "";
-  }
-
-  return String(
-    valor
-  ).trim();
+function texto(valor: unknown): string {
+  if (valor === null || valor === undefined) return "";
+  return String(valor);
 }
 
+function fecha(valor: any): string {
+  if (!valor) return "";
 
-function obtenerMensajeError(
-  error: unknown,
-  mensajeDefecto: string
-): string {
-  if (
-    error instanceof Error &&
-    error.message
-  ) {
-    return error.message;
+  if (typeof valor.toDate === "function") {
+    return valor.toDate().toLocaleString("es-BO");
   }
 
-  return mensajeDefecto;
-}
-
-
-function convertirPaciente(
-  documento: QueryDocumentSnapshot<DocumentData>
-): PacienteResumen {
-  const datos =
-    documento.data();
-
-  return {
-    id:
-      documento.id,
-
-    pacienteId:
-      limpiarTexto(
-        datos.pacienteId
-      ) ||
-      documento.id,
-
-    nombres:
-      limpiarTexto(
-        datos.nombres
-      ),
-
-    apellidos:
-      limpiarTexto(
-        datos.apellidos
-      ),
-  };
-}
-
-
-function normalizarAnalisis(
-  valor: unknown
-): AnalisisOrden[] {
-  if (
-    !Array.isArray(
-      valor
-    )
-  ) {
-    return [];
+  if (valor instanceof Date) {
+    return valor.toLocaleString("es-BO");
   }
+
+  return texto(valor);
+}
+
+function aviso(titulo: string, mensaje: string) {
+  if (Platform.OS === "web") {
+    if (typeof window !== "undefined") {
+      window.alert(`${titulo}\n\n${mensaje}`);
+    }
+  } else {
+    Alert.alert(titulo, mensaje);
+  }
+}
+
+function extraerIds(valor: any): string[] {
+  if (!Array.isArray(valor)) return [];
 
   return valor
-    .map(
-      (
-        item
-      ): AnalisisOrden | null => {
-        if (
-          !item ||
-          typeof item !== "object"
-        ) {
-          return null;
-        }
+    .map((item) => {
+      if (typeof item === "string") return item;
 
-        const datos =
-          item as Record<
-            string,
-            unknown
-          >;
-
-        const analisisId =
-          limpiarTexto(
-            datos.analisisId
-          ) ||
-          limpiarTexto(
-            datos.id
-          );
-
-        if (
-          !analisisId
-        ) {
-          return null;
-        }
-
-        return {
-          analisisId,
-
-          nombre:
-            limpiarTexto(
-              datos.nombre
-            ) ||
-            "Análisis",
-        };
+      if (item && typeof item === "object") {
+        return texto(
+          item.analisisId ||
+          item.id ||
+          item.analisis?.id
+        );
       }
-    )
-    .filter(
-      (
-        item
-      ): item is AnalisisOrden =>
-        item !== null
-    );
+
+      return "";
+    })
+    .filter(Boolean);
 }
 
+function generarCodigo(): string {
+  const ahora = new Date();
 
-function convertirOrden(
-  documento: QueryDocumentSnapshot<DocumentData>
-): OrdenMuestra {
-  const datos =
-    documento.data();
+  const fechaCodigo =
+    ahora.getFullYear().toString() +
+    String(ahora.getMonth() + 1).padStart(2, "0") +
+    String(ahora.getDate()).padStart(2, "0");
 
-  return {
-    id:
-      documento.id,
+  const numero = Math.floor(1000 + Math.random() * 9000);
 
-    ordenId:
-      limpiarTexto(
-        datos.ordenId
-      ) ||
-      documento.id,
-
-    solicitudId:
-      limpiarTexto(
-        datos.solicitudId
-      ),
-
-    laboratorioId:
-      limpiarTexto(
-        datos.laboratorioId
-      ),
-
-    pacienteId:
-      limpiarTexto(
-        datos.pacienteId
-      ),
-
-    estado:
-      limpiarTexto(
-        datos.estado
-      ) ||
-      "generada",
-
-    analisis:
-      normalizarAnalisis(
-        datos.analisis
-      ),
-  };
+  return `MUE-${fechaCodigo}-${numero}`;
 }
 
+// =====================================================
+// BOTONES DE NAVEGACIÓN
+// =====================================================
 
-function convertirMuestra(
-  documento: QueryDocumentSnapshot<DocumentData>
-): MuestraItem {
-  const datos =
-    documento.data();
+const pantallas = [
+  {
+    nombre: "Registro de muestras",
+    ruta: "/muestras",
+  },
+  {
+    nombre: "Recepción y validación",
+    ruta: "/validar-muestras",
+  },
+  {
+    nombre: "Seguimiento de muestras",
+    ruta: "/seguimiento-muestras",
+  },
+  {
+    nombre: "Registro de resultados",
+    ruta: "/registro-resultados",
+  },
+  {
+    nombre: "Valores por parámetros",
+    ruta: "/valores-parametros",
+  },
+  {
+    nombre: "Estado de análisis",
+    ruta: "/estado-analisis",
+  },
+  {
+    nombre: "Validación de resultados",
+    ruta: "/validacion-resultados",
+  },
+] as const;
 
-  return {
-    id:
-      documento.id,
+// =====================================================
+// PANTALLA
+// =====================================================
 
-    muestraId:
-      limpiarTexto(
-        datos.muestraId
-      ) ||
-      documento.id,
+export default function GestionMuestrasScreen() {
+  const [ordenes, setOrdenes] = useState<Orden[]>([]);
+  const [analisis, setAnalisis] = useState<Analisis[]>([]);
+  const [muestras, setMuestras] = useState<Muestra[]>([]);
 
-    laboratorioId:
-      limpiarTexto(
-        datos.laboratorioId
-      ),
+  const [laboratorioId, setLaboratorioId] = useState("");
 
-    solicitudId:
-      limpiarTexto(
-        datos.solicitudId
-      ),
+  const [ordenId, setOrdenId] = useState("");
+  const [analisisId, setAnalisisId] = useState("");
+  const [tipoMuestra, setTipoMuestra] = useState("");
 
-    ordenId:
-      limpiarTexto(
-        datos.ordenId
-      ),
+  const [selector, setSelector] = useState<Selector>(null);
+  const [detalle, setDetalle] = useState<Muestra | null>(null);
 
-    pacienteId:
-      limpiarTexto(
-        datos.pacienteId
-      ),
+  const [cargando, setCargando] = useState(true);
+  const [guardando, setGuardando] = useState(false);
+  const [error, setError] = useState("");
 
-    analisisId:
-      limpiarTexto(
-        datos.analisisId
-      ),
+  const tiposMuestra = [
+    "Sangre",
+    "Orina",
+    "Heces",
+    "Saliva",
+    "Plasma",
+    "Suero",
+    "Hisopado",
+    "Otro",
+  ];
 
-    analisisNombre:
-      limpiarTexto(
-        datos.analisisNombre
-      ) ||
-      "Análisis",
+  // ===================================================
+  // CARGAR DATOS
+  // ===================================================
 
-    bioquimicoId:
-      limpiarTexto(
-        datos.bioquimicoId
-      ),
+  const cargarDatos = useCallback(async () => {
+    try {
+      setCargando(true);
+      setError("");
 
-    tipo:
-      limpiarTexto(
-        datos.tipo
-      ),
+      const usuario = getAuth().currentUser;
 
-    codigoEtiqueta:
-      limpiarTexto(
-        datos.codigoEtiqueta
-      ),
+      if (!usuario) {
+        throw new Error("Debes iniciar sesión.");
+      }
 
-    estado:
-      limpiarTexto(
-        datos.estado
-      ) ||
-      "tomada",
-
-    fechaToma:
-      datos.fechaToma ||
-      null,
-  };
-}
-
-
-function generarCodigoEtiqueta(): string {
-  const fecha =
-    Date.now()
-      .toString()
-      .slice(-8);
-
-  const aleatorio =
-    Math.random()
-      .toString(36)
-      .slice(2, 7)
-      .toUpperCase();
-
-  return `MUE-${fecha}-${aleatorio}`;
-}
-
-
-export default function Muestras() {
-  const router =
-    useRouter();
-
-
-  const [
-    usuario,
-    setUsuario,
-  ] =
-    useState<UsuarioActual | null>(
-      null
-    );
-
-
-  const [
-    pacientes,
-    setPacientes,
-  ] =
-    useState<PacienteResumen[]>(
-      []
-    );
-
-
-  const [
-    ordenes,
-    setOrdenes,
-  ] =
-    useState<OrdenMuestra[]>(
-      []
-    );
-
-
-  const [
-    muestras,
-    setMuestras,
-  ] =
-    useState<MuestraItem[]>(
-      []
-    );
-
-
-  const [
-    cargando,
-    setCargando,
-  ] =
-    useState<boolean>(
-      true
-    );
-
-
-  const [
-    guardando,
-    setGuardando,
-  ] =
-    useState<boolean>(
-      false
-    );
-
-
-  const [
-    ordenId,
-    setOrdenId,
-  ] =
-    useState<string>(
-      ""
-    );
-
-
-  const [
-    analisisId,
-    setAnalisisId,
-  ] =
-    useState<string>(
-      ""
-    );
-
-
-  const [
-    tipo,
-    setTipo,
-  ] =
-    useState<string>(
-      ""
-    );
-
-
-  const [
-    modalOrdenes,
-    setModalOrdenes,
-  ] =
-    useState<boolean>(
-      false
-    );
-
-
-  const [
-    modalTipos,
-    setModalTipos,
-  ] =
-    useState<boolean>(
-      false
-    );
-
-
-  const [
-    detalle,
-    setDetalle,
-  ] =
-    useState<MuestraItem | null>(
-      null
-    );
-
-
-  const obtenerPacientes =
-    async (
-      laboratorioId: string
-    ): Promise<PacienteResumen[]> => {
-      const consulta =
-        query(
-          collection(
-            db,
-            "pacientes"
-          ),
-          where(
-            "laboratorioId",
-            "==",
-            laboratorioId
-          )
-        );
-
-      const resultado =
-        await getDocs(
-          consulta
-        );
-
-      return resultado.docs.map(
-        convertirPaciente
+      const usuarioDoc = await getDoc(
+        doc(db, "usuarios", usuario.uid)
       );
-    };
 
+      if (!usuarioDoc.exists()) {
+        throw new Error("Usuario no encontrado.");
+      }
 
-  const obtenerOrdenes =
-    async (
-      laboratorioId: string
-    ): Promise<OrdenMuestra[]> => {
-      const consulta =
-        query(
-          collection(
-            db,
-            "ordenes"
-          ),
-          where(
-            "laboratorioId",
-            "==",
-            laboratorioId
-          )
-        );
+      const datosUsuario = usuarioDoc.data();
 
-      const resultado =
-        await getDocs(
-          consulta
-        );
+      if (datosUsuario.activo === false) {
+        throw new Error("Tu usuario está desactivado.");
+      }
 
-      return resultado.docs
-        .map(
-          convertirOrden
-        )
-        .filter(
-          (
-            orden
-          ) =>
-            orden.analisis.length >
-            0
-        );
-    };
+      const labId = texto(datosUsuario.laboratorioId);
 
+      if (!labId) {
+        throw new Error("No tienes laboratorio asignado.");
+      }
 
-  const obtenerMuestras =
-    async (
-      laboratorioId: string
-    ): Promise<MuestraItem[]> => {
-      const consulta =
-        query(
-          collection(
-            db,
-            "muestras"
-          ),
-          where(
-            "laboratorioId",
-            "==",
-            laboratorioId
-          )
-        );
+      setLaboratorioId(labId);
 
-      const resultado =
-        await getDocs(
-          consulta
-        );
-
-      return resultado.docs.map(
-        convertirMuestra
-      );
-    };
-
-
-  const cargarDatos =
-    async (): Promise<void> => {
-      try {
-        setCargando(
-          true
-        );
-
-        const firebaseUser =
-          auth.currentUser;
-
-        if (
-          !firebaseUser
-        ) {
-          Alert.alert(
-            "Sesión no disponible",
-            "Debes iniciar sesión nuevamente."
-          );
-
-          return;
-        }
-
-        const usuarioSnap =
-          await getDoc(
-            doc(
-              db,
-              "usuarios",
-              firebaseUser.uid
+      const [ordenesSnap, analisisSnap, muestrasSnap] =
+        await Promise.all([
+          getDocs(
+            query(
+              collection(db, "ordenes"),
+              where("laboratorioId", "==", labId)
             )
-          );
+          ),
 
-        if (
-          !usuarioSnap.exists()
-        ) {
-          Alert.alert(
-            "Usuario no encontrado",
-            "No se encontró la información de tu cuenta."
-          );
-
-          return;
-        }
-
-        const datosUsuario =
-          usuarioSnap.data();
-
-        const rol =
-          limpiarTexto(
-            datosUsuario.rol
-          );
-
-        const laboratorioId =
-          limpiarTexto(
-            datosUsuario.laboratorioId
-          );
-
-        if (
-          datosUsuario.activo !== true
-        ) {
-          Alert.alert(
-            "Cuenta inactiva",
-            "Tu cuenta se encuentra deshabilitada."
-          );
-
-          return;
-        }
-
-        if (
-          rol !==
-          "bioquimico"
-        ) {
-          Alert.alert(
-            "Acceso restringido",
-            "Este módulo está disponible para Bioquímicos."
-          );
-
-          router.back();
-
-          return;
-        }
-
-        if (
-          !laboratorioId
-        ) {
-          Alert.alert(
-            "Laboratorio no disponible",
-            "Tu cuenta no está asociada a un laboratorio."
-          );
-
-          return;
-        }
-
-        const usuarioActual:
-          UsuarioActual = {
-          id:
-            firebaseUser.uid,
-
-          rol,
-
-          laboratorioId,
-        };
-
-        setUsuario(
-          usuarioActual
-        );
-
-        const [
-          pacientesResultado,
-          ordenesResultado,
-          muestrasResultado,
-        ] =
-          await Promise.all([
-            obtenerPacientes(
-              laboratorioId
-            ),
-
-            obtenerOrdenes(
-              laboratorioId
-            ),
-
-            obtenerMuestras(
-              laboratorioId
-            ),
-          ]);
-
-        setPacientes(
-          pacientesResultado
-        );
-
-        setOrdenes(
-          ordenesResultado
-        );
-
-        setMuestras(
-          muestrasResultado
-        );
-
-      } catch (
-        error: unknown
-      ) {
-        console.error(
-          "Error cargando muestras:",
-          error
-        );
-
-        Alert.alert(
-          "Error",
-          obtenerMensajeError(
-            error,
-            "No se pudo cargar la información de muestras."
-          )
-        );
-
-      } finally {
-        setCargando(
-          false
-        );
-      }
-    };
-
-
-  useEffect(
-    () => {
-      void cargarDatos();
-    },
-    []
-  );
-
-
-  const ordenSeleccionada =
-    useMemo(
-      () => {
-        return (
-          ordenes.find(
-            (
-              orden
-            ) =>
-              orden.id ===
-                ordenId ||
-              orden.ordenId ===
-                ordenId
-          ) ||
-          null
-        );
-      },
-      [
-        ordenes,
-        ordenId,
-      ]
-    );
-
-
-  const analisisDisponibles =
-    useMemo(
-      () => {
-        if (
-          !ordenSeleccionada
-        ) {
-          return [];
-        }
-
-        return ordenSeleccionada
-          .analisis
-          .filter(
-            (
-              analisis
-            ) => {
-              return !muestras.some(
-                (
-                  muestra
-                ) =>
-                  muestra.ordenId ===
-                    ordenSeleccionada.id &&
-                  muestra.analisisId ===
-                    analisis.analisisId
-              );
-            }
-          );
-      },
-      [
-        ordenSeleccionada,
-        muestras,
-      ]
-    );
-
-
-  const obtenerNombrePaciente =
-    (
-      pacienteId: string
-    ): string => {
-      const paciente =
-        pacientes.find(
-          (
-            item
-          ) =>
-            item.id ===
-              pacienteId ||
-            item.pacienteId ===
-              pacienteId
-        );
-
-      if (
-        !paciente
-      ) {
-        return (
-          pacienteId ||
-          "Paciente"
-        );
-      }
-
-      const nombre =
-        [
-          paciente.nombres,
-          paciente.apellidos,
-        ]
-          .filter(Boolean)
-          .join(" ")
-          .trim();
-
-      return (
-        nombre ||
-        pacienteId ||
-        "Paciente"
-      );
-    };
-
-
-  const seleccionarOrden =
-    (
-      orden: OrdenMuestra
-    ): void => {
-      setOrdenId(
-        orden.id
-      );
-
-      setAnalisisId(
-        ""
-      );
-
-      setTipo(
-        ""
-      );
-
-      setModalOrdenes(
-        false
-      );
-    };
-
-
-  const registrar =
-    async (): Promise<void> => {
-      if (
-        !usuario
-      ) {
-        Alert.alert(
-          "Sesión no disponible",
-          "No se pudo identificar al usuario."
-        );
-
-        return;
-      }
-
-      if (
-        !ordenSeleccionada
-      ) {
-        Alert.alert(
-          "Orden requerida",
-          "Selecciona una orden."
-        );
-
-        return;
-      }
-
-      if (
-        !analisisId
-      ) {
-        Alert.alert(
-          "Análisis requerido",
-          "Selecciona un análisis."
-        );
-
-        return;
-      }
-
-      if (
-        !tipo
-      ) {
-        Alert.alert(
-          "Tipo requerido",
-          "Selecciona el tipo de muestra."
-        );
-
-        return;
-      }
-
-      try {
-        setGuardando(
-          true
-        );
-
-        const analisis =
-          ordenSeleccionada
-            .analisis
-            .find(
-              (
-                item
-              ) =>
-                item.analisisId ===
-                analisisId
-            );
-
-        if (
-          !analisis
-        ) {
-          throw new Error(
-            "El análisis seleccionado no pertenece a la orden."
-          );
-        }
-
-        const duplicada =
-          muestras.some(
-            (
-              muestra
-            ) =>
-              muestra.ordenId ===
-                ordenSeleccionada.id &&
-              muestra.analisisId ===
-                analisisId
-          );
-
-        if (
-          duplicada
-        ) {
-          throw new Error(
-            "Esta orden ya tiene una muestra registrada para ese análisis."
-          );
-        }
-
-        const referencia =
-          doc(
-            collection(
-              db,
-              "muestras"
+          getDocs(
+            query(
+              collection(db, "analisis"),
+              where("laboratorioId", "==", labId)
             )
+          ),
+
+          getDocs(
+            query(
+              collection(db, "muestras"),
+              where("laboratorioId", "==", labId)
+            )
+          ),
+        ]);
+
+      // ANÁLISIS
+
+      const listaAnalisis: Analisis[] = analisisSnap.docs.map(
+        (documento) => {
+          const datos = documento.data();
+
+          return {
+            id: documento.id,
+            nombre: texto(
+              datos.nombre ||
+              datos.nombreAnalisis ||
+              datos.descripcion ||
+              documento.id
+            ),
+          };
+        }
+      );
+
+      setAnalisis(listaAnalisis);
+
+      // PACIENTES
+
+      const pacientesCache: Record<string, string> = {};
+
+      const obtenerPaciente = async (pacienteId: string) => {
+        if (!pacienteId) return "Sin paciente";
+
+        if (pacientesCache[pacienteId]) {
+          return pacientesCache[pacienteId];
+        }
+
+        try {
+          const documento = await getDoc(
+            doc(db, "pacientes", pacienteId)
           );
 
-        const codigoEtiqueta =
-          generarCodigoEtiqueta();
+          if (!documento.exists()) return pacienteId;
 
-        await setDoc(
-          referencia,
-          {
-            muestraId:
-              referencia.id,
+          const datos = documento.data();
 
-            laboratorioId:
-              usuario.laboratorioId,
+          const nombre = texto(datos.nombre || datos.nombres);
+          const apellido = texto(datos.apellido || datos.apellidos);
 
-            solicitudId:
-              ordenSeleccionada
-                .solicitudId,
+          const completo =
+            `${nombre} ${apellido}`.trim() || pacienteId;
 
-            ordenId:
-              ordenSeleccionada.id,
+          pacientesCache[pacienteId] = completo;
 
-            pacienteId:
-              ordenSeleccionada
-                .pacienteId,
+          return completo;
+        } catch {
+          return pacienteId;
+        }
+      };
+
+      // ÓRDENES
+
+      const listaOrdenes: Orden[] = await Promise.all(
+        ordenesSnap.docs.map(async (documento) => {
+          const datos = documento.data();
+
+          const pacienteId = texto(datos.pacienteId);
+
+          const paciente =
+            texto(datos.pacienteNombre || datos.nombrePaciente) ||
+            (await obtenerPaciente(pacienteId));
+
+          return {
+            id: documento.id,
+            codigo: texto(
+              datos.codigo ||
+              datos.codigoOrden ||
+              documento.id
+            ),
+            pacienteId,
+            paciente,
+            analisisIds: extraerIds(
+              datos.analisis ||
+              datos.analisisIds ||
+              datos.analisisSolicitados
+            ),
+          };
+        })
+      );
+
+      setOrdenes(listaOrdenes);
+
+      // MUESTRAS
+
+      const listaMuestras: Muestra[] = await Promise.all(
+        muestrasSnap.docs.map(async (documento) => {
+          const datos = documento.data();
+
+          const pacienteId = texto(datos.pacienteId);
+          const analisisId = texto(datos.analisisId);
+
+          const paciente =
+            texto(datos.pacienteNombre || datos.nombrePaciente) ||
+            (await obtenerPaciente(pacienteId));
+
+          const analisisEncontrado = listaAnalisis.find(
+            (item) => item.id === analisisId
+          );
+
+          return {
+            id: documento.id,
+
+            codigo: texto(
+              datos.codigo ||
+              datos.codigoMuestra ||
+              documento.id
+            ),
+
+            ordenId: texto(datos.ordenId),
+
+            pacienteId,
+            paciente,
 
             analisisId,
 
-            analisisNombre:
-              analisis.nombre,
+            analisis:
+              texto(datos.analisisNombre || datos.nombreAnalisis) ||
+              analisisEncontrado?.nombre ||
+              analisisId,
 
-            bioquimicoId:
-              usuario.id,
-
-            tipo,
-
-            codigoEtiqueta,
-
-            estado:
-              "tomada",
-
-            fechaToma:
-              serverTimestamp(),
-          }
-        );
-
-        const nuevaSnap =
-          await getDoc(
-            referencia
-          );
-
-        if (
-          !nuevaSnap.exists()
-        ) {
-          throw new Error(
-            "La muestra se registró, pero no pudo recuperarse."
-          );
-        }
-
-        const nueva:
-          MuestraItem = {
-          id:
-            nuevaSnap.id,
-
-          muestraId:
-            limpiarTexto(
-              nuevaSnap.data()
-                .muestraId
-            ) ||
-            nuevaSnap.id,
-
-          laboratorioId:
-            limpiarTexto(
-              nuevaSnap.data()
-                .laboratorioId
+            tipoMuestra: texto(
+              datos.tipoMuestra ||
+              datos.tipo ||
+              "-"
             ),
 
-          solicitudId:
-            limpiarTexto(
-              nuevaSnap.data()
-                .solicitudId
-            ),
+            estado: texto(datos.estado || "tomada"),
 
-          ordenId:
-            limpiarTexto(
-              nuevaSnap.data()
-                .ordenId
-            ),
+            fechaToma: fecha(datos.fechaToma),
+          };
+        })
+      );
 
-          pacienteId:
-            limpiarTexto(
-              nuevaSnap.data()
-                .pacienteId
-            ),
+      setMuestras(listaMuestras);
+    } catch (e: unknown) {
+      setError(
+        e instanceof Error
+          ? e.message
+          : "No se pudieron cargar los datos."
+      );
+    } finally {
+      setCargando(false);
+    }
+  }, []);
 
-          analisisId:
-            limpiarTexto(
-              nuevaSnap.data()
-                .analisisId
-            ),
+  useEffect(() => {
+    cargarDatos();
+  }, [cargarDatos]);
 
-          analisisNombre:
-            limpiarTexto(
-              nuevaSnap.data()
-                .analisisNombre
-            ),
+  // ===================================================
+  // SELECCIONES
+  // ===================================================
 
-          bioquimicoId:
-            limpiarTexto(
-              nuevaSnap.data()
-                .bioquimicoId
-            ),
+  const ordenSeleccionada = ordenes.find(
+    (orden) => orden.id === ordenId
+  );
 
-          tipo:
-            limpiarTexto(
-              nuevaSnap.data()
-                .tipo
-            ),
+  const analisisDisponibles = analisis.filter(
+    (item) =>
+      ordenSeleccionada?.analisisIds.includes(item.id)
+  );
 
-          codigoEtiqueta:
-            limpiarTexto(
-              nuevaSnap.data()
-                .codigoEtiqueta
-            ),
+  const analisisSeleccionado = analisis.find(
+    (item) => item.id === analisisId
+  );
 
-          estado:
-            limpiarTexto(
-              nuevaSnap.data()
-                .estado
-            ) ||
-            "tomada",
+  // ===================================================
+  // CONTADORES
+  // ===================================================
 
-          fechaToma:
-            nuevaSnap.data()
-              .fechaToma ||
-            null,
-        };
+  const pendientes = ordenes.filter(
+    (orden) =>
+      !muestras.some(
+        (muestra) => muestra.ordenId === orden.id
+      )
+  ).length;
 
-        const muestrasActualizadas =
-          await obtenerMuestras(
-            usuario.laboratorioId
-          );
+  // ===================================================
+  // REGISTRAR MUESTRA
+  // ===================================================
 
-        setMuestras(
-          muestrasActualizadas
-        );
+  const registrarMuestra = async () => {
+    if (guardando) return;
 
-        setDetalle(
-          nueva
-        );
+    if (!ordenId || !analisisId || !tipoMuestra) {
+      aviso(
+        "Campos obligatorios",
+        "Selecciona una orden, un análisis y un tipo de muestra."
+      );
+      return;
+    }
 
-        setAnalisisId(
-          ""
-        );
+    if (!ordenSeleccionada) {
+      aviso("Error", "La orden seleccionada no existe.");
+      return;
+    }
 
-        setTipo(
-          ""
-        );
+    if (!ordenSeleccionada.analisisIds.includes(analisisId)) {
+      aviso(
+        "Error",
+        "El análisis no pertenece a la orden."
+      );
+      return;
+    }
 
-        Alert.alert(
-          "Muestra registrada",
-          `Etiqueta: ${codigoEtiqueta}`
-        );
-
-      } catch (
-        error: unknown
-      ) {
-        console.error(
-          "Error registrando muestra:",
-          error
-        );
-
-        Alert.alert(
-          "Error",
-          obtenerMensajeError(
-            error,
-            "No se pudo registrar la muestra."
-          )
-        );
-
-      } finally {
-        setGuardando(
-          false
-        );
-      }
-    };
-
-
-  if (
-    cargando
-  ) {
-    return (
-      <SafeAreaView
-        style={
-          styles.loadingPage
-        }
-      >
-        <StatusBar
-          barStyle="dark-content"
-          backgroundColor="#F8FAFC"
-        />
-
-        <ActivityIndicator
-          size="large"
-          color="#7C3AED"
-        />
-
-        <Text
-          style={
-            styles.loadingTitle
-          }
-        >
-          Gestión de muestras
-        </Text>
-
-        <Text
-          style={
-            styles.loadingText
-          }
-        >
-          Cargando información...
-        </Text>
-      </SafeAreaView>
+    const existe = muestras.some(
+      (muestra) =>
+        muestra.ordenId === ordenId &&
+        muestra.analisisId === analisisId
     );
-  }
 
+    if (existe) {
+      aviso(
+        "Muestra existente",
+        "Este análisis ya tiene una muestra registrada."
+      );
+      return;
+    }
+
+    try {
+      setGuardando(true);
+
+      const usuario = getAuth().currentUser;
+
+      if (!usuario) {
+        throw new Error("Debes iniciar sesión.");
+      }
+
+      await addDoc(collection(db, "muestras"), {
+        codigo: generarCodigo(),
+        laboratorioId,
+        ordenId,
+        pacienteId: ordenSeleccionada.pacienteId,
+        pacienteNombre: ordenSeleccionada.paciente,
+        analisisId,
+        analisisNombre: analisisSeleccionado?.nombre || "",
+        tipoMuestra,
+        estado: "tomada",
+        estadoValidacion: "pendiente",
+        fechaToma: serverTimestamp(),
+        registradoPor: usuario.uid,
+        fechaRegistro: serverTimestamp(),
+      });
+
+      setOrdenId("");
+      setAnalisisId("");
+      setTipoMuestra("");
+
+      await cargarDatos();
+
+      aviso(
+        "Correcto",
+        "La muestra se registró correctamente."
+      );
+    } catch (e: unknown) {
+      aviso(
+        "Error",
+        e instanceof Error
+          ? e.message
+          : "No se pudo registrar la muestra."
+      );
+    } finally {
+      setGuardando(false);
+    }
+  };
+
+  // ===================================================
+  // NAVEGACIÓN
+  // ===================================================
+
+  const navegar = (ruta: string) => {
+    router.push(ruta as any);
+  };
+
+  // ===================================================
+  // INTERFAZ
+  // ===================================================
 
   return (
-    <SafeAreaView
-      style={
-        styles.page
-      }
-    >
-      <StatusBar
-        barStyle="dark-content"
-        backgroundColor="#F8FAFC"
-      />
+    <View style={styles.contenedor}>
+      {/* ===============================================
+          BARRA DE LOS 7 BOTONES
+      =============================================== */}
 
-
-      <ScrollView
-        contentContainerStyle={
-          styles.content
-        }
-        showsVerticalScrollIndicator={
-          false
-        }
-      >
-        <View
-          style={
-            styles.header
-          }
+      <View style={styles.barraNavegacion}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.contenidoNavegacion}
         >
+          {pantallas.map((pantalla) => {
+            const activo = pantalla.ruta === "/muestras";
+
+            return (
+              <Pressable
+                key={pantalla.ruta}
+                style={[
+                  styles.botonNavegacion,
+                  activo && styles.botonNavegacionActivo,
+                ]}
+                onPress={() => navegar(pantalla.ruta)}
+              >
+                <Text
+                  style={[
+                    styles.textoNavegacion,
+                    activo && styles.textoNavegacionActivo,
+                  ]}
+                >
+                  {pantalla.nombre}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+      </View>
+
+      {/* ===============================================
+          CONTENIDO DE REGISTRO DE MUESTRAS
+      =============================================== */}
+
+      <ScrollView contentContainerStyle={styles.contenido}>
+        {/* ENCABEZADO */}
+
+        <View style={styles.encabezado}>
           <Pressable
-            style={
-              styles.backButton
-            }
-            onPress={() =>
-              router.back()
-            }
+            style={styles.botonVolver}
+            onPress={() => router.back()}
           >
-            <Text
-              style={
-                styles.backText
-              }
-            >
+            <Text style={styles.textoVolver}>
               ← Volver
             </Text>
           </Pressable>
 
+          <Text style={styles.etiquetaSuperior}>
+            LABORATORIO
+          </Text>
 
-          <View
-            style={
-              styles.headerRow
-            }
-          >
-            <View
-              style={{
-                flex: 1,
-              }}
-            >
-              <Text
-                style={
-                  styles.eyebrow
-                }
-              >
-                LABORATORIO
-              </Text>
+          <Text style={styles.titulo}>
+            Gestión de muestras
+          </Text>
 
-              <Text
-                style={
-                  styles.title
-                }
-              >
-                Gestión de muestras
-              </Text>
+          <Text style={styles.subtitulo}>
+            Registra y consulta muestras asociadas a las
+            órdenes del laboratorio.
+          </Text>
+        </View>
 
-              <Text
-                style={
-                  styles.subtitle
-                }
-              >
-                Registra y consulta muestras asociadas a las órdenes del laboratorio.
-              </Text>
-            </View>
+        {/* CONTADORES */}
 
-            <View
-              style={
-                styles.headerIcon
-              }
-            >
-              <Text
-                style={
-                  styles.headerEmoji
-                }
-              >
-                🧪
-              </Text>
-            </View>
+        <View style={styles.contadores}>
+          <View style={styles.contador}>
+            <Text style={styles.contadorTitulo}>
+              ÓRDENES
+            </Text>
+
+            <Text style={styles.contadorNumero}>
+              {ordenes.length}
+            </Text>
+          </View>
+
+          <View style={styles.contador}>
+            <Text style={styles.contadorTitulo}>
+              MUESTRAS
+            </Text>
+
+            <Text style={styles.contadorNumero}>
+              {muestras.length}
+            </Text>
+          </View>
+
+          <View style={styles.contador}>
+            <Text style={styles.contadorTitulo}>
+              PENDIENTES
+            </Text>
+
+            <Text style={styles.contadorNumero}>
+              {pendientes}
+            </Text>
           </View>
         </View>
 
+        {/* REGISTRAR TOMA DE MUESTRA */}
 
-        <View
-          style={
-            styles.statsRow
-          }
-        >
-          <Estadistica
-            titulo="ÓRDENES"
-            valor={
-              ordenes.length
-            }
-          />
-
-          <Estadistica
-            titulo="MUESTRAS"
-            valor={
-              muestras.length
-            }
-          />
-
-          <Estadistica
-            titulo="PENDIENTES"
-            valor={
-              analisisDisponibles.length
-            }
-          />
-        </View>
-
-
-        <View
-          style={
-            styles.card
-          }
-        >
-          <Text
-            style={
-              styles.cardTitle
-            }
-          >
+        <View style={styles.panel}>
+          <Text style={styles.panelTitulo}>
             Registrar toma de muestra
           </Text>
 
-          <Text
-            style={
-              styles.cardDescription
-            }
-          >
-            Selecciona una orden, el análisis y el tipo de muestra.
+          <Text style={styles.panelDescripcion}>
+            Selecciona una orden, el análisis y el tipo
+            de muestra.
           </Text>
 
+          {/* ORDEN */}
 
-          <Text
-            style={
-              styles.label
-            }
-          >
+          <Text style={styles.label}>
             Orden
           </Text>
 
           <Pressable
-            style={
-              styles.selector
-            }
-            onPress={() =>
-              setModalOrdenes(
-                true
-              )
-            }
+            style={styles.selector}
+            onPress={() => setSelector("orden")}
           >
             <Text
               style={
-                ordenSeleccionada
-                  ? styles.selectorValue
+                ordenId
+                  ? styles.selectorTexto
                   : styles.selectorPlaceholder
               }
             >
               {ordenSeleccionada
-                ? `${ordenSeleccionada.ordenId} · ${obtenerNombrePaciente(
-                    ordenSeleccionada.pacienteId
-                  )}`
+                ? `${ordenSeleccionada.codigo} - ${ordenSeleccionada.paciente}`
                 : "Seleccionar orden"}
             </Text>
 
-            <Text
-              style={
-                styles.selectorArrow
-              }
-            >
+            <Text style={styles.flecha}>
               ›
             </Text>
           </Pressable>
 
+          {/* ANÁLISIS */}
 
-          {ordenSeleccionada && (
-            <View
-              style={
-                styles.summaryBox
-              }
-            >
-              <Dato
-                titulo="PACIENTE"
-                valor={
-                  obtenerNombrePaciente(
-                    ordenSeleccionada
-                      .pacienteId
-                  )
-                }
-              />
-
-              <Dato
-                titulo="SOLICITUD"
-                valor={
-                  ordenSeleccionada
-                    .solicitudId ||
-                  "Sin solicitud"
-                }
-              />
-
-              <Dato
-                titulo="ESTADO"
-                valor={
-                  ordenSeleccionada
-                    .estado
-                }
-              />
-            </View>
-          )}
-
-
-          <Text
-            style={
-              styles.label
-            }
-          >
+          <Text style={styles.label}>
             Análisis
           </Text>
 
-
-          {!ordenSeleccionada ? (
-            <View
-              style={
-                styles.infoBox
-              }
-            >
-              <Text
-                style={
-                  styles.infoText
-                }
-              >
-                Primero selecciona una orden.
-              </Text>
-            </View>
-
-          ) : analisisDisponibles.length ===
-            0 ? (
-            <View
-              style={
-                styles.warningBox
-              }
-            >
-              <Text
-                style={
-                  styles.warningText
-                }
-              >
-                No existen análisis pendientes de muestra en esta orden.
-              </Text>
-            </View>
-
-          ) : (
-            <View
-              style={
-                styles.optionsWrap
-              }
-            >
-              {analisisDisponibles.map(
-                (
-                  analisis
-                ) => {
-                  const seleccionado =
-                    analisisId ===
-                    analisis.analisisId;
-
-                  return (
-                    <Pressable
-                      key={
-                        analisis.analisisId
-                      }
-                      style={[
-                        styles.optionButton,
-
-                        seleccionado &&
-                          styles.optionButtonActive,
-                      ]}
-                      onPress={() =>
-                        setAnalisisId(
-                          analisis.analisisId
-                        )
-                      }
-                    >
-                      <Text
-                        style={[
-                          styles.optionText,
-
-                          seleccionado &&
-                            styles.optionTextActive,
-                        ]}
-                      >
-                        {analisis.nombre}
-                      </Text>
-                    </Pressable>
-                  );
-                }
-              )}
-            </View>
-          )}
-
-
-          <Text
-            style={
-              styles.label
-            }
+          <Pressable
+            style={[
+              styles.selector,
+              !ordenId && styles.selectorDeshabilitado,
+            ]}
+            disabled={!ordenId}
+            onPress={() => setSelector("analisis")}
           >
+            <Text
+              style={
+                analisisId
+                  ? styles.selectorTexto
+                  : styles.selectorPlaceholder
+              }
+            >
+              {!ordenId
+                ? "Primero selecciona una orden."
+                : analisisSeleccionado
+                ? analisisSeleccionado.nombre
+                : "Seleccionar análisis"}
+            </Text>
+
+            <Text style={styles.flecha}>
+              {ordenId ? "›" : ""}
+            </Text>
+          </Pressable>
+
+          {/* TIPO */}
+
+          <Text style={styles.label}>
             Tipo de muestra
           </Text>
 
           <Pressable
-            style={
-              styles.selector
-            }
-            onPress={() =>
-              setModalTipos(
-                true
-              )
-            }
+            style={styles.selector}
+            onPress={() => setSelector("tipo")}
           >
             <Text
               style={
-                tipo
-                  ? styles.selectorValue
+                tipoMuestra
+                  ? styles.selectorTexto
                   : styles.selectorPlaceholder
               }
             >
-              {tipo ||
-                "Seleccionar tipo"}
+              {tipoMuestra || "Seleccionar tipo"}
             </Text>
 
-            <Text
-              style={
-                styles.selectorArrow
-              }
-            >
+            <Text style={styles.flecha}>
               ›
             </Text>
           </Pressable>
 
+          {/* REGISTRAR */}
 
           <Pressable
             style={[
-              styles.primaryButton,
-
-              (
-                guardando ||
-                !ordenId ||
-                !analisisId ||
-                !tipo
-              ) &&
-                styles.buttonDisabled,
+              styles.botonRegistrar,
+              guardando && styles.botonDeshabilitado,
             ]}
-            disabled={
-              guardando ||
-              !ordenId ||
-              !analisisId ||
-              !tipo
-            }
-            onPress={
-              registrar
-            }
+            disabled={guardando}
+            onPress={registrarMuestra}
           >
             {guardando ? (
-              <ActivityIndicator
-                color="#FFFFFF"
-              />
+              <ActivityIndicator color="#FFFFFF" />
             ) : (
-              <Text
-                style={
-                  styles.primaryButtonText
-                }
-              >
+              <Text style={styles.botonRegistrarTexto}>
                 Registrar muestra
               </Text>
             )}
           </Pressable>
         </View>
 
+        {/* MUESTRAS REGISTRADAS */}
 
-        <View
-          style={
-            styles.card
-          }
-        >
-          <Text
-            style={
-              styles.cardTitle
-            }
-          >
+        <View style={styles.panel}>
+          <Text style={styles.panelTitulo}>
             Muestras registradas
           </Text>
 
-          <Text
-            style={
-              styles.cardDescription
-            }
-          >
+          <Text style={styles.panelDescripcion}>
             Muestras tomadas en el laboratorio.
           </Text>
 
+          {error !== "" && (
+            <Text style={styles.error}>
+              {error}
+            </Text>
+          )}
 
-          {muestras.length ===
-          0 ? (
-            <View
-              style={
-                styles.empty
-              }
-            >
-              <Text
-                style={
-                  styles.emptyEmoji
-                }
-              >
-                🧪
-              </Text>
-
-              <Text
-                style={
-                  styles.emptyTitle
-                }
-              >
-                Sin muestras
-              </Text>
-
-              <Text
-                style={
-                  styles.emptyText
-                }
-              >
-                Todavía no existen muestras registradas.
-              </Text>
-            </View>
-
+          {cargando ? (
+            <ActivityIndicator
+              size="large"
+              color="#8B5CF6"
+              style={{ marginVertical: 25 }}
+            />
+          ) : muestras.length === 0 ? (
+            <Text style={styles.sinDatos}>
+              No hay muestras registradas.
+            </Text>
           ) : (
-            muestras.map(
-              (
-                muestra
-              ) => (
-                <Pressable
-                  key={
-                    muestra.id
-                  }
-                  style={
-                    styles.sampleCard
-                  }
-                  onPress={() =>
-                    setDetalle(
-                      muestra
-                    )
-                  }
-                >
-                  <View
-                    style={
-                      styles.sampleHeader
-                    }
-                  >
-                    <View
-                      style={
-                        styles.sampleIcon
-                      }
-                    >
-                      <Text>
-                        🧪
-                      </Text>
-                    </View>
-
-                    <View
-                      style={{
-                        flex: 1,
-                      }}
-                    >
-                      <Text
-                        style={
-                          styles.sampleCode
-                        }
-                      >
-                        {muestra.codigoEtiqueta ||
-                          muestra.muestraId}
-                      </Text>
-
-                      <Text
-                        style={
-                          styles.samplePatient
-                        }
-                      >
-                        {obtenerNombrePaciente(
-                          muestra.pacienteId
-                        )}
-                      </Text>
-                    </View>
-
-                    <Text
-                      style={
-                        styles.selectorArrow
-                      }
-                    >
-                      ›
+            muestras.map((muestra) => (
+              <Pressable
+                key={muestra.id}
+                style={styles.tarjetaMuestra}
+                onPress={() => setDetalle(muestra)}
+              >
+                <View style={styles.muestraEncabezado}>
+                  <View style={styles.iconoMuestra}>
+                    <Text style={styles.iconoTexto}>
+                      🧪
                     </Text>
                   </View>
 
-                  <View
-                    style={
-                      styles.sampleDetails
-                    }
-                  >
-                    <Dato
-                      titulo="ANÁLISIS"
-                      valor={
-                        muestra.analisisNombre
-                      }
-                    />
+                  <View style={styles.muestraInfo}>
+                    <Text style={styles.codigoMuestra}>
+                      {muestra.codigo}
+                    </Text>
 
-                    <Dato
-                      titulo="TIPO"
-                      valor={
-                        muestra.tipo
-                      }
-                    />
-
-                    <Dato
-                      titulo="ESTADO"
-                      valor={
-                        muestra.estado
-                      }
-                    />
+                    <Text style={styles.nombrePaciente}>
+                      {muestra.paciente}
+                    </Text>
                   </View>
-                </Pressable>
-              )
-            )
+
+                  <Text style={styles.flecha}>
+                    ›
+                  </Text>
+                </View>
+
+                <View style={styles.separador} />
+
+                <Text style={styles.datoTitulo}>
+                  ANÁLISIS
+                </Text>
+
+                <Text style={styles.datoValor}>
+                  {muestra.analisis}
+                </Text>
+
+                <Text style={styles.datoTitulo}>
+                  TIPO
+                </Text>
+
+                <Text style={styles.datoValor}>
+                  {muestra.tipoMuestra}
+                </Text>
+
+                <Text style={styles.datoTitulo}>
+                  ESTADO
+                </Text>
+
+                <Text style={styles.datoValor}>
+                  {muestra.estado}
+                </Text>
+              </Pressable>
+            ))
           )}
         </View>
       </ScrollView>
 
+      {/* SELECTORES */}
 
       <Modal
-        visible={
-          modalOrdenes
-        }
+        visible={selector !== null}
         transparent
-        animationType="fade"
-        onRequestClose={() =>
-          setModalOrdenes(
-            false
-          )
-        }
+        animationType="slide"
+        onRequestClose={() => setSelector(null)}
       >
-        <View
-          style={
-            styles.overlay
-          }
-        >
-          <View
-            style={
-              styles.modalCard
-            }
-          >
-            <Text
-              style={
-                styles.modalTitle
-              }
-            >
-              Seleccionar orden
+        <View style={styles.fondoModal}>
+          <View style={styles.modal}>
+            <Text style={styles.modalTitulo}>
+              {selector === "orden"
+                ? "Seleccionar orden"
+                : selector === "analisis"
+                ? "Seleccionar análisis"
+                : "Seleccionar tipo de muestra"}
             </Text>
 
+            <ScrollView style={styles.listaOpciones}>
+              {selector === "orden" &&
+                ordenes.map((orden) => (
+                  <Pressable
+                    key={orden.id}
+                    style={styles.opcion}
+                    onPress={() => {
+                      setOrdenId(orden.id);
+                      setAnalisisId("");
+                      setSelector(null);
+                    }}
+                  >
+                    <Text style={styles.opcionTitulo}>
+                      {orden.codigo}
+                    </Text>
 
-            <ScrollView
-              style={
-                styles.modalScroll
-              }
-            >
-              {ordenes.length ===
-              0 ? (
-                <Text
-                  style={
-                    styles.emptyModalText
-                  }
-                >
-                  No existen órdenes disponibles.
-                </Text>
-              ) : (
-                ordenes.map(
-                  (
-                    orden
-                  ) => (
-                    <Pressable
-                      key={
-                        orden.id
-                      }
-                      style={
-                        styles.modalOption
-                      }
-                      onPress={() =>
-                        seleccionarOrden(
-                          orden
-                        )
-                      }
-                    >
-                      <Text
-                        style={
-                          styles.modalOptionTitle
-                        }
-                      >
-                        {orden.ordenId}
-                      </Text>
+                    <Text style={styles.opcionDescripcion}>
+                      {orden.paciente}
+                    </Text>
+                  </Pressable>
+                ))}
 
-                      <Text
-                        style={
-                          styles.modalOptionText
-                        }
-                      >
-                        {obtenerNombrePaciente(
-                          orden.pacienteId
-                        )}
-                      </Text>
-                    </Pressable>
-                  )
-                )
-              )}
+              {selector === "analisis" &&
+                analisisDisponibles.map((item) => (
+                  <Pressable
+                    key={item.id}
+                    style={styles.opcion}
+                    onPress={() => {
+                      setAnalisisId(item.id);
+                      setSelector(null);
+                    }}
+                  >
+                    <Text style={styles.opcionTitulo}>
+                      {item.nombre}
+                    </Text>
+                  </Pressable>
+                ))}
+
+              {selector === "tipo" &&
+                tiposMuestra.map((tipo) => (
+                  <Pressable
+                    key={tipo}
+                    style={styles.opcion}
+                    onPress={() => {
+                      setTipoMuestra(tipo);
+                      setSelector(null);
+                    }}
+                  >
+                    <Text style={styles.opcionTitulo}>
+                      {tipo}
+                    </Text>
+                  </Pressable>
+                ))}
+
+              {selector === "analisis" &&
+                analisisDisponibles.length === 0 && (
+                  <Text style={styles.sinDatos}>
+                    No se encontraron análisis para esta orden.
+                  </Text>
+                )}
             </ScrollView>
 
-
             <Pressable
-              style={
-                styles.closeButton
-              }
-              onPress={() =>
-                setModalOrdenes(
-                  false
-                )
-              }
+              style={styles.botonCerrar}
+              onPress={() => setSelector(null)}
             >
-              <Text
-                style={
-                  styles.closeButtonText
-                }
-              >
+              <Text style={styles.textoCerrar}>
                 Cerrar
               </Text>
             </Pressable>
@@ -1826,819 +935,432 @@ export default function Muestras() {
         </View>
       </Modal>
 
+      {/* DETALLE */}
 
       <Modal
-        visible={
-          modalTipos
-        }
+        visible={detalle !== null}
         transparent
         animationType="fade"
-        onRequestClose={() =>
-          setModalTipos(
-            false
-          )
-        }
+        onRequestClose={() => setDetalle(null)}
       >
-        <View
-          style={
-            styles.overlay
-          }
-        >
-          <View
-            style={
-              styles.modalCard
-            }
-          >
-            <Text
-              style={
-                styles.modalTitle
-              }
-            >
-              Tipo de muestra
-            </Text>
-
-
-            {TIPOS_MUESTRA.map(
-              (
-                item
-              ) => (
-                <Pressable
-                  key={
-                    item
-                  }
-                  style={
-                    styles.modalOption
-                  }
-                  onPress={() => {
-                    setTipo(
-                      item
-                    );
-
-                    setModalTipos(
-                      false
-                    );
-                  }}
-                >
-                  <Text
-                    style={
-                      styles.modalOptionTitle
-                    }
-                  >
-                    {item}
-                  </Text>
-                </Pressable>
-              )
-            )}
-
-
-            <Pressable
-              style={
-                styles.closeButton
-              }
-              onPress={() =>
-                setModalTipos(
-                  false
-                )
-              }
-            >
-              <Text
-                style={
-                  styles.closeButtonText
-                }
-              >
-                Cerrar
+        <View style={styles.fondoModal}>
+          <View style={styles.modal}>
+            <ScrollView>
+              <Text style={styles.modalTitulo}>
+                Detalle de muestra
               </Text>
-            </Pressable>
+
+              <Text style={styles.detalleTitulo}>
+                Código
+              </Text>
+              <Text style={styles.detalleValor}>
+                {detalle?.codigo}
+              </Text>
+
+              <Text style={styles.detalleTitulo}>
+                Paciente
+              </Text>
+              <Text style={styles.detalleValor}>
+                {detalle?.paciente}
+              </Text>
+
+              <Text style={styles.detalleTitulo}>
+                Análisis
+              </Text>
+              <Text style={styles.detalleValor}>
+                {detalle?.analisis}
+              </Text>
+
+              <Text style={styles.detalleTitulo}>
+                Tipo
+              </Text>
+              <Text style={styles.detalleValor}>
+                {detalle?.tipoMuestra}
+              </Text>
+
+              <Text style={styles.detalleTitulo}>
+                Estado
+              </Text>
+              <Text style={styles.detalleValor}>
+                {detalle?.estado}
+              </Text>
+
+              <Text style={styles.detalleTitulo}>
+                Fecha de toma
+              </Text>
+              <Text style={styles.detalleValor}>
+                {detalle?.fechaToma || "No registrada"}
+              </Text>
+
+              <Pressable
+                style={styles.botonCerrar}
+                onPress={() => setDetalle(null)}
+              >
+                <Text style={styles.textoCerrar}>
+                  Cerrar
+                </Text>
+              </Pressable>
+            </ScrollView>
           </View>
         </View>
       </Modal>
-
-
-      <Modal
-        visible={
-          detalle !==
-          null
-        }
-        transparent
-        animationType="fade"
-        onRequestClose={() =>
-          setDetalle(
-            null
-          )
-        }
-      >
-        <View
-          style={
-            styles.overlay
-          }
-        >
-          <View
-            style={
-              styles.modalCard
-            }
-          >
-            <Text
-              style={
-                styles.modalLabel
-              }
-            >
-              ETIQUETA DE MUESTRA
-            </Text>
-
-            <Text
-              style={
-                styles.labelCode
-              }
-            >
-              {detalle?.codigoEtiqueta ||
-                detalle?.muestraId ||
-                "Muestra"}
-            </Text>
-
-
-            {detalle && (
-              <View
-                style={
-                  styles.summaryBox
-                }
-              >
-                <Dato
-                  titulo="PACIENTE"
-                  valor={
-                    obtenerNombrePaciente(
-                      detalle.pacienteId
-                    )
-                  }
-                />
-
-                <Dato
-                  titulo="ORDEN"
-                  valor={
-                    detalle.ordenId ||
-                    "Sin orden"
-                  }
-                />
-
-                <Dato
-                  titulo="ANÁLISIS"
-                  valor={
-                    detalle.analisisNombre
-                  }
-                />
-
-                <Dato
-                  titulo="TIPO"
-                  valor={
-                    detalle.tipo
-                  }
-                />
-
-                <Dato
-                  titulo="ESTADO"
-                  valor={
-                    detalle.estado
-                  }
-                />
-              </View>
-            )}
-
-
-            <Pressable
-              style={
-                styles.closeButton
-              }
-              onPress={() =>
-                setDetalle(
-                  null
-                )
-              }
-            >
-              <Text
-                style={
-                  styles.closeButtonText
-                }
-              >
-                Cerrar
-              </Text>
-            </Pressable>
-          </View>
-        </View>
-      </Modal>
-    </SafeAreaView>
-  );
-}
-
-
-function Estadistica({
-  titulo,
-  valor,
-}: {
-  titulo: string;
-  valor: number;
-}) {
-  return (
-    <View
-      style={
-        styles.statCard
-      }
-    >
-      <Text
-        style={
-          styles.statTitle
-        }
-      >
-        {titulo}
-      </Text>
-
-      <Text
-        style={
-          styles.statValue
-        }
-      >
-        {valor}
-      </Text>
     </View>
   );
 }
 
-
-function Dato({
-  titulo,
-  valor,
-}: {
-  titulo: string;
-  valor: string;
-}) {
-  return (
-    <View
-      style={
-        styles.dataBox
-      }
-    >
-      <Text
-        style={
-          styles.dataTitle
-        }
-      >
-        {titulo}
-      </Text>
-
-      <Text
-        style={
-          styles.dataValue
-        }
-      >
-        {valor ||
-          "—"}
-      </Text>
-    </View>
-  );
-}
-
-
-const styles =
-  StyleSheet.create({
-    page: {
-      flex: 1,
-      backgroundColor:
-        "#F1F5F9",
-    },
-
-    loadingPage: {
-      flex: 1,
-      alignItems:
-        "center",
-      justifyContent:
-        "center",
-      backgroundColor:
-        "#F8FAFC",
-    },
-
-    loadingTitle: {
-      marginTop: 14,
-      color:
-        "#0F172A",
-      fontSize: 20,
-      fontWeight:
-        "900",
-    },
-
-    loadingText: {
-      marginTop: 5,
-      color:
-        "#64748B",
-      fontSize: 10,
-    },
-
-    content: {
-      paddingBottom: 40,
-    },
-
-    header: {
-      padding: 20,
-      backgroundColor:
-        "#FFFFFF",
-      borderBottomWidth: 1,
-      borderBottomColor:
-        "#E2E8F0",
-    },
-
-    backButton: {
-      alignSelf:
-        "flex-start",
-      marginBottom: 18,
-      paddingVertical: 7,
-      paddingHorizontal: 11,
-      borderRadius: 9,
-      backgroundColor:
-        "#F1F5F9",
-    },
-
-    backText: {
-      color:
-        "#475569",
-      fontSize: 10,
-      fontWeight:
-        "800",
-    },
-
-    headerRow: {
-      flexDirection:
-        "row",
-      alignItems:
-        "center",
-    },
-
-    eyebrow: {
-      color:
-        "#7C3AED",
-      fontSize: 8,
-      fontWeight:
-        "900",
-      letterSpacing: 1,
-    },
-
-    title: {
-      marginTop: 4,
-      color:
-        "#0F172A",
-      fontSize: 25,
-      fontWeight:
-        "900",
-    },
-
-    subtitle: {
-      marginTop: 6,
-      color:
-        "#64748B",
-      fontSize: 10,
-      lineHeight: 15,
-    },
-
-    headerIcon: {
-      width: 62,
-      height: 62,
-      alignItems:
-        "center",
-      justifyContent:
-        "center",
-      marginLeft: 12,
-      borderRadius: 19,
-      backgroundColor:
-        "#EDE9FE",
-    },
-
-    headerEmoji: {
-      fontSize: 29,
-    },
-
-    statsRow: {
-      flexDirection:
-        "row",
-      paddingHorizontal: 14,
-      paddingTop: 14,
-    },
-
-    statCard: {
-      flex: 1,
-      marginHorizontal: 3,
-      padding: 12,
-      borderWidth: 1,
-      borderColor:
-        "#E2E8F0",
-      borderRadius: 13,
-      backgroundColor:
-        "#FFFFFF",
-    },
-
-    statTitle: {
-      color:
-        "#64748B",
-      fontSize: 7,
-      fontWeight:
-        "900",
-    },
-
-    statValue: {
-      marginTop: 6,
-      color:
-        "#0F172A",
-      fontSize: 20,
-      fontWeight:
-        "900",
-    },
-
-    card: {
-      marginHorizontal: 16,
-      marginTop: 14,
-      padding: 17,
-      borderWidth: 1,
-      borderColor:
-        "#E2E8F0",
-      borderRadius: 17,
-      backgroundColor:
-        "#FFFFFF",
-    },
-
-    cardTitle: {
-      color:
-        "#0F172A",
-      fontSize: 16,
-      fontWeight:
-        "900",
-    },
-
-    cardDescription: {
-      marginTop: 4,
-      marginBottom: 13,
-      color:
-        "#64748B",
-      fontSize: 9,
-      lineHeight: 14,
-    },
-
-    label: {
-      marginTop: 13,
-      marginBottom: 6,
-      color:
-        "#334155",
-      fontSize: 9,
-      fontWeight:
-        "900",
-    },
-
-    selector: {
-      minHeight: 49,
-      flexDirection:
-        "row",
-      alignItems:
-        "center",
-      justifyContent:
-        "space-between",
-      paddingHorizontal: 13,
-      borderWidth: 1,
-      borderColor:
-        "#CBD5E1",
-      borderRadius: 11,
-      backgroundColor:
-        "#FFFFFF",
-    },
-
-    selectorValue: {
-      flex: 1,
-      color:
-        "#0F172A",
-      fontSize: 10,
-      fontWeight:
-        "700",
-    },
-
-    selectorPlaceholder: {
-      flex: 1,
-      color:
-        "#94A3B8",
-      fontSize: 10,
-    },
-
-    selectorArrow: {
-      marginLeft: 8,
-      color:
-        "#7C3AED",
-      fontSize: 23,
-    },
-
-    summaryBox: {
-      marginTop: 11,
-      padding: 11,
-      borderRadius: 11,
-      backgroundColor:
-        "#F8FAFC",
-    },
-
-    dataBox: {
-      marginBottom: 8,
-    },
-
-    dataTitle: {
-      color:
-        "#64748B",
-      fontSize: 7,
-      fontWeight:
-        "900",
-    },
-
-    dataValue: {
-      marginTop: 3,
-      color:
-        "#0F172A",
-      fontSize: 10,
-      fontWeight:
-        "800",
-    },
-
-    infoBox: {
-      padding: 12,
-      borderRadius: 10,
-      backgroundColor:
-        "#F8FAFC",
-    },
-
-    infoText: {
-      color:
-        "#94A3B8",
-      fontSize: 9,
-    },
-
-    warningBox: {
-      padding: 12,
-      borderRadius: 10,
-      backgroundColor:
-        "#FFF7ED",
-    },
-
-    warningText: {
-      color:
-        "#C2410C",
-      fontSize: 9,
-      fontWeight:
-        "700",
-    },
-
-    optionsWrap: {
-      flexDirection:
-        "row",
-      flexWrap:
-        "wrap",
-      marginHorizontal: -3,
-    },
-
-    optionButton: {
-      margin: 3,
-      paddingVertical: 9,
-      paddingHorizontal: 11,
-      borderWidth: 1,
-      borderColor:
-        "#DDD6FE",
-      borderRadius: 9,
-      backgroundColor:
-        "#FAF5FF",
-    },
-
-    optionButtonActive: {
-      borderColor:
-        "#7C3AED",
-      backgroundColor:
-        "#7C3AED",
-    },
-
-    optionText: {
-      color:
-        "#6D28D9",
-      fontSize: 9,
-      fontWeight:
-        "800",
-    },
-
-    optionTextActive: {
-      color:
-        "#FFFFFF",
-    },
-
-    primaryButton: {
-      minHeight: 48,
-      alignItems:
-        "center",
-      justifyContent:
-        "center",
-      marginTop: 18,
-      borderRadius: 11,
-      backgroundColor:
-        "#7C3AED",
-    },
-
-    primaryButtonText: {
-      color:
-        "#FFFFFF",
-      fontSize: 10,
-      fontWeight:
-        "900",
-    },
-
-    buttonDisabled: {
-      opacity: 0.5,
-    },
-
-    empty: {
-      alignItems:
-        "center",
-      paddingVertical: 27,
-    },
-
-    emptyEmoji: {
-      fontSize: 30,
-    },
-
-    emptyTitle: {
-      marginTop: 8,
-      color:
-        "#0F172A",
-      fontSize: 13,
-      fontWeight:
-        "900",
-    },
-
-    emptyText: {
-      marginTop: 4,
-      color:
-        "#64748B",
-      fontSize: 9,
-    },
-
-    sampleCard: {
-      marginTop: 10,
-      padding: 13,
-      borderWidth: 1,
-      borderColor:
-        "#E2E8F0",
-      borderRadius: 13,
-      backgroundColor:
-        "#FFFFFF",
-    },
-
-    sampleHeader: {
-      flexDirection:
-        "row",
-      alignItems:
-        "center",
-    },
-
-    sampleIcon: {
-      width: 41,
-      height: 41,
-      alignItems:
-        "center",
-      justifyContent:
-        "center",
-      marginRight: 10,
-      borderRadius: 12,
-      backgroundColor:
-        "#EDE9FE",
-    },
-
-    sampleCode: {
-      color:
-        "#0F172A",
-      fontSize: 11,
-      fontWeight:
-        "900",
-    },
-
-    samplePatient: {
-      marginTop: 3,
-      color:
-        "#64748B",
-      fontSize: 8,
-    },
-
-    sampleDetails: {
-      marginTop: 10,
-      paddingTop: 10,
-      borderTopWidth: 1,
-      borderTopColor:
-        "#F1F5F9",
-    },
-
-    overlay: {
-      flex: 1,
-      alignItems:
-        "center",
-      justifyContent:
-        "center",
-      padding: 18,
-      backgroundColor:
-        "rgba(15,23,42,.72)",
-    },
-
-    modalCard: {
-      width:
-        "100%",
-      maxWidth: 480,
-      maxHeight:
-        "82%",
-      padding: 18,
-      borderRadius: 18,
-      backgroundColor:
-        "#FFFFFF",
-    },
-
-    modalTitle: {
-      marginBottom: 12,
-      color:
-        "#0F172A",
-      fontSize: 17,
-      fontWeight:
-        "900",
-    },
-
-    modalScroll: {
-      maxHeight: 430,
-    },
-
-    modalOption: {
-      marginBottom: 8,
-      padding: 12,
-      borderWidth: 1,
-      borderColor:
-        "#E2E8F0",
-      borderRadius: 11,
-      backgroundColor:
-        "#F8FAFC",
-    },
-
-    modalOptionTitle: {
-      color:
-        "#0F172A",
-      fontSize: 10,
-      fontWeight:
-        "900",
-    },
-
-    modalOptionText: {
-      marginTop: 3,
-      color:
-        "#64748B",
-      fontSize: 8,
-    },
-
-    emptyModalText: {
-      paddingVertical: 25,
-      color:
-        "#64748B",
-      fontSize: 9,
-      textAlign:
-        "center",
-    },
-
-    closeButton: {
-      minHeight: 44,
-      alignItems:
-        "center",
-      justifyContent:
-        "center",
-      marginTop: 12,
-      borderRadius: 10,
-      backgroundColor:
-        "#F1F5F9",
-    },
-
-    closeButtonText: {
-      color:
-        "#475569",
-      fontSize: 9,
-      fontWeight:
-        "900",
-    },
-
-    modalLabel: {
-      color:
-        "#7C3AED",
-      fontSize: 8,
-      fontWeight:
-        "900",
-      textAlign:
-        "center",
-      letterSpacing: 1,
-    },
-
-    labelCode: {
-      marginTop: 8,
-      marginBottom: 17,
-      color:
-        "#0F172A",
-      fontSize: 22,
-      fontWeight:
-        "900",
-      textAlign:
-        "center",
-    },
-  });
+// =====================================================
+// ESTILOS
+// =====================================================
+
+const styles = StyleSheet.create({
+  contenedor: {
+    flex: 1,
+    backgroundColor: "#F1F5F9",
+  },
+
+  // NAVEGACIÓN
+
+  barraNavegacion: {
+    backgroundColor: "#F1F5F9",
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "#E2E8F0",
+  },
+
+  contenidoNavegacion: {
+    paddingHorizontal: 12,
+    gap: 9,
+    alignItems: "center",
+  },
+
+  botonNavegacion: {
+    backgroundColor: "#E2E8F0",
+    borderRadius: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+  },
+
+  botonNavegacionActivo: {
+    backgroundColor: "#17365D",
+  },
+
+  textoNavegacion: {
+    color: "#334155",
+    fontSize: 13,
+    fontWeight: "800",
+  },
+
+  textoNavegacionActivo: {
+    color: "#FFFFFF",
+  },
+
+  // CONTENIDO
+
+  contenido: {
+    padding: 14,
+    paddingBottom: 40,
+  },
+
+  encabezado: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+  },
+
+  botonVolver: {
+    alignSelf: "flex-start",
+    backgroundColor: "#F1F5F9",
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderRadius: 8,
+    marginBottom: 18,
+  },
+
+  textoVolver: {
+    color: "#334155",
+    fontSize: 13,
+    fontWeight: "700",
+  },
+
+  etiquetaSuperior: {
+    color: "#7C3AED",
+    fontSize: 11,
+    fontWeight: "900",
+    letterSpacing: 1,
+    marginBottom: 8,
+  },
+
+  titulo: {
+    fontSize: 25,
+    fontWeight: "900",
+    color: "#0F172A",
+    marginBottom: 7,
+  },
+
+  subtitulo: {
+    color: "#64748B",
+    fontSize: 12,
+    lineHeight: 19,
+  },
+
+  contadores: {
+    flexDirection: "row",
+    gap: 6,
+    marginBottom: 12,
+  },
+
+  contador: {
+    flex: 1,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 10,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+  },
+
+  contadorTitulo: {
+    fontSize: 9,
+    fontWeight: "800",
+    color: "#64748B",
+  },
+
+  contadorNumero: {
+    fontSize: 22,
+    fontWeight: "900",
+    color: "#0F172A",
+    marginTop: 6,
+  },
+
+  panel: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 13,
+    padding: 15,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+  },
+
+  panelTitulo: {
+    fontSize: 17,
+    fontWeight: "900",
+    color: "#0F172A",
+    marginBottom: 6,
+  },
+
+  panelDescripcion: {
+    color: "#64748B",
+    fontSize: 11,
+    marginBottom: 19,
+  },
+
+  label: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: "#0F172A",
+    marginBottom: 8,
+    marginTop: 10,
+  },
+
+  selector: {
+    borderWidth: 1,
+    borderColor: "#CBD5E1",
+    borderRadius: 9,
+    minHeight: 49,
+    paddingHorizontal: 12,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    backgroundColor: "#FFFFFF",
+  },
+
+  selectorDeshabilitado: {
+    backgroundColor: "#F8FAFC",
+    borderColor: "#F1F5F9",
+  },
+
+  selectorTexto: {
+    color: "#0F172A",
+    fontSize: 12,
+    flex: 1,
+  },
+
+  selectorPlaceholder: {
+    color: "#94A3B8",
+    fontSize: 12,
+    flex: 1,
+  },
+
+  flecha: {
+    color: "#7C3AED",
+    fontSize: 25,
+    fontWeight: "700",
+    marginLeft: 10,
+  },
+
+  botonRegistrar: {
+    backgroundColor: "#B794F4",
+    borderRadius: 9,
+    paddingVertical: 16,
+    alignItems: "center",
+    marginTop: 20,
+  },
+
+  botonDeshabilitado: {
+    opacity: 0.6,
+  },
+
+  botonRegistrarTexto: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontWeight: "900",
+  },
+
+  tarjetaMuestra: {
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    borderRadius: 12,
+    padding: 13,
+    marginBottom: 10,
+  },
+
+  muestraEncabezado: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+
+  iconoMuestra: {
+    width: 42,
+    height: 42,
+    borderRadius: 10,
+    backgroundColor: "#EDE9FE",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+
+  iconoTexto: {
+    fontSize: 20,
+  },
+
+  muestraInfo: {
+    flex: 1,
+    marginLeft: 10,
+  },
+
+  codigoMuestra: {
+    fontSize: 13,
+    fontWeight: "900",
+    color: "#0F172A",
+  },
+
+  nombrePaciente: {
+    fontSize: 11,
+    color: "#64748B",
+    marginTop: 4,
+  },
+
+  separador: {
+    height: 1,
+    backgroundColor: "#F1F5F9",
+    marginVertical: 12,
+  },
+
+  datoTitulo: {
+    fontSize: 9,
+    fontWeight: "900",
+    color: "#64748B",
+    marginBottom: 4,
+    marginTop: 5,
+  },
+
+  datoValor: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: "#0F172A",
+    marginBottom: 6,
+  },
+
+  sinDatos: {
+    textAlign: "center",
+    color: "#64748B",
+    fontSize: 13,
+    padding: 20,
+  },
+
+  error: {
+    color: "#DC2626",
+    fontSize: 12,
+    marginBottom: 12,
+  },
+
+  fondoModal: {
+    flex: 1,
+    backgroundColor: "rgba(15,23,42,0.55)",
+    justifyContent: "center",
+    padding: 20,
+  },
+
+  modal: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 15,
+    padding: 20,
+    maxHeight: "80%",
+  },
+
+  modalTitulo: {
+    fontSize: 19,
+    fontWeight: "900",
+    color: "#0F172A",
+    marginBottom: 15,
+  },
+
+  listaOpciones: {
+    maxHeight: 350,
+  },
+
+  opcion: {
+    borderBottomWidth: 1,
+    borderBottomColor: "#E2E8F0",
+    paddingVertical: 14,
+  },
+
+  opcionTitulo: {
+    fontSize: 14,
+    fontWeight: "800",
+    color: "#0F172A",
+  },
+
+  opcionDescripcion: {
+    fontSize: 12,
+    color: "#64748B",
+    marginTop: 4,
+  },
+
+  botonCerrar: {
+    backgroundColor: "#7C3AED",
+    borderRadius: 9,
+    padding: 14,
+    alignItems: "center",
+    marginTop: 20,
+  },
+
+  textoCerrar: {
+    color: "#FFFFFF",
+    fontWeight: "800",
+  },
+
+  detalleTitulo: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: "#64748B",
+    marginTop: 13,
+  },
+
+  detalleValor: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#0F172A",
+    marginTop: 5,
+  },
+});
