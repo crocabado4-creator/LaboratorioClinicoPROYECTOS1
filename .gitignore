@@ -1,33 +1,100 @@
-# Dependencias
+# ==========================================
+# LABORATORIO CLINICO - GITIGNORE
+# ==========================================
+
+# DEPENDENCIAS
 node_modules/
-web/node_modules/
-mobile/node_modules/
+**/node_modules/
 
-# Variables de entorno
+# VARIABLES DE ENTORNO
 .env
-.env.local
-.env.development
-.env.production
-web/.env
-mobile/.env
+.env.*
+**/.env
+**/.env.*
 
-# Build
+# Permitir archivos de ejemplo
+!.env.example
+!**/.env.example
+
+# CREDENCIALES PRIVADAS FIREBASE
+serviceAccountKey.json
+**/serviceAccountKey.json
+*firebase-adminsdk*.json
+**/*firebase-adminsdk*.json
+*.pem
+*.key
+
+# WEB - REACT + VITE
 dist/
 web/dist/
 build/
+web/build/
 
-# Expo
+# MOBILE - EXPO
 .expo/
 mobile/.expo/
+.expo-shared/
+web-build/
 
-# Logs
+# ANDROID
+.gradle/
+local.properties
+*.apk
+*.aab
+
+# IOS
+Pods/
+*.ipa
+
+# BACKEND - NODE.JS
+backend/node_modules/
+backend/.env
+backend/.env.local
+backend/.env.production
+
+# FIREBASE FUNCTIONS
+functions/node_modules/
+functions/.env
+functions/.env.local
+functions/.env.production
+
+# FIREBASE CACHE
+.firebase/
+firebase-debug.log
+firebase-debug.*.log
+firestore-debug.log
+ui-debug.log
+
+# LOGS
+logs/
+*.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+pnpm-debug.log*
 
-# Sistema
+# ARCHIVOS TEMPORALES
+tmp/
+temp/
+*.tmp
+*.swp
+*.swo
+
+# SISTEMA OPERATIVO
 .DS_Store
 Thumbs.db
+desktop.ini
 
-# VS Code
+# VISUAL STUDIO CODE
 .vscode/
+
+# IDE
+.idea/
+*.iml
+
+# TYPESCRIPT
+*.tsbuildinfo
+
+# ARCHIVOS DE PRUEBA Y COBERTURA
+coverage/
+.nyc_output/
