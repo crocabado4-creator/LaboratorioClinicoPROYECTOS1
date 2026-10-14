@@ -1194,22 +1194,47 @@ export default function Index() {
   />
 )}
 
-          {tienePermiso(
-            "ventas.ver"
-          ) && (
-            <Modulo
-              icono="💳"
-              titulo="Ventas"
-              descripcion="Consulta operaciones registradas."
-              color="#A16207"
-              fondo="#FEF3C7"
-              onPress={() =>
-                moduloNoDisponible(
-                  "Ventas"
-                )
-              }
-            />
-          )}
+    {usuario.rol === "recepcionista" && (
+  <Modulo
+    icono="📋"
+    titulo="Solicitudes"
+    descripcion="Registra solicitudes de análisis para los pacientes."
+    color="#7C3AED"
+    fondo="#EDE9FE"
+    onPress={() =>
+      router.push("/solicitudes" as any)
+    }
+  />
+)}
+
+{(
+  usuario.rol === "recepcionista" ||
+  usuario.rol === "administrador"
+) && (
+  <Modulo
+    icono="💳"
+    titulo="Ventas"
+    descripcion="Registra ventas y consulta las órdenes generadas."
+    color="#A16207"
+    fondo="#FEF3C7"
+    onPress={() =>
+      router.push("/ventas" as any)
+    }
+  />
+)}
+
+{usuario.rol === "bioquimico" && (
+  <Modulo
+    icono="🧪"
+    titulo="Muestras"
+    descripcion="Registra la toma e identificación de muestras."
+    color="#0F766E"
+    fondo="#CCFBF1"
+    onPress={() =>
+      router.push("/muestras" as any)
+    }
+  />
+)}
 
           {tienePermiso(
             "resultados.ver"
