@@ -1,180 +1,120 @@
-import { getAuth } from "firebase/auth";
-
 import {
   collection,
   doc,
   getDoc,
   getDocs,
+  query,
   runTransaction,
   serverTimestamp,
+  where,
 } from "firebase/firestore";
 
-import { db } from "../firebase/firebase";
+import { auth, db } from "../firebase/firebase";
 
 // =====================================================
 // TIPOS
 // =====================================================
 
-export type EstadoValidacion =
-  | "pendiente"
-  | "aceptada"
-  | "rechazada";
-
-export interface MuestraValidacion {
+export type MuestraValidacion = {
   id: string;
-  codigo: string;
-  ordenId: string;
-  pacienteId: string;
-  analisisId: string;
-  tipoMuestra: string;
+  muestraId: string;
   laboratorioId: string;
+  pacienteId: string;
+  ordenId: string;
+  analisisId: string;
+  analisisNombre: string;
+  tipo: string;
+  codigoEtiqueta: string;
   estado: string;
-  estadoValidacion: EstadoValidacion;
+  estadoValidacion: string;
+  aceptada: boolean;
   motivoRechazo: string;
-  fechaToma: string;
-}
+  fechaToma: unknown;
+};
 
 // =====================================================
-// FUNCIONES AUXILIARES
+// SESIÓN DEL BIOQUÍMICO
 // =====================================================
 
-function texto(valor: unknown): string {
-  if (valor === null || valor === undefined) {
-    return "";
-  }
-
-  return String(valor);
-}
-
-function obtenerFecha(valor: any): string {
-  if (!valor) return "";
-
-  if (typeof valor.toDate === "function") {
-    return valor.toDate().toLocaleString();
-  }
-
-  if (typeof valor === "string") {
-    return valor;
-  }
-
-  return "";
-}
-
-function obtenerEstado(
-  estado: unknown,
-  estadoValidacion: unknown
-): EstadoValidacion {
-  const validacion = texto(estadoValidacion).toLowerCase();
-
-  if (validacion === "aceptada") return "aceptada";
-  if (validacion === "rechazada") return "rechazada";
-
-  const actual = texto(estado).toLowerCase();
-
-  if (actual === "aceptada") return "aceptada";
-  if (actual === "rechazada") return "rechazada";
-
-  return "pendiente";
-}
-
-// =====================================================
-// USUARIO Y LABORATORIO ACTUAL
-// =====================================================
-
-async function obtenerUsuarioActual() {
-  const usuario = getAuth().currentUser;
+async function obtenerSesion() {
+  const usuario = auth.currentUser;
 
   if (!usuario) {
-    throw new Error("Debes iniciar sesión.");
+    throw new Error("No existe una sesión iniciada.");
   }
 
   const referencia = doc(db, "usuarios", usuario.uid);
-  const documento = await getDoc(referencia);
+  const resultado = await getDoc(referencia);
 
-  if (!documento.exists()) {
-    throw new Error("No se encontró tu usuario en Firestore.");
+  if (!resultado.exists()) {
+    throw new Error("El usuario no existe en Firestore.");
   }
 
-  const datos = documento.data();
+  const datos = resultado.data();
 
-  if (datos.activo === false) {
-    throw new Error("Tu cuenta está desactivada.");
+  if (datos.activo !== true) {
+    throw new Error("El usuario está inactivo.");
   }
 
-  const laboratorioId = texto(datos.laboratorioId);
-
-  if (!laboratorioId) {
-    throw new Error("Tu usuario no tiene un laboratorio asignado.");
+  if (datos.rol !== "bioquimico") {
+    throw new Error("Esta operación requiere el rol Bioquímico.");
   }
 
-  const rol = texto(datos.rol).toLowerCase();
-
-  if (rol !== "bioquimico" && rol !== "bioquímico") {
-    throw new Error(
-      "Solo el Bioquímico puede validar muestras."
-    );
+  if (!datos.laboratorioId) {
+    throw new Error("El usuario no tiene laboratorio asignado.");
   }
 
   return {
     uid: usuario.uid,
-    laboratorioId,
+    laboratorioId: String(datos.laboratorioId),
   };
 }
 
 // =====================================================
-// LISTAR MUESTRAS
+// CONVERTIR MUESTRA
+// =====================================================
+
+function convertirMuestra(
+  id: string,
+  datos: Record<string, any>
+): MuestraValidacion {
+  return {
+    id,
+    muestraId: datos.muestraId || id,
+    laboratorioId: datos.laboratorioId || "",
+    pacienteId: datos.pacienteId || "",
+    ordenId: datos.ordenId || "",
+    analisisId: datos.analisisId || "",
+    analisisNombre: datos.analisisNombre || "Análisis",
+    tipo: datos.tipo || datos.tipoMuestra || "",
+    codigoEtiqueta: datos.codigoEtiqueta || "",
+    estado: datos.estado || "tomada",
+    estadoValidacion: datos.estadoValidacion || "pendiente",
+    aceptada: datos.aceptada === true,
+    motivoRechazo: datos.motivoRechazo || "",
+    fechaToma: datos.fechaToma || null,
+  };
+}
+
+// =====================================================
+// LISTAR MUESTRAS DEL LABORATORIO
 // =====================================================
 
 export async function listarMuestrasValidacion():
   Promise<MuestraValidacion[]> {
 
-  const sesion = await obtenerUsuarioActual();
+  const sesion = await obtenerSesion();
 
-  const referencia = collection(db, "muestras");
-  const consulta = await getDocs(referencia);
+  const consulta = query(
+    collection(db, "muestras"),
+    where("laboratorioId", "==", sesion.laboratorioId)
+  );
 
-  const muestras: MuestraValidacion[] = [];
+  const resultado = await getDocs(consulta);
 
-  consulta.forEach((documento) => {
-    const datos = documento.data();
-
-    if (
-      texto(datos.laboratorioId) !== sesion.laboratorioId
-    ) {
-      return;
-    }
-
-    muestras.push({
-      id: documento.id,
-
-      codigo: texto(
-        datos.codigo || datos.codigoMuestra || documento.id
-      ),
-
-      ordenId: texto(datos.ordenId),
-
-      pacienteId: texto(datos.pacienteId),
-
-      analisisId: texto(datos.analisisId),
-
-      tipoMuestra: texto(datos.tipoMuestra),
-
-      laboratorioId: texto(datos.laboratorioId),
-
-      estado: texto(datos.estado || "tomada"),
-
-      estadoValidacion: obtenerEstado(
-        datos.estado,
-        datos.estadoValidacion
-      ),
-
-      motivoRechazo: texto(datos.motivoRechazo),
-
-      fechaToma: obtenerFecha(datos.fechaToma),
-    });
-  });
-
-  return muestras;
+  return resultado.docs.map((documento) =>
+    convertirMuestra(documento.id, documento.data())
+  );
 }
 
 // =====================================================
@@ -185,42 +125,24 @@ export async function aceptarMuestra(
   muestraId: string
 ): Promise<void> {
 
-  const sesion = await obtenerUsuarioActual();
-
-  if (!muestraId.trim()) {
-    throw new Error("No se seleccionó una muestra.");
-  }
+  const sesion = await obtenerSesion();
 
   const referencia = doc(db, "muestras", muestraId);
 
   await runTransaction(db, async (transaction) => {
-    const documento = await transaction.get(referencia);
+    const resultado = await transaction.get(referencia);
 
-    if (!documento.exists()) {
+    if (!resultado.exists()) {
       throw new Error("La muestra no existe.");
     }
 
-    const datos = documento.data();
+    const muestra = resultado.data();
 
-    if (
-      texto(datos.laboratorioId) !== sesion.laboratorioId
-    ) {
-      throw new Error(
-        "No tienes permiso para modificar esta muestra."
-      );
+    if (muestra.laboratorioId !== sesion.laboratorioId) {
+      throw new Error("La muestra pertenece a otro laboratorio.");
     }
 
-    const estado = obtenerEstado(
-      datos.estado,
-      datos.estadoValidacion
-    );
-
-    const estadoActual = texto(datos.estado).toLowerCase();
-
-    if (
-      estado !== "pendiente" ||
-      !["tomada", "pendiente"].includes(estadoActual)
-    ) {
+    if (muestra.estado !== "tomada") {
       throw new Error(
         "Solo se pueden aceptar muestras pendientes."
       );
@@ -229,6 +151,7 @@ export async function aceptarMuestra(
     transaction.update(referencia, {
       estado: "aceptada",
       estadoValidacion: "aceptada",
+      aceptada: true,
       motivoRechazo: "",
       validadoPor: sesion.uid,
       fechaValidacion: serverTimestamp(),
@@ -245,48 +168,28 @@ export async function rechazarMuestra(
   motivo: string
 ): Promise<void> {
 
-  const sesion = await obtenerUsuarioActual();
-
-  if (!muestraId.trim()) {
-    throw new Error("No se seleccionó una muestra.");
-  }
+  const sesion = await obtenerSesion();
 
   if (!motivo.trim()) {
-    throw new Error(
-      "Debes ingresar el motivo del rechazo."
-    );
+    throw new Error("Debes indicar el motivo del rechazo.");
   }
 
   const referencia = doc(db, "muestras", muestraId);
 
   await runTransaction(db, async (transaction) => {
-    const documento = await transaction.get(referencia);
+    const resultado = await transaction.get(referencia);
 
-    if (!documento.exists()) {
+    if (!resultado.exists()) {
       throw new Error("La muestra no existe.");
     }
 
-    const datos = documento.data();
+    const muestra = resultado.data();
 
-    if (
-      texto(datos.laboratorioId) !== sesion.laboratorioId
-    ) {
-      throw new Error(
-        "No tienes permiso para modificar esta muestra."
-      );
+    if (muestra.laboratorioId !== sesion.laboratorioId) {
+      throw new Error("La muestra pertenece a otro laboratorio.");
     }
 
-    const estado = obtenerEstado(
-      datos.estado,
-      datos.estadoValidacion
-    );
-
-    const estadoActual = texto(datos.estado).toLowerCase();
-
-    if (
-      estado !== "pendiente" ||
-      !["tomada", "pendiente"].includes(estadoActual)
-    ) {
+    if (muestra.estado !== "tomada") {
       throw new Error(
         "Solo se pueden rechazar muestras pendientes."
       );
@@ -295,6 +198,7 @@ export async function rechazarMuestra(
     transaction.update(referencia, {
       estado: "rechazada",
       estadoValidacion: "rechazada",
+      aceptada: false,
       motivoRechazo: motivo.trim(),
       validadoPor: sesion.uid,
       fechaValidacion: serverTimestamp(),

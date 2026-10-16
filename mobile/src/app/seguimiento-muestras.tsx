@@ -3,7 +3,6 @@ import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
-  FlatList,
   Modal,
   Platform,
   Pressable,
@@ -12,8 +11,9 @@ import {
   Text,
   TextInput,
   View,
-  useWindowDimensions,
 } from "react-native";
+
+import { useRouter } from "expo-router";
 
 import {
   collection,
@@ -21,11 +21,12 @@ import {
   getDoc,
   getDocs,
   query,
+  runTransaction,
+  serverTimestamp,
   where,
 } from "firebase/firestore";
 
-import { getAuth } from "firebase/auth";
-import { db } from "../firebase/firebase";
+import { auth, db } from "../firebase/firebase";
 
 // =====================================================
 // TIPOS
@@ -33,82 +34,111 @@ import { db } from "../firebase/firebase";
 
 type Muestra = {
   id: string;
-  codigo: string;
-  pacienteId: string;
-  paciente: string;
-  analisisId: string;
-  analisis: string;
+  muestraId: string;
+  laboratorioId: string;
   ordenId: string;
+  solicitudId: string;
+  pacienteId: string;
+  analisisId: string;
+  analisisNombre: string;
+  codigoEtiqueta: string;
   tipo: string;
   estado: string;
-  fechaToma: string;
-  fechaValidacion: string;
-  fechaProcesamiento: string;
+  aceptada: boolean;
   motivoRechazo: string;
-  validadoPor: string;
+  fechaToma: any;
+  fechaValidacion: any;
+  fechaInicioProcesamiento: any;
+  fechaFinProcesamiento: any;
+  historialEstados: any[];
 };
 
-type Filtro =
-  | "todas"
-  | "tomada"
-  | "aceptada"
-  | "rechazada"
-  | "en_proceso"
-  | "procesada";
+type Paciente = {
+  nombre: string;
+  ci: string;
+};
+
+type Usuario = {
+  uid: string;
+  laboratorioId: string;
+  rol: string;
+};
 
 // =====================================================
 // FUNCIONES AUXILIARES
 // =====================================================
 
-function texto(valor: unknown): string {
-  if (valor === null || valor === undefined) return "";
-  return String(valor);
+function texto(valor: any): string {
+  if (valor === null || valor === undefined) {
+    return "";
+  }
+
+  return String(valor).trim();
 }
 
-function fecha(valor: any): string {
-  if (!valor) return "";
+function mostrarMensaje(titulo: string, mensaje: string) {
+  if (Platform.OS === "web") {
+    window.alert(`${titulo}\n\n${mensaje}`);
+  } else {
+    Alert.alert(titulo, mensaje);
+  }
+}
 
-  if (typeof valor.toDate === "function") {
-    return valor.toDate().toLocaleString("es-BO");
+function confirmar(
+  titulo: string,
+  mensaje: string,
+  accion: () => void
+) {
+  if (Platform.OS === "web") {
+    if (window.confirm(`${titulo}\n\n${mensaje}`)) {
+      accion();
+    }
+  } else {
+    Alert.alert(titulo, mensaje, [
+      {
+        text: "Cancelar",
+        style: "cancel",
+      },
+      {
+        text: "Confirmar",
+        onPress: accion,
+      },
+    ]);
+  }
+}
+
+function obtenerError(error: any): string {
+  if (error?.code === "permission-denied") {
+    return (
+      "Firestore rechazó la operación. " +
+      "Comprueba que la muestra pertenece a tu laboratorio " +
+      "y que tiene el estado correcto."
+    );
   }
 
-  if (valor instanceof Date) {
-    return valor.toLocaleString("es-BO");
+  return error?.message || "Ocurrió un error inesperado.";
+}
+
+function mostrarFecha(valor: any): string {
+  if (!valor) {
+    return "No registrada";
   }
 
-  if (typeof valor === "string") {
-    const convertido = new Date(valor);
-
-    if (!isNaN(convertido.getTime())) {
-      return convertido.toLocaleString("es-BO");
+  try {
+    if (typeof valor.toDate === "function") {
+      return valor.toDate().toLocaleString("es-BO");
     }
 
-    return valor;
+    const fecha = new Date(valor);
+
+    if (isNaN(fecha.getTime())) {
+      return "No registrada";
+    }
+
+    return fecha.toLocaleString("es-BO");
+  } catch {
+    return "No registrada";
   }
-
-  return "";
-}
-
-function normalizarEstado(valor: unknown): string {
-  const estado = texto(valor).toLowerCase().trim();
-
-  if (estado === "pendiente") return "tomada";
-  if (estado === "tomado") return "tomada";
-
-  if (estado === "aceptado") return "aceptada";
-  if (estado === "rechazado") return "rechazada";
-
-  if (
-    estado === "en proceso" ||
-    estado === "en_proceso" ||
-    estado === "procesando"
-  ) {
-    return "en_proceso";
-  }
-
-  if (estado === "procesado") return "procesada";
-
-  return estado || "tomada";
 }
 
 function nombreEstado(estado: string): string {
@@ -129,758 +159,1018 @@ function nombreEstado(estado: string): string {
       return "Procesada";
 
     default:
-      return estado;
+      return estado || "Sin estado";
   }
 }
 
-function colorEstado(estado: string) {
+function colorEstado(estado: string): string {
   switch (estado) {
     case "tomada":
-      return {
-        fondo: "#FEF3C7",
-        texto: "#92400E",
-      };
+      return "#D97706";
 
     case "aceptada":
-      return {
-        fondo: "#DCFCE7",
-        texto: "#166534",
-      };
+      return "#2563EB";
 
     case "rechazada":
-      return {
-        fondo: "#FEE2E2",
-        texto: "#B91C1C",
-      };
+      return "#DC2626";
 
     case "en_proceso":
-      return {
-        fondo: "#DBEAFE",
-        texto: "#1D4ED8",
-      };
+      return "#7C3AED";
 
     case "procesada":
-      return {
-        fondo: "#CCFBF1",
-        texto: "#0F766E",
-      };
+      return "#059669";
 
     default:
-      return {
-        fondo: "#E2E8F0",
-        texto: "#334155",
-      };
+      return "#64748B";
   }
 }
 
-function mostrarError(error: unknown) {
-  const mensaje =
-    error instanceof Error
-      ? error.message
-      : "Ocurrió un error inesperado.";
+function convertirMuestra(
+  id: string,
+  datos: any
+): Muestra {
+  return {
+    id,
 
-  if (Platform.OS === "web") {
-    if (typeof window !== "undefined") {
-      window.alert(mensaje);
-    }
-  } else {
-    Alert.alert("Error", mensaje);
-  }
+    muestraId: texto(datos.muestraId) || id,
+
+    laboratorioId: texto(datos.laboratorioId),
+
+    ordenId: texto(datos.ordenId),
+
+    solicitudId: texto(datos.solicitudId),
+
+    pacienteId: texto(datos.pacienteId),
+
+    analisisId: texto(datos.analisisId),
+
+    analisisNombre:
+      texto(datos.analisisNombre) || "Análisis",
+
+    codigoEtiqueta:
+      texto(datos.codigoEtiqueta) || id,
+
+    tipo:
+      texto(datos.tipoMuestra) ||
+      texto(datos.tipo) ||
+      "No especificado",
+
+    estado: texto(datos.estado) || "tomada",
+
+    aceptada:
+      datos.aceptada === true ||
+      (
+        datos.aceptada === undefined &&
+        ["aceptada", "en_proceso", "procesada"].includes(
+          texto(datos.estado)
+        )
+      ),
+
+    motivoRechazo: texto(datos.motivoRechazo),
+
+    fechaToma:
+      datos.fechaToma ||
+      datos.fechaRegistro ||
+      null,
+
+    fechaValidacion:
+      datos.fechaValidacion || null,
+
+    fechaInicioProcesamiento:
+      datos.fechaInicioProcesamiento || null,
+
+    fechaFinProcesamiento:
+      datos.fechaFinProcesamiento || null,
+
+    historialEstados: Array.isArray(datos.historialEstados)
+      ? datos.historialEstados
+      : [],
+  };
 }
 
 // =====================================================
-// PANTALLA PRINCIPAL
+// COMPONENTE
 // =====================================================
 
-export default function SeguimientoMuestrasScreen() {
-  const { width } = useWindowDimensions();
+export default function SeguimientoMuestras() {
+  const router = useRouter();
 
-  const [muestras, setMuestras] = useState<Muestra[]>([]);
-  const [cargando, setCargando] = useState(true);
+  const [usuario, setUsuario] =
+    useState<Usuario | null>(null);
+
+  const [muestras, setMuestras] =
+    useState<Muestra[]>([]);
+
+  const [pacientes, setPacientes] = useState<
+    Record<string, Paciente>
+  >({});
 
   const [busqueda, setBusqueda] = useState("");
-  const [filtro, setFiltro] = useState<Filtro>("todas");
 
-  const [seleccionada, setSeleccionada] =
+  const [cargando, setCargando] = useState(true);
+
+  const [actualizando, setActualizando] = useState(false);
+
+  const [procesandoId, setProcesandoId] = useState("");
+
+  const [detalle, setDetalle] =
     useState<Muestra | null>(null);
 
-  const [error, setError] = useState("");
+  const [modalVisible, setModalVisible] = useState(false);
+
+  const [cargandoDetalle, setCargandoDetalle] =
+    useState(false);
 
   // ===================================================
-  // OBTENER NOMBRE DEL PACIENTE
+  // OBTENER USUARIO
   // ===================================================
 
-  const obtenerPaciente = async (
-    pacienteId: string
-  ): Promise<string> => {
-    if (!pacienteId) return "Sin paciente";
+  const obtenerUsuario = async (): Promise<Usuario> => {
+    const firebaseUser = auth.currentUser;
 
-    try {
-      const referencia = doc(db, "pacientes", pacienteId);
-      const documento = await getDoc(referencia);
-
-      if (!documento.exists()) return pacienteId;
-
-      const datos = documento.data();
-
-      const nombre = texto(
-        datos.nombre || datos.nombres
-      );
-
-      const apellido = texto(
-        datos.apellido || datos.apellidos
-      );
-
-      const completo = `${nombre} ${apellido}`.trim();
-
-      return completo || pacienteId;
-    } catch {
-      return pacienteId;
+    if (!firebaseUser) {
+      throw new Error("Debes iniciar sesión.");
     }
+
+    const usuarioSnap = await getDoc(
+      doc(db, "usuarios", firebaseUser.uid)
+    );
+
+    if (!usuarioSnap.exists()) {
+      throw new Error(
+        "No existe tu usuario en Firestore."
+      );
+    }
+
+    const datos = usuarioSnap.data();
+
+    if (datos.activo !== true) {
+      throw new Error("Tu usuario está inactivo.");
+    }
+
+    if (datos.rol !== "bioquimico") {
+      throw new Error(
+        "Esta pantalla corresponde al bioquímico."
+      );
+    }
+
+    const laboratorioId = texto(datos.laboratorioId);
+
+    if (!laboratorioId) {
+      throw new Error(
+        "Tu usuario no tiene laboratorio asignado."
+      );
+    }
+
+    return {
+      uid: firebaseUser.uid,
+      laboratorioId,
+      rol: texto(datos.rol),
+    };
   };
 
   // ===================================================
-  // OBTENER NOMBRE DEL ANÁLISIS
+  // CARGAR MUESTRAS
   // ===================================================
 
-  const obtenerAnalisis = async (
-    analisisId: string
-  ): Promise<string> => {
-    if (!analisisId) return "Sin análisis";
+  const cargarDatos = useCallback(
+    async (mostrarCarga = true) => {
+      try {
+        if (mostrarCarga) {
+          setCargando(true);
+        }
 
-    try {
-      const referencia = doc(db, "analisis", analisisId);
-      const documento = await getDoc(referencia);
+        const usuarioActual = await obtenerUsuario();
 
-      if (!documento.exists()) return analisisId;
+        setUsuario(usuarioActual);
 
-      const datos = documento.data();
-
-      return texto(
-        datos.nombre ||
-        datos.nombreAnalisis ||
-        datos.descripcion ||
-        analisisId
-      );
-    } catch {
-      return analisisId;
-    }
-  };
-
-  // ===================================================
-  // CARGAR MUESTRAS DE FIRESTORE
-  // ===================================================
-
-  const cargarMuestras = useCallback(async () => {
-    try {
-      setCargando(true);
-      setError("");
-
-      const usuario = getAuth().currentUser;
-
-      if (!usuario) {
-        throw new Error("Debes iniciar sesión.");
-      }
-
-      const referenciaUsuario = doc(
-        db,
-        "usuarios",
-        usuario.uid
-      );
-
-      const documentoUsuario = await getDoc(
-        referenciaUsuario
-      );
-
-      if (!documentoUsuario.exists()) {
-        throw new Error(
-          "No se encontró tu usuario en Firestore."
+        const consultaMuestras = query(
+          collection(db, "muestras"),
+          where(
+            "laboratorioId",
+            "==",
+            usuarioActual.laboratorioId
+          )
         );
-      }
 
-      const datosUsuario = documentoUsuario.data();
-
-      if (datosUsuario.activo === false) {
-        throw new Error("Tu usuario está desactivado.");
-      }
-
-      const laboratorioId = texto(
-        datosUsuario.laboratorioId
-      );
-
-      if (!laboratorioId) {
-        throw new Error(
-          "Tu usuario no tiene laboratorio asignado."
+        const consultaPacientes = query(
+          collection(db, "pacientes"),
+          where(
+            "laboratorioId",
+            "==",
+            usuarioActual.laboratorioId
+          )
         );
-      }
 
-      const consulta = query(
-        collection(db, "muestras"),
-        where("laboratorioId", "==", laboratorioId)
-      );
+        const [muestrasSnap, pacientesSnap] =
+          await Promise.all([
+            getDocs(consultaMuestras),
+            getDocs(consultaPacientes),
+          ]);
 
-      const resultado = await getDocs(consulta);
+        const listaMuestras = muestrasSnap.docs.map(
+          (documento) =>
+            convertirMuestra(
+              documento.id,
+              documento.data()
+            )
+        );
 
-      const lista = await Promise.all(
-        resultado.docs.map(async (documento) => {
+        listaMuestras.sort((a, b) => {
+          const orden = [
+            "aceptada",
+            "en_proceso",
+            "tomada",
+            "procesada",
+            "rechazada",
+          ];
+
+          return (
+            orden.indexOf(a.estado) -
+            orden.indexOf(b.estado)
+          );
+        });
+
+        const mapaPacientes: Record<string, Paciente> = {};
+
+        pacientesSnap.docs.forEach((documento) => {
           const datos = documento.data();
 
-          const pacienteId = texto(
-            datos.pacienteId
+          const nombres = texto(
+            datos.nombres || datos.nombre
           );
 
-          const analisisId = texto(
-            datos.analisisId
+          const apellidos = texto(
+            datos.apellidos || datos.apellido
           );
 
-          let paciente = texto(
-            datos.pacienteNombre ||
-            datos.nombrePaciente ||
-            datos.paciente
-          );
+          mapaPacientes[documento.id] = {
+            nombre:
+              [nombres, apellidos]
+                .filter(Boolean)
+                .join(" ") || "Paciente",
 
-          let analisis = texto(
-            datos.analisisNombre ||
-            datos.nombreAnalisis
-          );
-
-          if (!paciente) {
-            paciente = await obtenerPaciente(
-              pacienteId
-            );
-          }
-
-          if (!analisis) {
-            analisis = await obtenerAnalisis(
-              analisisId
-            );
-          }
-
-          const estado = normalizarEstado(
-            datos.estado
-          );
-
-          const muestra: Muestra = {
-            id: documento.id,
-
-            codigo: texto(
-              datos.codigo ||
-              datos.codigoMuestra ||
-              documento.id
-            ),
-
-            pacienteId,
-            paciente,
-
-            analisisId,
-            analisis,
-
-            ordenId: texto(datos.ordenId),
-
-            tipo: texto(
-              datos.tipoMuestra ||
-              datos.tipo ||
-              "-"
-            ),
-
-            estado,
-
-            fechaToma: fecha(
-              datos.fechaToma ||
-              datos.fecha
-            ),
-
-            fechaValidacion: fecha(
-              datos.fechaValidacion
-            ),
-
-            fechaProcesamiento: fecha(
-              datos.fechaProcesamiento
-            ),
-
-            motivoRechazo: texto(
-              datos.motivoRechazo
-            ),
-
-            validadoPor: texto(
-              datos.validadoPor
-            ),
+            ci: texto(datos.ci),
           };
+        });
 
-          return muestra;
-        })
-      );
+        setMuestras(listaMuestras);
+        setPacientes(mapaPacientes);
 
-      lista.sort((a, b) =>
-        b.fechaToma.localeCompare(a.fechaToma)
-      );
+        // Si el detalle está abierto, actualizarlo también.
+        setDetalle((anterior) => {
+          if (!anterior) {
+            return null;
+          }
 
-      setMuestras(lista);
-    } catch (e: unknown) {
-      const mensaje =
-        e instanceof Error
-          ? e.message
-          : "No se pudieron cargar las muestras.";
+          return (
+            listaMuestras.find(
+              (muestra) => muestra.id === anterior.id
+            ) || anterior
+          );
+        });
+      } catch (error: any) {
+        console.error(
+          "Error cargando seguimiento:",
+          error
+        );
 
-      setError(mensaje);
-      setMuestras([]);
-    } finally {
-      setCargando(false);
-    }
-  }, []);
+        mostrarMensaje(
+          "Error",
+          obtenerError(error)
+        );
+      } finally {
+        setCargando(false);
+      }
+    },
+    []
+  );
 
   useEffect(() => {
-    cargarMuestras();
-  }, [cargarMuestras]);
+    cargarDatos();
+  }, [cargarDatos]);
 
   // ===================================================
-  // CONTADORES
+  // BOTÓN ACTUALIZAR
   // ===================================================
 
-  const tomadas = muestras.filter(
-    (m) => m.estado === "tomada"
-  ).length;
+  const actualizar = async () => {
+    if (actualizando) {
+      return;
+    }
 
-  const aceptadas = muestras.filter(
-    (m) => m.estado === "aceptada"
-  ).length;
+    try {
+      setActualizando(true);
 
-  const rechazadas = muestras.filter(
-    (m) => m.estado === "rechazada"
-  ).length;
-
-  const enProceso = muestras.filter(
-    (m) => m.estado === "en_proceso"
-  ).length;
-
-  const procesadas = muestras.filter(
-    (m) => m.estado === "procesada"
-  ).length;
+      await cargarDatos(false);
+    } finally {
+      setActualizando(false);
+    }
+  };
 
   // ===================================================
-  // BUSCADOR Y FILTROS
+  // BOTÓN VER DETALLE
+  // ===================================================
+
+  const verDetalle = async (muestra: Muestra) => {
+    try {
+      setCargandoDetalle(true);
+
+      const usuarioActual =
+        usuario || (await obtenerUsuario());
+
+      const muestraSnap = await getDoc(
+        doc(db, "muestras", muestra.id)
+      );
+
+      if (!muestraSnap.exists()) {
+        throw new Error(
+          "Esta muestra ya no existe."
+        );
+      }
+
+      const datos = muestraSnap.data();
+
+      if (
+        texto(datos.laboratorioId) !==
+        usuarioActual.laboratorioId
+      ) {
+        throw new Error(
+          "La muestra pertenece a otro laboratorio."
+        );
+      }
+
+      const muestraActualizada = convertirMuestra(
+        muestraSnap.id,
+        datos
+      );
+
+      setDetalle(muestraActualizada);
+      setModalVisible(true);
+    } catch (error: any) {
+      console.error(
+        "Error consultando detalle:",
+        error
+      );
+
+      mostrarMensaje(
+        "No se pudo abrir el detalle",
+        obtenerError(error)
+      );
+    } finally {
+      setCargandoDetalle(false);
+    }
+  };
+
+  // ===================================================
+  // CAMBIAR ESTADO
+  // ===================================================
+
+  const cambiarEstado = async (
+    muestra: Muestra,
+    nuevoEstado: "en_proceso" | "procesada"
+  ) => {
+    try {
+      if (procesandoId) {
+        return;
+      }
+
+      const usuarioActual =
+        usuario || (await obtenerUsuario());
+
+      setProcesandoId(muestra.id);
+
+      const muestraRef = doc(
+        db,
+        "muestras",
+        muestra.id
+      );
+
+      await runTransaction(db, async (transaction) => {
+        const muestraSnap = await transaction.get(
+          muestraRef
+        );
+
+        if (!muestraSnap.exists()) {
+          throw new Error(
+            "La muestra ya no existe."
+          );
+        }
+
+        const datos = muestraSnap.data();
+
+        if (
+          texto(datos.laboratorioId) !==
+          usuarioActual.laboratorioId
+        ) {
+          throw new Error(
+            "La muestra pertenece a otro laboratorio."
+          );
+        }
+
+        const estadoActual = texto(datos.estado);
+
+        const estadoEsperado =
+          nuevoEstado === "en_proceso"
+            ? "aceptada"
+            : "en_proceso";
+
+        if (estadoActual !== estadoEsperado) {
+          throw new Error(
+            `La muestra debe estar en estado "${nombreEstado(
+              estadoEsperado
+            )}" para realizar esta acción.`
+          );
+        }
+
+        // Compatibilidad con muestras anteriores
+        // que no guardaban el campo aceptada.
+        if (datos.aceptada === false) {
+          throw new Error(
+            "La muestra no está aceptada."
+          );
+        }
+
+        const cambios: Record<string, any> = {
+          estado: nuevoEstado,
+          actualizadoPor: usuarioActual.uid,
+          fechaActualizacion: serverTimestamp(),
+        };
+
+        if (nuevoEstado === "en_proceso") {
+          cambios.fechaInicioProcesamiento =
+            serverTimestamp();
+        }
+
+        if (nuevoEstado === "procesada") {
+          cambios.fechaFinProcesamiento =
+            serverTimestamp();
+        }
+
+        // No modificar aceptada, laboratorioId,
+        // ordenId ni otros datos originales.
+        transaction.update(muestraRef, cambios);
+      });
+
+      mostrarMensaje(
+        "Operación correcta",
+        nuevoEstado === "en_proceso"
+          ? "Se inició el procesamiento de la muestra."
+          : "Se finalizó el procesamiento de la muestra."
+      );
+
+      // Actualizar inmediatamente la lista.
+      await cargarDatos(false);
+
+      // Actualizar también el detalle abierto.
+      const muestraActualizada = await getDoc(
+        muestraRef
+      );
+
+      if (muestraActualizada.exists()) {
+        setDetalle(
+          convertirMuestra(
+            muestraActualizada.id,
+            muestraActualizada.data()
+          )
+        );
+      }
+    } catch (error: any) {
+      console.error(
+        "Error actualizando estado:",
+        error
+      );
+
+      mostrarMensaje(
+        "No se pudo actualizar",
+        obtenerError(error)
+      );
+    } finally {
+      setProcesandoId("");
+    }
+  };
+
+  // ===================================================
+  // CONFIRMAR INICIO
+  // ===================================================
+
+  const iniciarProceso = (muestra: Muestra) => {
+    confirmar(
+      "Iniciar proceso",
+      "¿Deseas iniciar el procesamiento de esta muestra?",
+      () => cambiarEstado(muestra, "en_proceso")
+    );
+  };
+
+  // ===================================================
+  // CONFIRMAR FINALIZACIÓN
+  // ===================================================
+
+  const finalizarProceso = (muestra: Muestra) => {
+    confirmar(
+      "Finalizar proceso",
+      "¿Deseas marcar esta muestra como procesada?",
+      () => cambiarEstado(muestra, "procesada")
+    );
+  };
+
+  // ===================================================
+  // FILTRAR MUESTRAS
   // ===================================================
 
   const muestrasFiltradas = muestras.filter(
     (muestra) => {
-      const buscar = busqueda.toLowerCase().trim();
+      const paciente = pacientes[muestra.pacienteId];
 
       const contenido = [
-        muestra.codigo,
-        muestra.paciente,
-        muestra.pacienteId,
+        muestra.codigoEtiqueta,
+        muestra.muestraId,
         muestra.ordenId,
-        muestra.analisis,
-        muestra.analisisId,
+        muestra.analisisNombre,
         muestra.tipo,
+        muestra.estado,
+        paciente?.nombre || "",
+        paciente?.ci || "",
       ]
         .join(" ")
         .toLowerCase();
 
-      const coincideBusqueda =
-        contenido.includes(buscar);
-
-      const coincideEstado =
-        filtro === "todas" ||
-        muestra.estado === filtro;
-
-      return coincideBusqueda && coincideEstado;
+      return contenido.includes(
+        busqueda.trim().toLowerCase()
+      );
     }
   );
 
-  // ===================================================
-  // CONTADORES VISUALES
-  // ===================================================
+  const tomadas = muestras.filter(
+    (muestra) => muestra.estado === "tomada"
+  ).length;
 
-  const Contador = ({
-    titulo,
-    cantidad,
-  }: {
-    titulo: string;
-    cantidad: number;
-  }) => (
-    <View
-      style={[
-        styles.contador,
-        {
-          width:
-            width > 900
-              ? "19%"
-              : width > 600
-              ? "31%"
-              : "48%",
-        },
-      ]}
-    >
-      <Text style={styles.contadorTitulo}>
-        {titulo}
-      </Text>
+  const aceptadas = muestras.filter(
+    (muestra) => muestra.estado === "aceptada"
+  ).length;
 
-      <Text style={styles.contadorNumero}>
-        {cantidad}
-      </Text>
-    </View>
-  );
+  const enProceso = muestras.filter(
+    (muestra) => muestra.estado === "en_proceso"
+  ).length;
+
+  const procesadas = muestras.filter(
+    (muestra) => muestra.estado === "procesada"
+  ).length;
 
   // ===================================================
-  // FILA DE TABLA
+  // COMPONENTE DE ACCIONES
   // ===================================================
 
-  const renderFila = ({
-    item,
-  }: {
-    item: Muestra;
-  }) => {
-    const colores = colorEstado(item.estado);
+  const botonesAcciones = (muestra: Muestra) => {
+    const ocupado = procesandoId === muestra.id;
 
     return (
-      <View style={styles.fila}>
-        <Text style={[styles.celda, styles.colCodigo]}>
-          {item.codigo}
-        </Text>
+      <View style={styles.acciones}>
+        <Pressable
+          style={[
+            styles.boton,
+            styles.botonDetalle,
+            cargandoDetalle && styles.deshabilitado,
+          ]}
+          disabled={cargandoDetalle}
+          onPress={() => verDetalle(muestra)}
+        >
+          <Text style={styles.textoBoton}>
+            Ver detalle
+          </Text>
+        </Pressable>
 
-        <Text style={[styles.celda, styles.colPaciente]}>
-          {item.paciente}
-        </Text>
-
-        <Text style={[styles.celda, styles.colAnalisis]}>
-          {item.analisis}
-        </Text>
-
-        <Text style={[styles.celda, styles.colTipo]}>
-          {item.tipo}
-        </Text>
-
-        <View style={styles.colEstado}>
-          <View
-            style={[
-              styles.estadoBadge,
-              {
-                backgroundColor: colores.fondo,
-              },
-            ]}
-          >
-            <Text
-              style={[
-                styles.estadoTexto,
-                {
-                  color: colores.texto,
-                },
-              ]}
-            >
-              {nombreEstado(item.estado)}
-            </Text>
-          </View>
-        </View>
-
-        <Text style={[styles.celda, styles.colFecha]}>
-          {item.fechaToma || "-"}
-        </Text>
-
-        <View style={styles.colAcciones}>
+        {muestra.estado === "aceptada" && (
           <Pressable
-            style={styles.botonHistorial}
-            onPress={() => setSeleccionada(item)}
+            style={[
+              styles.boton,
+              styles.botonIniciar,
+              ocupado && styles.deshabilitado,
+            ]}
+            disabled={ocupado}
+            onPress={() => iniciarProceso(muestra)}
           >
-            <Text style={styles.botonHistorialTexto}>
-              Historial
-            </Text>
+            {ocupado ? (
+              <ActivityIndicator color="#FFFFFF" />
+            ) : (
+              <Text style={styles.textoBoton}>
+                Iniciar proceso
+              </Text>
+            )}
           </Pressable>
-        </View>
+        )}
+
+        {muestra.estado === "en_proceso" && (
+          <Pressable
+            style={[
+              styles.boton,
+              styles.botonFinalizar,
+              ocupado && styles.deshabilitado,
+            ]}
+            disabled={ocupado}
+            onPress={() => finalizarProceso(muestra)}
+          >
+            {ocupado ? (
+              <ActivityIndicator color="#FFFFFF" />
+            ) : (
+              <Text style={styles.textoBoton}>
+                Finalizar proceso
+              </Text>
+            )}
+          </Pressable>
+        )}
       </View>
     );
   };
 
   // ===================================================
-  // INTERFAZ
+  // PANTALLA DE CARGA
+  // ===================================================
+
+  if (cargando) {
+    return (
+      <View style={styles.centrado}>
+        <ActivityIndicator
+          size="large"
+          color="#19385F"
+        />
+
+        <Text style={styles.textoSecundario}>
+          Cargando seguimiento de muestras...
+        </Text>
+      </View>
+    );
+  }
+
+  // ===================================================
+  // INTERFAZ PRINCIPAL
   // ===================================================
 
   return (
     <View style={styles.contenedor}>
       <ScrollView
         contentContainerStyle={styles.contenido}
+        keyboardShouldPersistTaps="handled"
       >
         {/* ENCABEZADO */}
 
         <View style={styles.encabezado}>
-          <Text style={styles.titulo}>
-            Seguimiento de muestras
-          </Text>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.titulo}>
+              Seguimiento de muestras
+            </Text>
+
+            <Text style={styles.subtitulo}>
+              Consulta el estado y controla el
+              procesamiento de las muestras.
+            </Text>
+          </View>
+
+          <Pressable
+            style={styles.botonVolver}
+            onPress={() => router.back()}
+          >
+            <Text style={styles.textoBoton}>
+              Volver
+            </Text>
+          </Pressable>
         </View>
 
         {/* CONTADORES */}
 
         <View style={styles.contadores}>
-          <Contador
-            titulo="Tomadas"
-            cantidad={tomadas}
-          />
+          <View style={styles.contador}>
+            <Text style={styles.contadorTitulo}>
+              Total
+            </Text>
 
-          <Contador
-            titulo="Aceptadas"
-            cantidad={aceptadas}
-          />
+            <Text style={styles.contadorNumero}>
+              {muestras.length}
+            </Text>
+          </View>
 
-          <Contador
-            titulo="Rechazadas"
-            cantidad={rechazadas}
-          />
+          <View style={styles.contador}>
+            <Text style={styles.contadorTitulo}>
+              Tomadas
+            </Text>
 
-          <Contador
-            titulo="En proceso"
-            cantidad={enProceso}
-          />
+            <Text style={styles.contadorNumero}>
+              {tomadas}
+            </Text>
+          </View>
 
-          <Contador
-            titulo="Procesadas"
-            cantidad={procesadas}
-          />
+          <View style={styles.contador}>
+            <Text style={styles.contadorTitulo}>
+              Aceptadas
+            </Text>
+
+            <Text style={styles.contadorNumero}>
+              {aceptadas}
+            </Text>
+          </View>
+
+          <View style={styles.contador}>
+            <Text style={styles.contadorTitulo}>
+              En proceso
+            </Text>
+
+            <Text style={styles.contadorNumero}>
+              {enProceso}
+            </Text>
+          </View>
+
+          <View style={styles.contador}>
+            <Text style={styles.contadorTitulo}>
+              Procesadas
+            </Text>
+
+            <Text style={styles.contadorNumero}>
+              {procesadas}
+            </Text>
+          </View>
         </View>
 
         {/* BUSCADOR */}
 
         <View style={styles.panel}>
-          <View style={styles.barraBusqueda}>
-            <TextInput
-              style={styles.buscador}
-              placeholder="Buscar por paciente, código, orden o análisis..."
-              placeholderTextColor="#94A3B8"
-              value={busqueda}
-              onChangeText={setBusqueda}
-            />
+          <Text style={styles.seccionTitulo}>
+            Buscar muestra
+          </Text>
 
-            <Pressable
-              style={styles.botonActualizar}
-              onPress={cargarMuestras}
-            >
-              <Text style={styles.botonTexto}>
+          <TextInput
+            style={styles.input}
+            placeholder="Paciente, CI, análisis o código"
+            placeholderTextColor="#94A3B8"
+            value={busqueda}
+            onChangeText={setBusqueda}
+          />
+
+          {/* BOTÓN ACTUALIZAR FUNCIONAL */}
+
+          <Pressable
+            style={[
+              styles.botonActualizar,
+              actualizando && styles.deshabilitado,
+            ]}
+            disabled={actualizando}
+            onPress={actualizar}
+          >
+            {actualizando ? (
+              <ActivityIndicator color="#FFFFFF" />
+            ) : (
+              <Text style={styles.textoBoton}>
                 Actualizar
               </Text>
-            </Pressable>
-          </View>
+            )}
+          </Pressable>
+        </View>
 
-          {/* FILTROS */}
+        {/* LISTADO */}
 
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={styles.filtros}
-          >
-            {(
-              [
-                ["todas", "Todas"],
-                ["tomada", "Tomadas"],
-                ["aceptada", "Aceptadas"],
-                ["rechazada", "Rechazadas"],
-                ["en_proceso", "En proceso"],
-                ["procesada", "Procesadas"],
-              ] as [Filtro, string][]
-            ).map(([valor, nombre]) => (
-              <Pressable
-                key={valor}
-                style={[
-                  styles.filtro,
-                  filtro === valor &&
-                    styles.filtroActivo,
-                ]}
-                onPress={() => setFiltro(valor)}
-              >
-                <Text
-                  style={[
-                    styles.filtroTexto,
-                    filtro === valor &&
-                      styles.filtroTextoActivo,
-                  ]}
-                >
-                  {nombre}
-                </Text>
-              </Pressable>
-            ))}
-          </ScrollView>
+        <View style={styles.panel}>
+          <Text style={styles.seccionTitulo}>
+            Muestras registradas
+          </Text>
 
-          {/* ERRORES */}
-
-          {error !== "" && (
-            <Text style={styles.error}>
-              {error}
+          {muestrasFiltradas.length === 0 ? (
+            <Text style={styles.textoSecundario}>
+              No se encontraron muestras.
             </Text>
-          )}
-
-          {/* TABLA */}
-
-          {cargando ? (
-            <ActivityIndicator
-              size="large"
-              color="#17365D"
-              style={{ marginTop: 30 }}
-            />
           ) : (
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator
-            >
-              <View style={styles.tabla}>
-                <View style={styles.cabeceraTabla}>
-                  <Text
-                    style={[
-                      styles.cabeceraTexto,
-                      styles.colCodigo,
-                    ]}
-                  >
-                    Código
-                  </Text>
+            muestrasFiltradas.map((muestra) => {
+              const paciente =
+                pacientes[muestra.pacienteId];
 
-                  <Text
-                    style={[
-                      styles.cabeceraTexto,
-                      styles.colPaciente,
-                    ]}
-                  >
-                    Paciente
-                  </Text>
-
-                  <Text
-                    style={[
-                      styles.cabeceraTexto,
-                      styles.colAnalisis,
-                    ]}
-                  >
-                    Análisis
-                  </Text>
-
-                  <Text
-                    style={[
-                      styles.cabeceraTexto,
-                      styles.colTipo,
-                    ]}
-                  >
-                    Tipo
-                  </Text>
-
-                  <Text
-                    style={[
-                      styles.cabeceraTexto,
-                      styles.colEstado,
-                    ]}
-                  >
-                    Estado
-                  </Text>
-
-                  <Text
-                    style={[
-                      styles.cabeceraTexto,
-                      styles.colFecha,
-                    ]}
-                  >
-                    Fecha de toma
-                  </Text>
-
-                  <Text
-                    style={[
-                      styles.cabeceraTexto,
-                      styles.colAcciones,
-                    ]}
-                  >
-                    Acciones
-                  </Text>
-                </View>
-
-                <FlatList
-                  data={muestrasFiltradas}
-                  keyExtractor={(item) => item.id}
-                  renderItem={renderFila}
-                  scrollEnabled={false}
-                  ListEmptyComponent={
-                    <Text style={styles.sinDatos}>
-                      No se encontraron muestras.
+              return (
+                <View
+                  key={muestra.id}
+                  style={styles.tarjeta}
+                >
+                  <View style={styles.filaTitulo}>
+                    <Text style={styles.nombreAnalisis}>
+                      {muestra.analisisNombre}
                     </Text>
-                  }
-                />
-              </View>
-            </ScrollView>
+
+                    <View
+                      style={[
+                        styles.etiquetaEstado,
+                        {
+                          backgroundColor:
+                            colorEstado(muestra.estado),
+                        },
+                      ]}
+                    >
+                      <Text style={styles.textoEstado}>
+                        {nombreEstado(muestra.estado)}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <Text style={styles.dato}>
+                    Código: {muestra.codigoEtiqueta}
+                  </Text>
+
+                  <Text style={styles.dato}>
+                    Paciente:{" "}
+                    {paciente?.nombre || "Sin identificar"}
+                  </Text>
+
+                  <Text style={styles.dato}>
+                    CI: {paciente?.ci || "-"}
+                  </Text>
+
+                  <Text style={styles.dato}>
+                    Tipo: {muestra.tipo}
+                  </Text>
+
+                  <Text style={styles.dato}>
+                    Orden: {muestra.ordenId || "-"}
+                  </Text>
+
+                  <Text style={styles.dato}>
+                    Fecha de toma:{" "}
+                    {mostrarFecha(muestra.fechaToma)}
+                  </Text>
+
+                  {botonesAcciones(muestra)}
+                </View>
+              );
+            })
           )}
         </View>
       </ScrollView>
 
-      {/* MODAL DE HISTORIAL */}
+      {/* MODAL VER DETALLE */}
 
       <Modal
-        visible={seleccionada !== null}
+        visible={modalVisible}
         transparent
-        animationType="fade"
-        onRequestClose={() => setSeleccionada(null)}
+        animationType="slide"
+        onRequestClose={() => setModalVisible(false)}
       >
         <View style={styles.fondoModal}>
           <View style={styles.modal}>
-            <ScrollView>
-              <Text style={styles.modalTitulo}>
-                Historial de muestra
+            <ScrollView
+              contentContainerStyle={styles.contenidoModal}
+            >
+              <Text style={styles.tituloModal}>
+                Detalle de la muestra
               </Text>
 
-              <Text style={styles.modalCodigo}>
-                {seleccionada?.codigo}
-              </Text>
+              {detalle && (
+                <>
+                  <View style={styles.resumen}>
+                    <Text style={styles.nombreAnalisis}>
+                      {detalle.analisisNombre}
+                    </Text>
 
-              <Text style={styles.modalDato}>
-                Paciente: {seleccionada?.paciente}
-              </Text>
+                    <Text style={styles.dato}>
+                      Paciente:{" "}
+                      {pacientes[detalle.pacienteId]
+                        ?.nombre || "Sin identificar"}
+                    </Text>
 
-              <Text style={styles.modalDato}>
-                Análisis: {seleccionada?.analisis}
-              </Text>
+                    <Text style={styles.dato}>
+                      CI:{" "}
+                      {pacientes[detalle.pacienteId]
+                        ?.ci || "-"}
+                    </Text>
 
-              <Text style={styles.modalDato}>
-                Orden: {seleccionada?.ordenId}
-              </Text>
+                    <Text style={styles.dato}>
+                      Estado: {nombreEstado(detalle.estado)}
+                    </Text>
+                  </View>
 
-              <View style={styles.separador} />
+                  <View style={styles.bloqueDetalle}>
+                    <Text style={styles.seccionTitulo}>
+                      Información de la muestra
+                    </Text>
 
-              <Text style={styles.historialTitulo}>
-                1. Toma de muestra
-              </Text>
+                    <Text style={styles.dato}>
+                      Código: {detalle.codigoEtiqueta}
+                    </Text>
 
-              <Text style={styles.modalDato}>
-                Fecha: {seleccionada?.fechaToma || "No registrada"}
-              </Text>
+                    <Text style={styles.dato}>
+                      ID de muestra: {detalle.muestraId}
+                    </Text>
 
-              <Text style={styles.historialTitulo}>
-                2. Recepción y validación
-              </Text>
+                    <Text style={styles.dato}>
+                      Orden: {detalle.ordenId || "-"}
+                    </Text>
 
-              <Text style={styles.modalDato}>
-                Estado: {nombreEstado(seleccionada?.estado || "")}
-              </Text>
+                    <Text style={styles.dato}>
+                      Solicitud:{" "}
+                      {detalle.solicitudId || "-"}
+                    </Text>
 
-              <Text style={styles.modalDato}>
-                Fecha: {seleccionada?.fechaValidacion || "No registrada"}
-              </Text>
+                    <Text style={styles.dato}>
+                      Tipo de muestra: {detalle.tipo}
+                    </Text>
 
-              <Text style={styles.modalDato}>
-                Responsable: {seleccionada?.validadoPor || "No registrado"}
-              </Text>
+                    <Text style={styles.dato}>
+                      Aceptada:{" "}
+                      {detalle.aceptada ? "Sí" : "No"}
+                    </Text>
 
-              {seleccionada?.estado === "rechazada" && (
-                <Text style={styles.motivo}>
-                  Motivo de rechazo: {seleccionada.motivoRechazo}
-                </Text>
+                    {detalle.motivoRechazo !== "" && (
+                      <Text style={styles.dato}>
+                        Motivo de rechazo:{" "}
+                        {detalle.motivoRechazo}
+                      </Text>
+                    )}
+                  </View>
+
+                  <View style={styles.bloqueDetalle}>
+                    <Text style={styles.seccionTitulo}>
+                      Seguimiento del procesamiento
+                    </Text>
+
+                    <Text style={styles.dato}>
+                      Fecha de toma:{" "}
+                      {mostrarFecha(detalle.fechaToma)}
+                    </Text>
+
+                    <Text style={styles.dato}>
+                      Fecha de validación:{" "}
+                      {mostrarFecha(
+                        detalle.fechaValidacion
+                      )}
+                    </Text>
+
+                    <Text style={styles.dato}>
+                      Inicio del proceso:{" "}
+                      {mostrarFecha(
+                        detalle.fechaInicioProcesamiento
+                      )}
+                    </Text>
+
+                    <Text style={styles.dato}>
+                      Fin del proceso:{" "}
+                      {mostrarFecha(
+                        detalle.fechaFinProcesamiento
+                      )}
+                    </Text>
+                  </View>
+
+                  <View style={styles.accionesModal}>
+                    <Pressable
+                      style={[
+                        styles.boton,
+                        styles.botonCerrar,
+                      ]}
+                      onPress={() => setModalVisible(false)}
+                    >
+                      <Text style={styles.textoBoton}>
+                        Cerrar
+                      </Text>
+                    </Pressable>
+
+                    <Pressable
+                      style={[
+                        styles.boton,
+                        styles.botonActualizar,
+                      ]}
+                      onPress={async () => {
+                        await verDetalle(detalle);
+                      }}
+                    >
+                      <Text style={styles.textoBoton}>
+                        Actualizar detalle
+                      </Text>
+                    </Pressable>
+
+                    {detalle.estado === "aceptada" && (
+                      <Pressable
+                        style={[
+                          styles.boton,
+                          styles.botonIniciar,
+                        ]}
+                        disabled={procesandoId === detalle.id}
+                        onPress={() => iniciarProceso(detalle)}
+                      >
+                        <Text style={styles.textoBoton}>
+                          Iniciar proceso
+                        </Text>
+                      </Pressable>
+                    )}
+
+                    {detalle.estado === "en_proceso" && (
+                      <Pressable
+                        style={[
+                          styles.boton,
+                          styles.botonFinalizar,
+                        ]}
+                        disabled={procesandoId === detalle.id}
+                        onPress={() => finalizarProceso(detalle)}
+                      >
+                        <Text style={styles.textoBoton}>
+                          Finalizar proceso
+                        </Text>
+                      </Pressable>
+                    )}
+                  </View>
+                </>
               )}
-
-              <Text style={styles.historialTitulo}>
-                3. Procesamiento
-              </Text>
-
-              <Text style={styles.modalDato}>
-                Fecha: {seleccionada?.fechaProcesamiento || "No registrada"}
-              </Text>
-
-              <Pressable
-                style={styles.botonCerrar}
-                onPress={() => setSeleccionada(null)}
-              >
-                <Text style={styles.botonTexto}>
-                  Cerrar
-                </Text>
-              </Pressable>
             </ScrollView>
           </View>
         </View>
@@ -896,270 +1186,246 @@ export default function SeguimientoMuestrasScreen() {
 const styles = StyleSheet.create({
   contenedor: {
     flex: 1,
-    backgroundColor: "#F3F6FB",
+    backgroundColor: "#F4F7FB",
   },
 
   contenido: {
     padding: 20,
-    paddingBottom: 40,
+    paddingBottom: 50,
+  },
+
+  centrado: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#F4F7FB",
+  },
+
+  textoSecundario: {
+    fontSize: 14,
+    color: "#64748B",
+    marginTop: 10,
   },
 
   encabezado: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 12,
     marginBottom: 20,
   },
 
   titulo: {
     fontSize: 27,
-    fontWeight: "800",
-    color: "#17365D",
+    fontWeight: "bold",
+    color: "#19385F",
+  },
+
+  subtitulo: {
+    fontSize: 14,
+    color: "#64748B",
+    marginTop: 6,
+  },
+
+  botonVolver: {
+    backgroundColor: "#64748B",
+    padding: 12,
+    borderRadius: 8,
+  },
+
+  textoBoton: {
+    color: "#FFFFFF",
+    fontWeight: "bold",
+    textAlign: "center",
   },
 
   contadores: {
     flexDirection: "row",
     flexWrap: "wrap",
-    justifyContent: "space-between",
-    gap: 8,
-    marginBottom: 22,
+    gap: 10,
+    marginBottom: 20,
   },
 
   contador: {
+    flexGrow: 1,
+    minWidth: 120,
     backgroundColor: "#FFFFFF",
+    padding: 16,
     borderRadius: 12,
     borderWidth: 1,
     borderColor: "#E2E8F0",
-    padding: 16,
-    minHeight: 95,
   },
 
   contadorTitulo: {
-    fontSize: 13,
     color: "#64748B",
+    fontSize: 13,
   },
 
   contadorNumero: {
-    fontSize: 24,
-    fontWeight: "800",
-    color: "#17365D",
+    color: "#19385F",
+    fontSize: 25,
+    fontWeight: "bold",
     marginTop: 8,
   },
 
   panel: {
     backgroundColor: "#FFFFFF",
-    padding: 16,
+    padding: 18,
     borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    marginBottom: 18,
   },
 
-  barraBusqueda: {
-    flexDirection: "row",
-    gap: 10,
+  seccionTitulo: {
+    color: "#19385F",
+    fontSize: 18,
+    fontWeight: "bold",
     marginBottom: 14,
   },
 
-  buscador: {
-    flex: 1,
+  input: {
     borderWidth: 1,
     borderColor: "#CBD5E1",
-    borderRadius: 8,
-    padding: 12,
+    borderRadius: 9,
+    padding: 13,
+    fontSize: 15,
     color: "#0F172A",
+    marginBottom: 12,
   },
 
   botonActualizar: {
     backgroundColor: "#2563EB",
-    borderRadius: 8,
-    paddingHorizontal: 15,
-    justifyContent: "center",
+    padding: 12,
+    borderRadius: 9,
+    alignSelf: "flex-start",
+    minWidth: 110,
   },
 
-  botonTexto: {
-    color: "#FFFFFF",
-    fontSize: 12,
-    fontWeight: "700",
+  deshabilitado: {
+    opacity: 0.5,
   },
 
-  filtros: {
-    marginBottom: 15,
+  tarjeta: {
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 14,
   },
 
-  filtro: {
-    backgroundColor: "#E2E8F0",
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 8,
-    marginRight: 8,
-  },
-
-  filtroActivo: {
-    backgroundColor: "#17365D",
-  },
-
-  filtroTexto: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: "#334155",
-  },
-
-  filtroTextoActivo: {
-    color: "#FFFFFF",
-  },
-
-  tabla: {
-    minWidth: 1150,
-  },
-
-  cabeceraTabla: {
+  filaTitulo: {
     flexDirection: "row",
-    backgroundColor: "#17365D",
-    paddingVertical: 14,
+    flexWrap: "wrap",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 10,
+    marginBottom: 12,
+  },
+
+  nombreAnalisis: {
+    fontSize: 17,
+    fontWeight: "bold",
+    color: "#19385F",
+    flexShrink: 1,
+  },
+
+  etiquetaEstado: {
     paddingHorizontal: 12,
-    alignItems: "center",
-  },
-
-  cabeceraTexto: {
-    color: "#FFFFFF",
-    fontWeight: "800",
-    fontSize: 12,
-  },
-
-  fila: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: 15,
-    paddingHorizontal: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: "#E2E8F0",
-  },
-
-  celda: {
-    fontSize: 12,
-    color: "#0F172A",
-  },
-
-  colCodigo: {
-    width: 180,
-  },
-
-  colPaciente: {
-    width: 220,
-  },
-
-  colAnalisis: {
-    width: 200,
-  },
-
-  colTipo: {
-    width: 110,
-  },
-
-  colEstado: {
-    width: 130,
-  },
-
-  colFecha: {
-    width: 190,
-  },
-
-  colAcciones: {
-    width: 110,
-    alignItems: "center",
-  },
-
-  estadoBadge: {
-    paddingHorizontal: 10,
     paddingVertical: 7,
     borderRadius: 20,
-    alignSelf: "flex-start",
   },
 
-  estadoTexto: {
-    fontSize: 11,
-    fontWeight: "800",
-  },
-
-  botonHistorial: {
-    backgroundColor: "#64748B",
-    borderRadius: 7,
-    paddingVertical: 9,
-    paddingHorizontal: 13,
-  },
-
-  botonHistorialTexto: {
+  textoEstado: {
     color: "#FFFFFF",
+    fontWeight: "bold",
     fontSize: 12,
-    fontWeight: "700",
   },
 
-  sinDatos: {
-    padding: 25,
-    color: "#64748B",
-    textAlign: "center",
+  dato: {
+    color: "#475569",
+    fontSize: 14,
+    marginBottom: 9,
   },
 
-  error: {
-    color: "#DC2626",
-    marginBottom: 15,
-    fontSize: 13,
+  acciones: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+    marginTop: 12,
+  },
+
+  boton: {
+    paddingHorizontal: 15,
+    paddingVertical: 12,
+    borderRadius: 9,
+  },
+
+  botonDetalle: {
+    backgroundColor: "#19385F",
+  },
+
+  botonIniciar: {
+    backgroundColor: "#2563EB",
+  },
+
+  botonFinalizar: {
+    backgroundColor: "#059669",
   },
 
   fondoModal: {
     flex: 1,
-    backgroundColor: "rgba(15,23,42,0.65)",
+    backgroundColor: "rgba(0,0,0,0.55)",
     justifyContent: "center",
-    padding: 20,
+    alignItems: "center",
+    padding: 15,
   },
 
   modal: {
     backgroundColor: "#FFFFFF",
-    borderRadius: 15,
-    padding: 22,
-    maxHeight: "85%",
+    borderRadius: 14,
+    width: "100%",
+    maxWidth: 700,
+    maxHeight: "90%",
+    overflow: "hidden",
   },
 
-  modalTitulo: {
-    fontSize: 21,
-    fontWeight: "800",
-    color: "#17365D",
-    marginBottom: 12,
+  contenidoModal: {
+    padding: 20,
+    paddingBottom: 35,
   },
 
-  modalCodigo: {
-    fontSize: 15,
-    fontWeight: "800",
-    color: "#0F172A",
-    marginBottom: 12,
+  tituloModal: {
+    fontSize: 23,
+    fontWeight: "bold",
+    color: "#19385F",
+    marginBottom: 18,
   },
 
-  modalDato: {
-    fontSize: 13,
-    color: "#475569",
-    marginBottom: 8,
+  resumen: {
+    backgroundColor: "#F1F5F9",
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 15,
   },
 
-  historialTitulo: {
-    fontSize: 15,
-    fontWeight: "800",
-    color: "#17365D",
-    marginTop: 16,
-    marginBottom: 8,
+  bloqueDetalle: {
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 15,
   },
 
-  separador: {
-    height: 1,
-    backgroundColor: "#E2E8F0",
-    marginVertical: 12,
-  },
-
-  motivo: {
-    fontSize: 13,
-    color: "#B91C1C",
-    marginTop: 7,
+  accionesModal: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "flex-end",
+    gap: 10,
+    marginTop: 15,
   },
 
   botonCerrar: {
-    backgroundColor: "#17365D",
-    borderRadius: 9,
-    padding: 13,
-    alignItems: "center",
-    marginTop: 20,
+    backgroundColor: "#64748B",
   },
 });

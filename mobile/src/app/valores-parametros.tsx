@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
+
 import {
   ActivityIndicator,
   Alert,
@@ -12,405 +13,566 @@ import {
   View,
 } from "react-native";
 
-import { getAuth } from "firebase/auth";
+import { useRouter } from "expo-router";
 
 import {
   collection,
   doc,
   getDoc,
   getDocs,
-  updateDoc,
-  serverTimestamp,
   query,
   where,
 } from "firebase/firestore";
 
-import { db } from "../firebase/firebase";
+import { auth, db } from "../firebase/firebase";
 
 // =====================================================
 // TIPOS
 // =====================================================
 
+type Usuario = {
+  uid: string;
+  laboratorioId: string;
+};
+
+type Muestra = {
+  id: string;
+  pacienteId: string;
+  analisisId: string;
+  analisisNombre: string;
+  laboratorioId: string;
+  estado: string;
+  codigoEtiqueta: string;
+};
+
+type Paciente = {
+  nombre: string;
+  ci: string;
+};
+
 type Parametro = {
   id: string;
   nombre: string;
   unidad: string;
-  valorReferencia: string;
-  valor: string;
+  referencia: string;
 };
 
-type Resultado = {
-  id: string;
-  muestraId: string;
-  pacienteId: string;
-  analisisId: string;
-  ordenId: string;
-  laboratorioId: string;
-  estado: string;
-  paciente: string;
-  analisis: string;
-  parametros: Parametro[];
-};
+// =====================================================
+// FUNCIONES AUXILIARES
+// =====================================================
 
-function texto(valor: unknown): string {
-  if (valor === null || valor === undefined) return "";
-  return String(valor);
+function texto(valor: any): string {
+  if (valor === null || valor === undefined) {
+    return "";
+  }
+
+  if (typeof valor === "object") {
+    return "";
+  }
+
+  return String(valor).trim();
 }
 
-function aviso(titulo: string, contenido: string) {
+function mostrarMensaje(titulo: string, mensaje: string) {
   if (Platform.OS === "web") {
-    if (typeof window !== "undefined") {
-      window.alert(`${titulo}\n\n${contenido}`);
-    }
+    window.alert(`${titulo}\n\n${mensaje}`);
   } else {
-    Alert.alert(titulo, contenido);
+    Alert.alert(titulo, mensaje);
   }
 }
 
+function errorMensaje(error: any): string {
+  if (error?.code === "permission-denied") {
+    return (
+      "Firestore rechazó la consulta. " +
+      "Comprueba los permisos del usuario."
+    );
+  }
+
+  return error?.message || "Ocurrió un error inesperado.";
+}
+
 // =====================================================
-// PANTALLA
+// FORMATEAR REFERENCIA
 // =====================================================
 
-export default function ValoresParametrosScreen() {
-  const [resultados, setResultados] = useState<Resultado[]>([]);
-  const [cargando, setCargando] = useState(true);
-  const [guardando, setGuardando] = useState(false);
-  const [busqueda, setBusqueda] = useState("");
-  const [error, setError] = useState("");
+function obtenerReferencia(valor: any): string {
+  if (valor === null || valor === undefined) {
+    return "";
+  }
 
-  const [seleccionado, setSeleccionado] =
-    useState<Resultado | null>(null);
+  if (
+    typeof valor === "string" ||
+    typeof valor === "number"
+  ) {
+    return String(valor);
+  }
+
+  if (Array.isArray(valor)) {
+    return valor
+      .map((item) => obtenerReferencia(item))
+      .filter(Boolean)
+      .join(" | ");
+  }
+
+  if (typeof valor === "object") {
+    const minimo =
+      valor.min ??
+      valor.minimo ??
+      valor.desde ??
+      valor.valorMinimo;
+
+    const maximo =
+      valor.max ??
+      valor.maximo ??
+      valor.hasta ??
+      valor.valorMaximo;
+
+    if (minimo !== undefined && maximo !== undefined) {
+      return `${minimo} - ${maximo}`;
+    }
+
+    if (minimo !== undefined) {
+      return `Desde ${minimo}`;
+    }
+
+    if (maximo !== undefined) {
+      return `Hasta ${maximo}`;
+    }
+
+    const partes = Object.entries(valor)
+      .filter(
+        ([, dato]) =>
+          dato !== null &&
+          dato !== undefined &&
+          dato !== ""
+      )
+      .map(([clave, dato]) => {
+        return `${clave}: ${obtenerReferencia(dato)}`;
+      });
+
+    return partes.join(" | ");
+  }
+
+  return "";
+}
+
+// =====================================================
+// NORMALIZAR PARÁMETRO
+// =====================================================
+
+function crearParametro(
+  datos: any,
+  id: string,
+  nombreAlternativo = ""
+): Parametro {
+  const referenciaOriginal =
+    datos.rangoReferencia ??
+    datos.valorReferencia ??
+    datos.referencia ??
+    datos.rango ??
+    datos.valoresReferencia ??
+    null;
+
+  return {
+    id,
+
+    nombre:
+      texto(datos.nombre) ||
+      texto(datos.nombreParametro) ||
+      texto(datos.parametro) ||
+      texto(datos.descripcion) ||
+      texto(datos.prueba) ||
+      nombreAlternativo ||
+      "Parámetro",
+
+    unidad:
+      texto(datos.unidad) ||
+      texto(datos.unidadMedida) ||
+      texto(datos.unidades),
+
+    referencia: obtenerReferencia(referenciaOriginal),
+  };
+}
+
+// =====================================================
+// EXTRAER PARÁMETROS
+// =====================================================
+
+function extraerParametros(
+  datos: any,
+  idBase: string
+): Parametro[] {
+  if (!datos || typeof datos !== "object") {
+    return [];
+  }
+
+  const posiblesHijos = [
+    datos.subparametros,
+    datos.subParametros,
+    datos.parametros,
+    datos.pruebas,
+    datos.items,
+    datos.componentes,
+    datos.determinaciones,
+  ];
+
+  const hijos = posiblesHijos.filter(
+    (item) => Array.isArray(item) && item.length > 0
+  );
+
+  if (hijos.length > 0) {
+    const encontrados: Parametro[] = [];
+
+    hijos.forEach((arreglo, indiceArreglo) => {
+      arreglo.forEach((item: any, indice: number) => {
+        const id = `${idBase}_${indiceArreglo}_${indice}`;
+
+        if (typeof item === "string") {
+          encontrados.push(
+            crearParametro(
+              { nombre: item },
+              id
+            )
+          );
+        } else {
+          encontrados.push(
+            ...extraerParametros(item, id)
+          );
+        }
+      });
+    });
+
+    return encontrados;
+  }
+
+  return [crearParametro(datos, idBase)];
+}
+
+// =====================================================
+// PANTALLA PRINCIPAL
+// =====================================================
+
+export default function ValoresParametros() {
+  const router = useRouter();
+
+  const [usuario, setUsuario] =
+    useState<Usuario | null>(null);
+
+  const [muestras, setMuestras] = useState<Muestra[]>([]);
+
+  const [pacientes, setPacientes] = useState<
+    Record<string, Paciente>
+  >({});
 
   const [parametros, setParametros] = useState<Parametro[]>([]);
 
-  // ===================================================
-  // OBTENER NOMBRE DEL PACIENTE
-  // ===================================================
+  const [muestraSeleccionada, setMuestraSeleccionada] =
+    useState<Muestra | null>(null);
 
-  async function obtenerPaciente(pacienteId: string) {
-    if (!pacienteId) return "Sin paciente";
+  const [modalVisible, setModalVisible] = useState(false);
 
-    try {
-      const documento = await getDoc(
-        doc(db, "pacientes", pacienteId)
-      );
+  const [cargando, setCargando] = useState(true);
 
-      if (!documento.exists()) return pacienteId;
+  const [cargandoParametros, setCargandoParametros] =
+    useState(false);
 
-      const datos = documento.data();
-
-      const nombre = texto(datos.nombre || datos.nombres);
-      const apellido = texto(datos.apellido || datos.apellidos);
-
-      return `${nombre} ${apellido}`.trim() || pacienteId;
-    } catch {
-      return pacienteId;
-    }
-  }
+  const [busqueda, setBusqueda] = useState("");
 
   // ===================================================
-  // OBTENER ANÁLISIS
+  // CARGAR DATOS
   // ===================================================
 
-  async function obtenerAnalisis(analisisId: string) {
-    if (!analisisId) return "Sin análisis";
-
-    try {
-      const documento = await getDoc(
-        doc(db, "analisis", analisisId)
-      );
-
-      if (!documento.exists()) return analisisId;
-
-      const datos = documento.data();
-
-      return texto(
-        datos.nombre ||
-        datos.nombreAnalisis ||
-        datos.descripcion ||
-        analisisId
-      );
-    } catch {
-      return analisisId;
-    }
-  }
-
-  // ===================================================
-  // CARGAR RESULTADOS
-  // ===================================================
-
-  const cargar = useCallback(async () => {
+  const cargarDatos = useCallback(async () => {
     try {
       setCargando(true);
-      setError("");
 
-      const usuario = getAuth().currentUser;
+      const firebaseUser = auth.currentUser;
 
-      if (!usuario) {
+      if (!firebaseUser) {
         throw new Error("Debes iniciar sesión.");
       }
 
-      const usuarioDoc = await getDoc(
-        doc(db, "usuarios", usuario.uid)
+      const usuarioSnap = await getDoc(
+        doc(db, "usuarios", firebaseUser.uid)
       );
 
-      if (!usuarioDoc.exists()) {
+      if (!usuarioSnap.exists()) {
         throw new Error("Usuario no encontrado.");
       }
 
-      const datosUsuario = usuarioDoc.data();
+      const datosUsuario = usuarioSnap.data();
 
-      if (datosUsuario.activo === false) {
-        throw new Error("Tu usuario está desactivado.");
+      if (datosUsuario.activo !== true) {
+        throw new Error("Usuario inactivo.");
       }
 
-      const laboratorioId = texto(datosUsuario.laboratorioId);
+      if (datosUsuario.rol !== "bioquimico") {
+        throw new Error(
+          "Esta pantalla corresponde al Bioquímico."
+        );
+      }
+
+      const laboratorioId = texto(
+        datosUsuario.laboratorioId
+      );
 
       if (!laboratorioId) {
         throw new Error("No tienes laboratorio asignado.");
       }
 
-      const consulta = query(
-        collection(db, "resultados"),
-        where("laboratorioId", "==", laboratorioId)
-      );
+      setUsuario({
+        uid: firebaseUser.uid,
+        laboratorioId,
+      });
 
-      const consultaResultados = await getDocs(consulta);
+      const [muestrasSnap, pacientesSnap] =
+        await Promise.all([
+          getDocs(
+            query(
+              collection(db, "muestras"),
+              where("laboratorioId", "==", laboratorioId)
+            )
+          ),
 
-      const lista = await Promise.all(
-        consultaResultados.docs.map(async (documento) => {
+          getDocs(
+            query(
+              collection(db, "pacientes"),
+              where("laboratorioId", "==", laboratorioId)
+            )
+          ),
+        ]);
+
+      const listaMuestras: Muestra[] =
+        muestrasSnap.docs.map((documento) => {
           const datos = documento.data();
 
-          const pacienteId = texto(datos.pacienteId);
-          const analisisId = texto(datos.analisisId);
-
-          const paciente = await obtenerPaciente(pacienteId);
-          const analisis = await obtenerAnalisis(analisisId);
-
-          const parametrosGuardados = Array.isArray(
-            datos.parametros
-          )
-            ? datos.parametros
-            : [];
-
-          const parametros: Parametro[] =
-            parametrosGuardados.map(
-              (parametro: any, indice: number) => ({
-                id: texto(parametro.id || indice),
-                nombre: texto(parametro.nombre),
-                unidad: texto(parametro.unidad),
-                valorReferencia: texto(
-                  parametro.valorReferencia
-                ),
-                valor: texto(parametro.valor),
-              })
-            );
-
-          const resultado: Resultado = {
+          return {
             id: documento.id,
-            muestraId: texto(datos.muestraId),
-            pacienteId,
-            analisisId,
-            ordenId: texto(datos.ordenId),
-            laboratorioId,
-            estado: texto(datos.estado || "registrado"),
-            paciente,
-            analisis,
-            parametros,
+
+            pacienteId: texto(datos.pacienteId),
+
+            analisisId: texto(datos.analisisId),
+
+            analisisNombre:
+              texto(datos.analisisNombre) || "Análisis",
+
+            laboratorioId: texto(datos.laboratorioId),
+
+            estado: texto(datos.estado),
+
+            codigoEtiqueta:
+              texto(datos.codigoEtiqueta) || documento.id,
           };
+        });
 
-          return resultado;
-        })
-      );
+      setMuestras(listaMuestras);
 
-      setResultados(lista);
-    } catch (e: unknown) {
-      setError(
-        e instanceof Error
-          ? e.message
-          : "No se pudieron cargar los resultados."
-      );
+      const mapaPacientes: Record<string, Paciente> = {};
 
-      setResultados([]);
+      pacientesSnap.docs.forEach((documento) => {
+        const datos = documento.data();
+
+        mapaPacientes[documento.id] = {
+          nombre:
+            [
+              texto(datos.nombres || datos.nombre),
+              texto(datos.apellidos || datos.apellido),
+            ]
+              .filter(Boolean)
+              .join(" ") || "Paciente",
+
+          ci: texto(datos.ci),
+        };
+      });
+
+      setPacientes(mapaPacientes);
+    } catch (error: any) {
+      console.error("Error cargando datos:", error);
+
+      mostrarMensaje("Error", errorMensaje(error));
     } finally {
       setCargando(false);
     }
   }, []);
 
   useEffect(() => {
-    cargar();
-  }, [cargar]);
+    cargarDatos();
+  }, [cargarDatos]);
 
   // ===================================================
-  // ABRIR PARÁMETROS
+  // OBTENER PARÁMETROS DEL ANÁLISIS
   // ===================================================
 
-  const abrirParametros = async (resultado: Resultado) => {
-    try {
-      setCargando(true);
+  const obtenerParametros = async (
+    analisisId: string
+  ): Promise<Parametro[]> => {
+    const encontrados: Parametro[] = [];
 
-      const documentoAnalisis = await getDoc(
-        doc(db, "analisis", resultado.analisisId)
+    const analisisSnap = await getDoc(
+      doc(db, "analisis", analisisId)
+    );
+
+    if (!analisisSnap.exists()) {
+      throw new Error("No se encontró el análisis.");
+    }
+
+    const datosAnalisis = analisisSnap.data();
+
+    if (
+      usuario &&
+      datosAnalisis.laboratorioId !== usuario.laboratorioId
+    ) {
+      throw new Error(
+        "El análisis pertenece a otro laboratorio."
       );
+    }
 
-      let listaParametros: Parametro[] = [];
+    // PARÁMETROS GUARDADOS COMO ARREGLOS
 
-      if (documentoAnalisis.exists()) {
-        const datos = documentoAnalisis.data();
+    const arreglos = [
+      datosAnalisis.parametros,
+      datosAnalisis.parametrosAnalisis,
+      datosAnalisis.valoresParametros,
+      datosAnalisis.pruebas,
+      datosAnalisis.items,
+    ];
 
-        const configurados = Array.isArray(datos.parametros)
-          ? datos.parametros
-          : [];
-
-        listaParametros = configurados.map(
-          (parametro: any, indice: number) => {
-            const guardado = resultado.parametros.find(
-              (p) =>
-                p.id === texto(parametro.id || indice)
-            );
-
-            return {
-              id: texto(parametro.id || indice),
-              nombre: texto(parametro.nombre),
-              unidad: texto(parametro.unidad),
-              valorReferencia: texto(
-                parametro.valorReferencia
-              ),
-              valor: guardado?.valor || "",
-            };
-          }
-        );
-      }
-
-      if (listaParametros.length === 0) {
-        listaParametros = resultado.parametros;
-      }
-
-      if (listaParametros.length === 0) {
-        aviso(
-          "Sin parámetros",
-          "Este análisis no tiene parámetros configurados."
-        );
+    arreglos.forEach((arreglo, indiceArreglo) => {
+      if (!Array.isArray(arreglo)) {
         return;
       }
 
-      setParametros(listaParametros);
-      setSeleccionado(resultado);
-    } catch (e: unknown) {
-      aviso(
-        "Error",
-        e instanceof Error
-          ? e.message
-          : "No se pudieron consultar los parámetros."
-      );
-    } finally {
-      setCargando(false);
-    }
-  };
+      arreglo.forEach((item: any, indice: number) => {
+        const id = `array_${indiceArreglo}_${indice}`;
 
-  // ===================================================
-  // CAMBIAR VALOR
-  // ===================================================
+        if (typeof item === "string") {
+          encontrados.push(
+            crearParametro(
+              { nombre: item },
+              id
+            )
+          );
+        } else {
+          encontrados.push(
+            ...extraerParametros(item, id)
+          );
+        }
+      });
+    });
 
-  const cambiarValor = (id: string, valor: string) => {
-    setParametros((anteriores) =>
-      anteriores.map((parametro) =>
-        parametro.id === id
-          ? { ...parametro, valor }
-          : parametro
+    // PARÁMETROS EN SUBCOLECCIÓN
+
+    const parametrosSnap = await getDocs(
+      collection(
+        db,
+        "analisis",
+        analisisId,
+        "parametros"
       )
     );
+
+    parametrosSnap.docs.forEach((documento) => {
+      encontrados.push(
+        ...extraerParametros(
+          documento.data(),
+          documento.id
+        )
+      );
+    });
+
+    // ELIMINAR DUPLICADOS POR NOMBRE
+
+    const mapa = new Map<string, Parametro>();
+
+    encontrados.forEach((parametro) => {
+      const clave = parametro.nombre.toLowerCase().trim();
+
+      if (!mapa.has(clave)) {
+        mapa.set(clave, parametro);
+      }
+    });
+
+    return Array.from(mapa.values());
   };
 
   // ===================================================
-  // GUARDAR PARÁMETROS
+  // VER PARÁMETROS
   // ===================================================
 
-  const guardar = async () => {
-    if (!seleccionado || guardando) return;
-
-    const incompleto = parametros.some(
-      (parametro) => !parametro.valor.trim()
-    );
-
-    if (incompleto) {
-      aviso(
-        "Campos obligatorios",
-        "Debes registrar el valor de todos los parámetros."
-      );
-      return;
-    }
-
+  const verParametros = async (muestra: Muestra) => {
     try {
-      setGuardando(true);
-
-      const usuario = getAuth().currentUser;
-
-      if (!usuario) {
-        throw new Error("Debes iniciar sesión.");
-      }
-
-      if (
-        seleccionado.estado.toLowerCase() === "validado"
-      ) {
+      if (!muestra.analisisId) {
         throw new Error(
-          "No puedes modificar un resultado validado."
+          "La muestra no tiene análisis asociado."
         );
       }
 
-      await updateDoc(
-        doc(db, "resultados", seleccionado.id),
-        {
-          parametros: parametros.map((parametro) => ({
-            id: parametro.id,
-            nombre: parametro.nombre,
-            unidad: parametro.unidad,
-            valorReferencia: parametro.valorReferencia,
-            valor: parametro.valor.trim(),
-          })),
-          fechaActualizacion: serverTimestamp(),
-          actualizadoPor: usuario.uid,
-        }
+      setCargandoParametros(true);
+
+      const lista = await obtenerParametros(
+        muestra.analisisId
       );
 
-      setSeleccionado(null);
-      setParametros([]);
+      setMuestraSeleccionada(muestra);
 
-      await cargar();
+      setParametros(lista);
 
-      aviso(
-        "Correcto",
-        "Los valores de los parámetros se guardaron correctamente."
-      );
-    } catch (e: unknown) {
-      aviso(
-        "Error",
-        e instanceof Error
-          ? e.message
-          : "No se pudieron guardar los parámetros."
-      );
+      setModalVisible(true);
+    } catch (error: any) {
+      console.error("Error viendo parámetros:", error);
+
+      mostrarMensaje("Error", errorMensaje(error));
     } finally {
-      setGuardando(false);
+      setCargandoParametros(false);
     }
   };
 
   // ===================================================
-  // FILTROS
+  // FILTRAR MUESTRAS
   // ===================================================
 
-  const filtrados = resultados.filter((resultado) => {
-    const contenido = [
-      resultado.id,
-      resultado.muestraId,
-      resultado.paciente,
-      resultado.analisis,
-      resultado.ordenId,
-    ]
-      .join(" ")
-      .toLowerCase();
+  const muestrasDisponibles = muestras.filter(
+    (muestra) => muestra.estado === "procesada"
+  );
 
-    return contenido.includes(busqueda.trim().toLowerCase());
-  });
+  const muestrasFiltradas = muestrasDisponibles.filter(
+    (muestra) => {
+      const paciente = pacientes[muestra.pacienteId];
+
+      const contenido = [
+        muestra.analisisNombre,
+        muestra.codigoEtiqueta,
+        paciente?.nombre || "",
+        paciente?.ci || "",
+      ]
+        .join(" ")
+        .toLowerCase();
+
+      return contenido.includes(
+        busqueda.trim().toLowerCase()
+      );
+    }
+  );
+
+  // ===================================================
+  // PANTALLA DE CARGA
+  // ===================================================
+
+  if (cargando) {
+    return (
+      <View style={styles.cargando}>
+        <ActivityIndicator
+          size="large"
+          color="#19385F"
+        />
+
+        <Text style={styles.textoCargando}>
+          Cargando parámetros...
+        </Text>
+      </View>
+    );
+  }
 
   // ===================================================
   // INTERFAZ
@@ -418,300 +580,193 @@ export default function ValoresParametrosScreen() {
 
   return (
     <View style={styles.contenedor}>
-      <ScrollView contentContainerStyle={styles.contenido}>
-        <Text style={styles.titulo}>
-          Registro de valores por parámetros
-        </Text>
+      <ScrollView
+        contentContainerStyle={styles.contenido}
+        keyboardShouldPersistTaps="handled"
+      >
+        {/* ENCABEZADO */}
 
-        <Text style={styles.subtitulo}>
-          Ingresa los valores obtenidos para cada parámetro
-          configurado en el análisis.
-        </Text>
-
-        <View style={styles.resumen}>
-          <View style={styles.contador}>
-            <Text style={styles.contadorTitulo}>
-              Resultados registrados
+        <View style={styles.encabezado}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.titulo}>
+              Valores por parámetros
             </Text>
 
-            <Text style={styles.contadorNumero}>
-              {resultados.length}
+            <Text style={styles.subtitulo}>
+              Consulta los parámetros de cada análisis.
             </Text>
           </View>
 
-          <View style={styles.contador}>
-            <Text style={styles.contadorTitulo}>
-              Con parámetros
+          <Pressable
+            style={styles.botonVolver}
+            onPress={() => router.back()}
+          >
+            <Text style={styles.textoBoton}>
+              Volver
             </Text>
-
-            <Text style={styles.contadorNumero}>
-              {
-                resultados.filter(
-                  (resultado) =>
-                    resultado.parametros.length > 0
-                ).length
-              }
-            </Text>
-          </View>
+          </Pressable>
         </View>
 
+        {/* BUSCADOR */}
+
         <View style={styles.panel}>
-          <View style={styles.barra}>
-            <TextInput
-              style={styles.buscador}
-              placeholder="Buscar por paciente, análisis o muestra..."
-              placeholderTextColor="#94A3B8"
-              value={busqueda}
-              onChangeText={setBusqueda}
-            />
+          <Text style={styles.etiqueta}>
+            Buscar muestra procesada
+          </Text>
 
-            <Pressable
-              style={styles.botonActualizar}
-              onPress={cargar}
-            >
-              <Text style={styles.textoBlanco}>
-                Actualizar
-              </Text>
-            </Pressable>
-          </View>
+          <TextInput
+            style={styles.input}
+            placeholder="Paciente, CI o análisis"
+            value={busqueda}
+            onChangeText={setBusqueda}
+          />
 
-          {error !== "" && (
-            <Text style={styles.error}>
-              {error}
+          <Pressable
+            style={styles.botonActualizar}
+            onPress={cargarDatos}
+          >
+            <Text style={styles.textoActualizar}>
+              Actualizar
             </Text>
-          )}
+          </Pressable>
+        </View>
 
-          {cargando ? (
-            <ActivityIndicator
-              size="large"
-              color="#17365D"
-            />
+        {/* LISTA DE MUESTRAS */}
+
+        <View style={styles.panel}>
+          <Text style={styles.seccionTitulo}>
+            Muestras disponibles
+          </Text>
+
+          {muestrasFiltradas.length === 0 ? (
+            <Text style={styles.textoVacio}>
+              No hay muestras procesadas disponibles.
+            </Text>
           ) : (
-            <ScrollView horizontal>
-              <View style={styles.tabla}>
-                <View style={styles.cabecera}>
-                  <Text
-                    style={[
-                      styles.cabeceraTexto,
-                      styles.colPaciente,
-                    ]}
-                  >
-                    Paciente
+            muestrasFiltradas.map((muestra) => {
+              const paciente =
+                pacientes[muestra.pacienteId];
+
+              return (
+                <View
+                  key={muestra.id}
+                  style={styles.tarjeta}
+                >
+                  <Text style={styles.nombreAnalisis}>
+                    {muestra.analisisNombre}
                   </Text>
 
-                  <Text
-                    style={[
-                      styles.cabeceraTexto,
-                      styles.colAnalisis,
-                    ]}
-                  >
-                    Análisis
+                  <Text style={styles.dato}>
+                    Paciente:{" "}
+                    {paciente?.nombre || "Sin identificar"}
                   </Text>
 
-                  <Text
-                    style={[
-                      styles.cabeceraTexto,
-                      styles.colMuestra,
-                    ]}
-                  >
-                    Muestra
+                  <Text style={styles.dato}>
+                    CI: {paciente?.ci || "-"}
                   </Text>
 
-                  <Text
-                    style={[
-                      styles.cabeceraTexto,
-                      styles.colEstado,
-                    ]}
-                  >
-                    Estado
+                  <Text style={styles.dato}>
+                    Etiqueta: {muestra.codigoEtiqueta}
                   </Text>
 
-                  <Text
+                  <Pressable
                     style={[
-                      styles.cabeceraTexto,
-                      styles.colParametros,
+                      styles.botonParametros,
+                      cargandoParametros &&
+                        styles.botonDeshabilitado,
                     ]}
+                    disabled={cargandoParametros}
+                    onPress={() => verParametros(muestra)}
                   >
-                    Parámetros
-                  </Text>
-
-                  <Text
-                    style={[
-                      styles.cabeceraTexto,
-                      styles.colAcciones,
-                    ]}
-                  >
-                    Acciones
-                  </Text>
+                    <Text style={styles.textoBoton}>
+                      {cargandoParametros
+                        ? "Cargando..."
+                        : "Ver parámetros"}
+                    </Text>
+                  </Pressable>
                 </View>
-
-                {filtrados.map((resultado) => (
-                  <View
-                    style={styles.fila}
-                    key={resultado.id}
-                  >
-                    <Text
-                      style={[
-                        styles.celda,
-                        styles.colPaciente,
-                      ]}
-                    >
-                      {resultado.paciente}
-                    </Text>
-
-                    <Text
-                      style={[
-                        styles.celda,
-                        styles.colAnalisis,
-                      ]}
-                    >
-                      {resultado.analisis}
-                    </Text>
-
-                    <Text
-                      style={[
-                        styles.celda,
-                        styles.colMuestra,
-                      ]}
-                    >
-                      {resultado.muestraId || "-"}
-                    </Text>
-
-                    <Text
-                      style={[
-                        styles.celda,
-                        styles.colEstado,
-                      ]}
-                    >
-                      {resultado.estado}
-                    </Text>
-
-                    <Text
-                      style={[
-                        styles.celda,
-                        styles.colParametros,
-                      ]}
-                    >
-                      {resultado.parametros.length}
-                    </Text>
-
-                    <View style={styles.colAcciones}>
-                      <Pressable
-                        style={styles.botonRegistrar}
-                        onPress={() =>
-                          abrirParametros(resultado)
-                        }
-                      >
-                        <Text style={styles.textoBlanco}>
-                          {resultado.estado.toLowerCase() ===
-                          "validado"
-                            ? "Ver parámetros"
-                            : "Registrar valores"}
-                        </Text>
-                      </Pressable>
-                    </View>
-                  </View>
-                ))}
-
-                {filtrados.length === 0 && (
-                  <Text style={styles.sinDatos}>
-                    No se encontraron resultados.
-                  </Text>
-                )}
-              </View>
-            </ScrollView>
+              );
+            })
           )}
         </View>
       </ScrollView>
 
+      {/* MODAL SOLO LECTURA */}
+
       <Modal
-        visible={seleccionado !== null}
+        visible={modalVisible}
+        animationType="slide"
         transparent
-        animationType="fade"
-        onRequestClose={() => {
-          if (!guardando) setSeleccionado(null);
-        }}
+        onRequestClose={() => setModalVisible(false)}
       >
         <View style={styles.fondoModal}>
           <View style={styles.modal}>
-            <ScrollView>
-              <Text style={styles.modalTitulo}>
-                Valores por parámetros
+            <ScrollView
+              contentContainerStyle={styles.contenidoModal}
+            >
+              <Text style={styles.tituloModal}>
+                Valores de parámetros
               </Text>
 
-              <Text style={styles.modalDato}>
-                Paciente: {seleccionado?.paciente}
-              </Text>
-
-              <Text style={styles.modalDato}>
-                Análisis: {seleccionado?.analisis}
-              </Text>
-
-              <Text style={styles.modalDato}>
-                Muestra: {seleccionado?.muestraId}
-              </Text>
-
-              {parametros.map((parametro) => (
-                <View
-                  style={styles.parametro}
-                  key={parametro.id}
-                >
-                  <Text style={styles.nombreParametro}>
-                    {parametro.nombre}
+              {muestraSeleccionada && (
+                <View style={styles.resumen}>
+                  <Text style={styles.dato}>
+                    Análisis:{" "}
+                    {muestraSeleccionada.analisisNombre}
                   </Text>
 
-                  <Text style={styles.referencia}>
-                    Referencia:{" "}
-                    {parametro.valorReferencia || "-"}
-                    {parametro.unidad
-                      ? ` ${parametro.unidad}`
-                      : ""}
+                  <Text style={styles.dato}>
+                    Paciente:{" "}
+                    {pacientes[
+                      muestraSeleccionada.pacienteId
+                    ]?.nombre || "Sin identificar"}
                   </Text>
 
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Ingresar valor"
-                    placeholderTextColor="#94A3B8"
-                    value={parametro.valor}
-                    onChangeText={(valor) =>
-                      cambiarValor(parametro.id, valor)
-                    }
-                    editable={
-                      !guardando &&
-                      seleccionado?.estado.toLowerCase() !==
-                        "validado"
-                    }
-                  />
+                  <Text style={styles.dato}>
+                    Total de parámetros: {parametros.length}
+                  </Text>
                 </View>
-              ))}
+              )}
 
-              <View style={styles.botones}>
+              {parametros.length === 0 ? (
+                <Text style={styles.textoVacio}>
+                  No existen parámetros configurados
+                  para este análisis.
+                </Text>
+              ) : (
+                parametros.map((parametro, indice) => (
+                  <View
+                    key={parametro.id}
+                    style={styles.tarjetaParametro}
+                  >
+                    <Text style={styles.nombreParametro}>
+                      {indice + 1}. {parametro.nombre}
+                    </Text>
+
+                    {parametro.referencia !== "" && (
+                      <Text style={styles.referencia}>
+                        Referencia: {parametro.referencia}
+                      </Text>
+                    )}
+
+                    {parametro.unidad !== "" && (
+                      <Text style={styles.referencia}>
+                        Unidad: {parametro.unidad}
+                      </Text>
+                    )}
+                  </View>
+                ))
+              )}
+
+              <View style={styles.accionesModal}>
                 <Pressable
                   style={styles.botonCancelar}
-                  disabled={guardando}
-                  onPress={() => setSeleccionado(null)}
+                  onPress={() => setModalVisible(false)}
                 >
-                  <Text style={styles.textoCancelar}>
+                  <Text style={styles.textoBoton}>
                     Cerrar
                   </Text>
                 </Pressable>
-
-                {seleccionado?.estado.toLowerCase() !==
-                  "validado" && (
-                  <Pressable
-                    style={styles.botonRegistrar}
-                    disabled={guardando}
-                    onPress={guardar}
-                  >
-                    {guardando ? (
-                      <ActivityIndicator color="#FFFFFF" />
-                    ) : (
-                      <Text style={styles.textoBlanco}>
-                        Guardar valores
-                      </Text>
-                    )}
-                  </Pressable>
-                )}
               </View>
             </ScrollView>
           </View>
@@ -728,235 +783,211 @@ export default function ValoresParametrosScreen() {
 const styles = StyleSheet.create({
   contenedor: {
     flex: 1,
-    backgroundColor: "#F3F6FB",
+    backgroundColor: "#F4F7FB",
   },
 
   contenido: {
     padding: 20,
-    paddingBottom: 40,
+    paddingBottom: 50,
+  },
+
+  cargando: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#F4F7FB",
+  },
+
+  textoCargando: {
+    marginTop: 12,
+    color: "#64748B",
+  },
+
+  encabezado: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 20,
+    gap: 12,
   },
 
   titulo: {
-    fontSize: 26,
-    fontWeight: "800",
-    color: "#17365D",
-    marginBottom: 8,
+    fontSize: 28,
+    fontWeight: "bold",
+    color: "#19385F",
   },
 
   subtitulo: {
-    fontSize: 14,
+    fontSize: 15,
     color: "#64748B",
-    marginBottom: 22,
+    marginTop: 6,
   },
 
-  resumen: {
-    flexDirection: "row",
-    gap: 12,
-    marginBottom: 22,
+  botonVolver: {
+    backgroundColor: "#334155",
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+    borderRadius: 9,
   },
 
-  contador: {
-    flex: 1,
-    backgroundColor: "#FFFFFF",
-    borderRadius: 12,
-    padding: 18,
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
-  },
-
-  contadorTitulo: {
-    fontSize: 13,
-    color: "#64748B",
-  },
-
-  contadorNumero: {
-    fontSize: 25,
-    fontWeight: "800",
-    color: "#17365D",
-    marginTop: 8,
+  textoBoton: {
+    color: "#FFFFFF",
+    fontWeight: "bold",
   },
 
   panel: {
     backgroundColor: "#FFFFFF",
-    borderRadius: 12,
-    padding: 16,
+    padding: 18,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    marginBottom: 18,
   },
 
-  barra: {
-    flexDirection: "row",
-    gap: 10,
-    marginBottom: 15,
+  etiqueta: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#334155",
+    marginBottom: 8,
+    marginTop: 12,
   },
 
-  buscador: {
-    flex: 1,
+  input: {
     borderWidth: 1,
     borderColor: "#CBD5E1",
-    borderRadius: 8,
-    padding: 12,
+    borderRadius: 9,
+    padding: 13,
+    fontSize: 15,
+    backgroundColor: "#FFFFFF",
     color: "#0F172A",
+    marginBottom: 10,
   },
 
   botonActualizar: {
-    backgroundColor: "#2563EB",
-    borderRadius: 8,
-    paddingHorizontal: 15,
-    justifyContent: "center",
+    backgroundColor: "#E2E8F0",
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+    borderRadius: 9,
+    alignSelf: "flex-start",
   },
 
-  textoBlanco: {
-    color: "#FFFFFF",
-    fontSize: 12,
-    fontWeight: "700",
+  textoActualizar: {
+    color: "#19385F",
+    fontWeight: "600",
   },
 
-  tabla: {
-    minWidth: 1050,
-  },
-
-  cabecera: {
-    flexDirection: "row",
-    backgroundColor: "#17365D",
-    padding: 12,
-  },
-
-  cabeceraTexto: {
-    color: "#FFFFFF",
-    fontSize: 12,
-    fontWeight: "800",
-  },
-
-  fila: {
-    flexDirection: "row",
-    alignItems: "center",
-    padding: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: "#E2E8F0",
-  },
-
-  celda: {
-    fontSize: 12,
-    color: "#0F172A",
-  },
-
-  colPaciente: {
-    width: 190,
-  },
-
-  colAnalisis: {
-    width: 210,
-  },
-
-  colMuestra: {
-    width: 180,
-  },
-
-  colEstado: {
-    width: 130,
-  },
-
-  colParametros: {
-    width: 120,
-  },
-
-  colAcciones: {
-    width: 170,
-    alignItems: "center",
-  },
-
-  botonRegistrar: {
-    backgroundColor: "#2563EB",
-    borderRadius: 8,
-    paddingHorizontal: 15,
-    paddingVertical: 11,
-    alignItems: "center",
-  },
-
-  sinDatos: {
-    padding: 25,
-    textAlign: "center",
-    color: "#64748B",
-  },
-
-  error: {
-    color: "#DC2626",
-    marginBottom: 12,
-  },
-
-  fondoModal: {
-    flex: 1,
-    backgroundColor: "rgba(15,23,42,0.65)",
-    justifyContent: "center",
-    padding: 20,
-  },
-
-  modal: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 14,
-    padding: 20,
-    maxHeight: "85%",
-  },
-
-  modalTitulo: {
-    fontSize: 20,
-    fontWeight: "800",
-    color: "#17365D",
+  seccionTitulo: {
+    fontSize: 19,
+    fontWeight: "bold",
+    color: "#19385F",
     marginBottom: 15,
   },
 
-  modalDato: {
-    fontSize: 13,
+  tarjeta: {
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 12,
+  },
+
+  nombreAnalisis: {
+    fontSize: 17,
+    fontWeight: "bold",
+    color: "#19385F",
+    marginBottom: 10,
+  },
+
+  dato: {
+    fontSize: 14,
     color: "#475569",
     marginBottom: 7,
   },
 
-  parametro: {
-    marginTop: 15,
+  botonParametros: {
+    backgroundColor: "#2563EB",
     padding: 13,
+    borderRadius: 9,
+    alignItems: "center",
+    marginTop: 10,
+  },
+
+  botonDeshabilitado: {
+    opacity: 0.5,
+  },
+
+  textoVacio: {
+    color: "#64748B",
+    fontSize: 14,
+    paddingVertical: 15,
+  },
+
+  fondoModal: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 15,
+  },
+
+  modal: {
+    backgroundColor: "#FFFFFF",
+    width: "100%",
+    maxWidth: 700,
+    maxHeight: "90%",
+    borderRadius: 14,
+    overflow: "hidden",
+  },
+
+  contenidoModal: {
+    padding: 20,
+    paddingBottom: 35,
+  },
+
+  tituloModal: {
+    fontSize: 22,
+    fontWeight: "bold",
+    color: "#19385F",
+    marginBottom: 15,
+  },
+
+  resumen: {
+    backgroundColor: "#F1F5F9",
+    padding: 15,
+    borderRadius: 10,
+    marginBottom: 15,
+  },
+
+  tarjetaParametro: {
     borderWidth: 1,
     borderColor: "#E2E8F0",
     borderRadius: 10,
-    backgroundColor: "#F8FAFC",
+    padding: 15,
+    marginBottom: 15,
   },
 
   nombreParametro: {
-    fontSize: 14,
-    fontWeight: "800",
-    color: "#17365D",
-    marginBottom: 6,
+    fontSize: 16,
+    fontWeight: "bold",
+    color: "#19385F",
   },
 
   referencia: {
-    fontSize: 12,
     color: "#64748B",
-    marginBottom: 10,
+    marginTop: 8,
+    fontSize: 14,
   },
 
-  input: {
-    backgroundColor: "#FFFFFF",
-    borderWidth: 1,
-    borderColor: "#CBD5E1",
-    borderRadius: 8,
-    padding: 12,
-    color: "#0F172A",
-  },
-
-  botones: {
+  accionesModal: {
     flexDirection: "row",
-    gap: 10,
-    marginTop: 20,
+    justifyContent: "flex-end",
+    marginTop: 15,
   },
 
   botonCancelar: {
-    flex: 1,
-    backgroundColor: "#E2E8F0",
-    borderRadius: 8,
-    padding: 12,
-    alignItems: "center",
-  },
-
-  textoCancelar: {
-    color: "#334155",
-    fontWeight: "700",
+    backgroundColor: "#64748B",
+    paddingHorizontal: 18,
+    paddingVertical: 13,
+    borderRadius: 9,
   },
 });

@@ -1,51 +1,146 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import {
-  listarMuestrasProcesadas,
-  listarResultados,
-  registrarResultado,
-} from "../services/resultadosService";
+  collection,
+  getDocs,
+  addDoc,
+  updateDoc,
+  doc,
+  query,
+  where,
+  serverTimestamp,
+} from "firebase/firestore";
 
-import { listarMuestrasValidacion } from "../services/validacionMuestrasService";
+import { db } from "../firebase/firebase";
 
 import "./GestionResultados.css";
 
-export default function GestionResultados({ usuario, onVolver }) {
+// ==========================================
+// FUNCIONES AUXILIARES
+// ==========================================
+
+function obtenerTexto(valor) {
+  if (valor === null || valor === undefined) {
+    return "";
+  }
+
+  return String(valor).trim();
+}
+
+function obtenerFecha(valor) {
+  if (!valor) {
+    return "Sin fecha";
+  }
+
+  try {
+    let fecha;
+
+    if (typeof valor.toDate === "function") {
+      fecha = valor.toDate();
+    } else if (typeof valor.seconds === "number") {
+      fecha = new Date(valor.seconds * 1000);
+    } else {
+      fecha = new Date(valor);
+    }
+
+    if (Number.isNaN(fecha.getTime())) {
+      return "Sin fecha";
+    }
+
+    return fecha.toLocaleString("es-BO");
+  } catch {
+    return "Sin fecha";
+  }
+}
+
+function obtenerNombrePaciente(paciente) {
+  if (!paciente) {
+    return "Paciente no identificado";
+  }
+
+  if (paciente.nombreCompleto) {
+    return paciente.nombreCompleto;
+  }
+
+  return [
+    paciente.nombres || paciente.nombre,
+    paciente.apellidos || paciente.apellido,
+  ]
+    .filter(Boolean)
+    .join(" ") || "Paciente no identificado";
+}
+
+function obtenerEstadoResultado(resultado) {
+  if (!resultado) {
+    return "pendiente";
+  }
+
+  return obtenerTexto(resultado.estado).toLowerCase() || "borrador";
+}
+
+function obtenerNombreAnalisis(muestra, analisis) {
+  if (muestra.analisisNombre) {
+    return muestra.analisisNombre;
+  }
+
+  const encontrado = analisis.find(
+    (item) => item.id === muestra.analisisId
+  );
+
+  return (
+    encontrado?.nombre ||
+    encontrado?.nombreAnalisis ||
+    "Análisis"
+  );
+}
+
+// ==========================================
+// COMPONENTE PRINCIPAL
+// ==========================================
+
+export default function GestionResultados({
+  usuario,
+  onVolver,
+}) {
+  const laboratorioId = usuario?.laboratorioId || "";
+
+  const bioquimicoId =
+    usuario?.uid ||
+    usuario?.id ||
+    "";
+
   const [muestras, setMuestras] = useState([]);
   const [resultados, setResultados] = useState([]);
+  const [pacientes, setPacientes] = useState([]);
+  const [analisis, setAnalisis] = useState([]);
+
+  const [busqueda, setBusqueda] = useState("");
 
   const [cargando, setCargando] = useState(true);
   const [guardando, setGuardando] = useState(false);
 
-  const [busqueda, setBusqueda] = useState("");
-  const [muestraSeleccionada, setMuestraSeleccionada] = useState(null);
+  const [error, setError] = useState("");
+  const [mensaje, setMensaje] = useState("");
+
+  const [muestraSeleccionada, setMuestraSeleccionada] =
+    useState(null);
+
+  const [resultadoSeleccionado, setResultadoSeleccionado] =
+    useState(null);
 
   const [valorResultado, setValorResultado] = useState("");
   const [unidad, setUnidad] = useState("");
   const [observaciones, setObservaciones] = useState("");
 
-  const [mensaje, setMensaje] = useState("");
-  const [error, setError] = useState("");
+  // ========================================
+  // CARGAR INFORMACIÓN
+  // ========================================
 
-  const laboratorioId = String(
-    usuario?.laboratorioId ?? ""
-  ).trim();
-
-  const usuarioId = String(
-    usuario?.uid ?? usuario?.id ?? ""
-  ).trim();
-
-  const rol = String(usuario?.rol ?? "").toLowerCase();
-
-  const puedeRegistrar = rol === "bioquimico";
-
-  // =============================================
-  // CARGAR DATOS
-  // =============================================
-
-  const cargarDatos = useCallback(async () => {
+  const cargarDatos = async () => {
     if (!laboratorioId) {
-      setError("El usuario no tiene laboratorio asignado.");
+      setError(
+        "El usuario no tiene un laboratorio asignado."
+      );
       setCargando(false);
       return;
     }
@@ -54,392 +149,706 @@ export default function GestionResultados({ usuario, onVolver }) {
       setCargando(true);
       setError("");
 
-      const [datosMuestras, datosResultados] = await Promise.all([
-        listarMuestrasValidacion(laboratorioId),
-        listarResultados(laboratorioId),
+      const [
+        muestrasSnap,
+        resultadosSnap,
+        pacientesSnap,
+        analisisSnap,
+      ] = await Promise.all([
+        getDocs(
+          query(
+            collection(db, "muestras"),
+            where("laboratorioId", "==", laboratorioId)
+          )
+        ),
+
+        getDocs(
+          query(
+            collection(db, "resultados"),
+            where("laboratorioId", "==", laboratorioId)
+          )
+        ),
+
+        getDocs(
+          query(
+            collection(db, "pacientes"),
+            where("laboratorioId", "==", laboratorioId)
+          )
+        ),
+
+        getDocs(
+          query(
+            collection(db, "analisis"),
+            where("laboratorioId", "==", laboratorioId)
+          )
+        ),
       ]);
 
-      const procesadas = datosMuestras.filter(
-        (muestra) =>
-          muestra.estado === "procesada" &&
-          muestra.aceptada === true
+      setMuestras(
+        muestrasSnap.docs.map((documento) => ({
+          ...documento.data(),
+          id: documento.id,
+        }))
       );
 
-      setMuestras(procesadas);
-      setResultados(datosResultados);
+      setResultados(
+        resultadosSnap.docs.map((documento) => ({
+          ...documento.data(),
+          id: documento.id,
+        }))
+      );
+
+      setPacientes(
+        pacientesSnap.docs.map((documento) => ({
+          ...documento.data(),
+          id: documento.id,
+        }))
+      );
+
+      setAnalisis(
+        analisisSnap.docs.map((documento) => ({
+          ...documento.data(),
+          id: documento.id,
+        }))
+      );
     } catch (err) {
-      console.error(err);
-      setError(err.message || "No se pudieron cargar los datos.");
+      console.error("Error cargando resultados:", err);
+
+      setError(
+        err?.message ||
+        "No se pudo cargar la información."
+      );
     } finally {
       setCargando(false);
     }
-  }, [laboratorioId]);
+  };
 
   useEffect(() => {
     cargarDatos();
-  }, [cargarDatos]);
+  }, [laboratorioId]);
 
-  // =============================================
-  // FORMATEAR FECHA
-  // =============================================
+  // ========================================
+  // OBTENER PACIENTE
+  // ========================================
 
-  function mostrarFecha(fecha) {
-    if (!fecha) return "Sin fecha";
-
-    const valor =
-      typeof fecha.toDate === "function"
-        ? fecha.toDate()
-        : new Date(fecha);
-
-    if (Number.isNaN(valor.getTime())) {
-      return "Sin fecha";
-    }
-
-    return valor.toLocaleString("es-BO");
-  }
-
-  // =============================================
-  // RESULTADO EXISTENTE
-  // =============================================
-
-  function buscarResultado(muestraId) {
-    return resultados.find(
-      (resultado) => resultado.muestraId === muestraId
+  const buscarPaciente = (pacienteId) => {
+    return pacientes.find(
+      (paciente) => paciente.id === pacienteId
     );
-  }
+  };
 
-  // =============================================
+  // ========================================
+  // OBTENER RESULTADO DE UNA MUESTRA
+  // ========================================
+
+  const buscarResultado = (muestraId) => {
+    return resultados.find(
+      (resultado) =>
+        obtenerTexto(resultado.muestraId) ===
+        obtenerTexto(muestraId)
+    );
+  };
+
+  // ========================================
+  // MUESTRAS PROCESADAS
+  // ========================================
+
+  const muestrasProcesadas = useMemo(() => {
+    return muestras.filter(
+      (muestra) =>
+        obtenerTexto(muestra.estado).toLowerCase() ===
+        "procesada"
+    );
+  }, [muestras]);
+
+  // ========================================
+  // FILTRO DE BÚSQUEDA
+  // ========================================
+
+  const muestrasFiltradas = useMemo(() => {
+    const buscar = busqueda.trim().toLowerCase();
+
+    return muestrasProcesadas.filter((muestra) => {
+      const paciente = buscarPaciente(muestra.pacienteId);
+
+      const nombre = obtenerNombrePaciente(paciente);
+
+      const ci =
+        paciente?.ci ||
+        paciente?.carnet ||
+        paciente?.carnetIdentidad ||
+        "";
+
+      const analisisNombre = obtenerNombreAnalisis(
+        muestra,
+        analisis
+      );
+
+      const codigo =
+        muestra.codigoEtiqueta ||
+        muestra.codigoMuestra ||
+        muestra.id;
+
+      const contenido = [
+        nombre,
+        ci,
+        analisisNombre,
+        codigo,
+        muestra.ordenId,
+      ]
+        .map(obtenerTexto)
+        .join(" ")
+        .toLowerCase();
+
+      return contenido.includes(buscar);
+    });
+  }, [
+    muestrasProcesadas,
+    busqueda,
+    pacientes,
+    analisis,
+  ]);
+
+  // ========================================
+  // ESTADÍSTICAS
+  // ========================================
+
+  const totalProcesadas = muestrasProcesadas.length;
+
+  const totalRegistrados = muestrasProcesadas.filter(
+    (muestra) => Boolean(buscarResultado(muestra.id))
+  ).length;
+
+  const totalPendientes =
+    totalProcesadas - totalRegistrados;
+
+  // ========================================
   // ABRIR FORMULARIO
-  // =============================================
+  // ========================================
 
-  function abrirRegistro(muestra) {
-    if (!puedeRegistrar) {
-      setError("Solo el Bioquímico puede registrar resultados.");
+  const abrirFormulario = (muestra) => {
+    const resultado = buscarResultado(muestra.id);
+
+    if (obtenerEstadoResultado(resultado) === "validado") {
+      setError(
+        "Este resultado ya está validado y no puede editarse."
+      );
       return;
     }
 
-    if (buscarResultado(muestra.id)) {
-      setError("Esta muestra ya tiene un resultado registrado.");
-      return;
-    }
+    setError("");
+    setMensaje("");
 
     setMuestraSeleccionada(muestra);
+    setResultadoSeleccionado(resultado || null);
+
+    setValorResultado(
+      obtenerTexto(resultado?.valorResultado)
+    );
+
+    setUnidad(
+      obtenerTexto(resultado?.unidad) || "g/dl"
+    );
+
+    setObservaciones(
+      obtenerTexto(resultado?.observaciones)
+    );
+  };
+
+  // ========================================
+  // CERRAR FORMULARIO
+  // ========================================
+
+  const cerrarFormulario = () => {
+    setMuestraSeleccionada(null);
+    setResultadoSeleccionado(null);
+
     setValorResultado("");
     setUnidad("");
     setObservaciones("");
-    setMensaje("");
-    setError("");
-  }
+  };
 
-  // =============================================
+  // ========================================
   // GUARDAR RESULTADO
-  // =============================================
+  // ========================================
 
-  async function guardarResultado() {
-    if (!muestraSeleccionada) return;
+  const guardarResultado = async (evento) => {
+    evento.preventDefault();
+
+    if (!muestraSeleccionada) {
+      return;
+    }
 
     if (!valorResultado.trim()) {
-      setError("Debes ingresar el resultado del análisis.");
+      setError("Debe ingresar el valor del resultado.");
+      return;
+    }
+
+    if (!bioquimicoId) {
+      setError(
+        "No se pudo identificar al bioquímico."
+      );
       return;
     }
 
     try {
       setGuardando(true);
       setError("");
-      setMensaje("");
 
-      await registrarResultado({
-        muestraId: muestraSeleccionada.id,
-        laboratorioId,
-        usuarioId,
-        valorResultado,
-        unidad,
-        observaciones,
-      });
+      if (resultadoSeleccionado) {
+        await updateDoc(
+          doc(
+            db,
+            "resultados",
+            resultadoSeleccionado.id
+          ),
+          {
+            valorResultado: valorResultado.trim(),
+            unidad: unidad.trim(),
+            observaciones: observaciones.trim(),
+            actualizadoPor: bioquimicoId,
+            fechaActualizacion: serverTimestamp(),
+          }
+        );
 
-      setMuestraSeleccionada(null);
-      setValorResultado("");
-      setUnidad("");
-      setObservaciones("");
+        setMensaje(
+          "Resultado actualizado correctamente."
+        );
+      } else {
+        await addDoc(
+          collection(db, "resultados"),
+          {
+            laboratorioId,
+            muestraId: muestraSeleccionada.id,
+            ordenId: muestraSeleccionada.ordenId || "",
+            solicitudId:
+              muestraSeleccionada.solicitudId || "",
+            pacienteId:
+              muestraSeleccionada.pacienteId || "",
+            analisisId:
+              muestraSeleccionada.analisisId || "",
 
-      setMensaje("Resultado registrado correctamente.");
+            analisisNombre: obtenerNombreAnalisis(
+              muestraSeleccionada,
+              analisis
+            ),
+
+            valorResultado: valorResultado.trim(),
+            unidad: unidad.trim(),
+            observaciones: observaciones.trim(),
+
+            estado: "borrador",
+
+            bioquimicoId,
+            registradoPor: bioquimicoId,
+
+            fechaRegistro: serverTimestamp(),
+          }
+        );
+
+        setMensaje(
+          "Resultado registrado correctamente."
+        );
+      }
+
+      cerrarFormulario();
 
       await cargarDatos();
     } catch (err) {
-      console.error(err);
-      setError(err.message || "No se pudo registrar el resultado.");
+      console.error("Error guardando resultado:", err);
+
+      setError(
+        err?.message ||
+        "No se pudo guardar el resultado."
+      );
     } finally {
       setGuardando(false);
     }
-  }
+  };
 
-  // =============================================
-  // BUSCADOR
-  // =============================================
-
-  const muestrasFiltradas = useMemo(() => {
-    const textoBusqueda = busqueda.trim().toLowerCase();
-
-    return muestras.filter((muestra) => {
-      const contenido = [
-        muestra.codigoEtiqueta,
-        muestra.nombrePaciente,
-        muestra.pacienteId,
-        muestra.ordenId,
-        muestra.analisisNombre,
-        muestra.analisisId,
-      ]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase();
-
-      return contenido.includes(textoBusqueda);
-    });
-  }, [muestras, busqueda]);
-
-  // =============================================
+  // ========================================
   // INTERFAZ
-  // =============================================
+  // ========================================
 
   return (
-    <main className="gr-contenedor">
-      <header className="gr-encabezado">
+    <div className="gr-page">
+
+      {/* ENCABEZADO */}
+
+      <header className="gr-header">
         <div>
           <h1>Registro de resultados</h1>
+
           <p>
-            Registra los resultados de las muestras que
-            finalizaron su procesamiento.
+            Registra y administra los resultados
+            de las muestras que finalizaron
+            su procesamiento.
           </p>
         </div>
 
         {onVolver && (
           <button
-            className="gr-volver"
-            onClick={onVolver}
             type="button"
+            className="gr-btn-back"
+            onClick={onVolver}
           >
             Volver
           </button>
         )}
       </header>
 
-      {mensaje && <div className="gr-exito">{mensaje}</div>}
+      {/* MENSAJES */}
 
-      {error && <div className="gr-error">{error}</div>}
+      {error && (
+        <div className="gr-alert gr-alert-error">
+          {error}
+        </div>
+      )}
 
-      <section className="gr-resumen">
-        <div>
+      {mensaje && (
+        <div className="gr-alert gr-alert-success">
+          {mensaje}
+        </div>
+      )}
+
+      {/* ESTADÍSTICAS */}
+
+      <section className="gr-stats">
+
+        <article className="gr-stat">
           <span>Muestras procesadas</span>
-          <strong>{muestras.length}</strong>
-        </div>
+          <strong>{totalProcesadas}</strong>
+        </article>
 
-        <div>
+        <article className="gr-stat">
           <span>Resultados registrados</span>
-          <strong>{resultados.length}</strong>
-        </div>
+          <strong>{totalRegistrados}</strong>
+        </article>
 
-        <div>
-          <span>Pendientes de registro</span>
-          <strong>
-            {
-              muestras.filter(
-                (muestra) => !buscarResultado(muestra.id)
-              ).length
-            }
-          </strong>
-        </div>
+        <article className="gr-stat">
+          <span>Resultados pendientes</span>
+          <strong>{totalPendientes}</strong>
+        </article>
+
       </section>
 
-      <section className="gr-panel">
-        <div className="gr-filtros">
+      {/* BUSCADOR */}
+
+      <section className="gr-card">
+
+        <div className="gr-section-header">
+          <h2>Buscar muestra procesada</h2>
+
+          <p>
+            Busca por nombre del paciente,
+            CI, análisis o código de muestra.
+          </p>
+        </div>
+
+        <div className="gr-search-row">
           <input
             type="text"
-            placeholder="Buscar por paciente, muestra, orden o análisis..."
+            placeholder="Buscar paciente, CI, análisis o etiqueta..."
             value={busqueda}
-            onChange={(e) => setBusqueda(e.target.value)}
+            onChange={(evento) =>
+              setBusqueda(evento.target.value)
+            }
           />
 
           <button
             type="button"
+            className="gr-btn-primary"
             onClick={cargarDatos}
             disabled={cargando}
           >
-            Actualizar
+            {cargando ? "Actualizando..." : "Actualizar"}
           </button>
         </div>
 
-        <div className="gr-tabla-contenedor">
-          <table className="gr-tabla">
-            <thead>
-              <tr>
-                <th>Muestra</th>
-                <th>Paciente</th>
-                <th>Análisis</th>
-                <th>Fecha de procesamiento</th>
-                <th>Resultado</th>
-                <th>Estado</th>
-                <th>Acciones</th>
-              </tr>
-            </thead>
-
-            <tbody>
-              {cargando ? (
-                <tr>
-                  <td colSpan="7" className="gr-vacio">
-                    Cargando...
-                  </td>
-                </tr>
-              ) : muestrasFiltradas.length === 0 ? (
-                <tr>
-                  <td colSpan="7" className="gr-vacio">
-                    No hay muestras procesadas.
-                  </td>
-                </tr>
-              ) : (
-                muestrasFiltradas.map((muestra) => {
-                  const resultado = buscarResultado(muestra.id);
-
-                  return (
-                    <tr key={muestra.id}>
-                      <td>
-                        {muestra.codigoEtiqueta || muestra.id}
-                      </td>
-
-                      <td>
-                        {muestra.nombrePaciente ||
-                          "Paciente no encontrado"}
-                      </td>
-
-                      <td>
-                        {muestra.analisisNombre ||
-                          muestra.analisisId ||
-                          "-"}
-                      </td>
-
-                      <td>
-                        {mostrarFecha(
-                          muestra.fechaFinProcesamiento
-                        )}
-                      </td>
-
-                      <td>
-                        {resultado
-                          ? `${resultado.valorResultado} ${
-                              resultado.unidad || ""
-                            }`
-                          : "Pendiente"}
-                      </td>
-
-                      <td>
-                        {resultado
-                          ? resultado.estado
-                          : "Sin resultado"}
-                      </td>
-
-                      <td>
-                        {resultado ? (
-                          <span className="gr-registrado">
-                            Registrado
-                          </span>
-                        ) : (
-                          <button
-                            type="button"
-                            className="gr-registrar"
-                            disabled={!puedeRegistrar}
-                            onClick={() => abrirRegistro(muestra)}
-                          >
-                            Registrar resultado
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
       </section>
 
+      {/* MUESTRAS */}
+
+      <section className="gr-card">
+
+        <div className="gr-section-header">
+          <h2>Muestras disponibles</h2>
+
+          <p>
+            Selecciona una muestra procesada
+            para registrar o editar su resultado.
+          </p>
+        </div>
+
+        {cargando ? (
+          <p>Cargando muestras...</p>
+        ) : muestrasFiltradas.length === 0 ? (
+          <div className="gr-empty">
+            No se encontraron muestras procesadas.
+          </div>
+        ) : (
+
+          <div className="gr-list">
+
+            {muestrasFiltradas.map((muestra) => {
+              const paciente = buscarPaciente(
+                muestra.pacienteId
+              );
+
+              const resultado = buscarResultado(
+                muestra.id
+              );
+
+              const estado = obtenerEstadoResultado(
+                resultado
+              );
+
+              const nombreAnalisis = obtenerNombreAnalisis(
+                muestra,
+                analisis
+              );
+
+              const codigo =
+                muestra.codigoEtiqueta ||
+                muestra.codigoMuestra ||
+                muestra.id;
+
+              return (
+                <article
+                  key={muestra.id}
+                  className="gr-result-card"
+                >
+
+                  <div className="gr-result-top">
+
+                    <div>
+                      <h3>{nombreAnalisis}</h3>
+
+                      <p>
+                        <strong>Paciente:</strong>{" "}
+                        {obtenerNombrePaciente(paciente)}
+                      </p>
+
+                      <p>
+                        <strong>CI:</strong>{" "}
+                        {paciente?.ci ||
+                          paciente?.carnet ||
+                          "Sin CI"}
+                      </p>
+
+                      <p>
+                        <strong>Etiqueta:</strong>{" "}
+                        {codigo}
+                      </p>
+
+                      <p>
+                        <strong>Estado de muestra:</strong>{" "}
+                        Procesada
+                      </p>
+
+                      <p>
+                        <strong>Fecha de procesamiento:</strong>{" "}
+                        {obtenerFecha(
+                          muestra.fechaFinProcesamiento
+                        )}
+                      </p>
+                    </div>
+
+                    <span
+                      className={`gr-badge gr-badge-${estado}`}
+                    >
+                      {estado === "validado"
+                        ? "Validado"
+                        : estado === "borrador"
+                        ? "Borrador"
+                        : "Pendiente"}
+                    </span>
+
+                  </div>
+
+                  {resultado && (
+                    <div className="gr-result-value">
+                      <span>Resultado principal</span>
+
+                      <strong>
+                        {resultado.valorResultado ||
+                          "Sin valor"}
+                        {" "}
+                        {resultado.unidad || ""}
+                      </strong>
+                    </div>
+                  )}
+
+                  <div className="gr-actions">
+
+                    {!resultado && (
+                      <button
+                        type="button"
+                        className="gr-btn-primary"
+                        onClick={() =>
+                          abrirFormulario(muestra)
+                        }
+                      >
+                        + Nuevo resultado
+                      </button>
+                    )}
+
+                    {resultado && estado !== "validado" && (
+                      <button
+                        type="button"
+                        className="gr-btn-primary"
+                        onClick={() =>
+                          abrirFormulario(muestra)
+                        }
+                      >
+                        Editar resultado
+                      </button>
+                    )}
+
+                    {resultado && estado === "validado" && (
+                      <div className="gr-validated">
+                        Resultado validado
+                      </div>
+                    )}
+
+                  </div>
+
+                </article>
+              );
+            })}
+
+          </div>
+        )}
+
+      </section>
+
+      {/* MODAL DE REGISTRO */}
+
       {muestraSeleccionada && (
-        <div className="gr-modal-fondo">
+        <div className="gr-modal-overlay">
+
           <div className="gr-modal">
-            <h2>Registrar resultado</h2>
 
-            <p>
-              Paciente:{" "}
-              <strong>
-                {muestraSeleccionada.nombrePaciente ||
-                  "Paciente no encontrado"}
-              </strong>
-            </p>
-
-            <p>
-              Análisis:{" "}
-              <strong>
-                {muestraSeleccionada.analisisNombre ||
-                  muestraSeleccionada.analisisId}
-              </strong>
-            </p>
-
-            <label htmlFor="valorResultado">
-              Resultado *
-            </label>
-
-            <input
-              id="valorResultado"
-              type="text"
-              placeholder="Ingresa el valor obtenido"
-              value={valorResultado}
-              onChange={(e) => setValorResultado(e.target.value)}
-            />
-
-            <label htmlFor="unidad">
-              Unidad de medida
-            </label>
-
-            <input
-              id="unidad"
-              type="text"
-              placeholder="Ejemplo: mg/dL, g/dL, positivo, negativo..."
-              value={unidad}
-              onChange={(e) => setUnidad(e.target.value)}
-            />
-
-            <label htmlFor="observaciones">
-              Observaciones
-            </label>
-
-            <textarea
-              id="observaciones"
-              rows={4}
-              placeholder="Observaciones del Bioquímico"
-              value={observaciones}
-              onChange={(e) => setObservaciones(e.target.value)}
-            />
-
-            <div className="gr-modal-acciones">
-              <button
-                type="button"
-                className="gr-cancelar"
-                disabled={guardando}
-                onClick={() => setMuestraSeleccionada(null)}
-              >
-                Cancelar
-              </button>
+            <div className="gr-modal-header">
+              <h2>
+                {resultadoSeleccionado
+                  ? "Editar resultado"
+                  : "Nuevo resultado"}
+              </h2>
 
               <button
                 type="button"
-                className="gr-registrar"
-                disabled={guardando || !valorResultado.trim()}
-                onClick={guardarResultado}
+                className="gr-close"
+                onClick={cerrarFormulario}
               >
-                {guardando ? "Guardando..." : "Guardar resultado"}
+                ×
               </button>
             </div>
+
+            <div className="gr-modal-info">
+
+              <p>
+                <strong>Análisis:</strong>{" "}
+                {obtenerNombreAnalisis(
+                  muestraSeleccionada,
+                  analisis
+                )}
+              </p>
+
+              <p>
+                <strong>Paciente:</strong>{" "}
+                {obtenerNombrePaciente(
+                  buscarPaciente(
+                    muestraSeleccionada.pacienteId
+                  )
+                )}
+              </p>
+
+              <p>
+                <strong>Muestra:</strong>{" "}
+                {muestraSeleccionada.codigoEtiqueta ||
+                  muestraSeleccionada.id}
+              </p>
+
+            </div>
+
+            <form onSubmit={guardarResultado}>
+
+              <div className="gr-field">
+                <label>Valor del resultado</label>
+
+                <input
+                  type="text"
+                  placeholder="Ingrese el resultado"
+                  value={valorResultado}
+                  onChange={(evento) =>
+                    setValorResultado(
+                      evento.target.value
+                    )
+                  }
+                  required
+                />
+              </div>
+
+              <div className="gr-field">
+                <label>Unidad</label>
+
+                <input
+                  type="text"
+                  placeholder="Ejemplo: g/dl"
+                  value={unidad}
+                  onChange={(evento) =>
+                    setUnidad(evento.target.value)
+                  }
+                />
+              </div>
+
+              <div className="gr-field">
+                <label>Observaciones</label>
+
+                <textarea
+                  placeholder="Observaciones del resultado"
+                  value={observaciones}
+                  onChange={(evento) =>
+                    setObservaciones(
+                      evento.target.value
+                    )
+                  }
+                  rows={4}
+                />
+              </div>
+
+              <div className="gr-modal-actions">
+
+                <button
+                  type="button"
+                  className="gr-btn-back"
+                  onClick={cerrarFormulario}
+                >
+                  Cancelar
+                </button>
+
+                <button
+                  type="submit"
+                  className="gr-btn-primary"
+                  disabled={guardando}
+                >
+                  {guardando
+                    ? "Guardando..."
+                    : resultadoSeleccionado
+                    ? "Guardar cambios"
+                    : "Registrar resultado"}
+                </button>
+
+              </div>
+
+            </form>
+
           </div>
+
         </div>
       )}
-    </main>
+
+    </div>
   );
 }

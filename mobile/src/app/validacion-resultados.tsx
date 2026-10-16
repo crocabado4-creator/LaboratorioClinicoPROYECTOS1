@@ -13,7 +13,7 @@ import {
   View,
 } from "react-native";
 
-import { getAuth } from "firebase/auth";
+import { useRouter } from "expo-router";
 
 import {
   collection,
@@ -26,237 +26,396 @@ import {
   where,
 } from "firebase/firestore";
 
-import { db } from "../firebase/firebase";
+import { auth, db } from "../firebase/firebase";
 
 // =====================================================
 // TIPOS
 // =====================================================
 
-type Parametro = {
-  id: string;
+type Usuario = {
+  uid: string;
+  laboratorioId: string;
   nombre: string;
-  valor: string;
-  unidad: string;
-  valorReferencia: string;
+};
+
+type Paciente = {
+  nombre: string;
+  ci: string;
 };
 
 type Resultado = {
   id: string;
-  codigo: string;
   muestraId: string;
   pacienteId: string;
-  paciente: string;
-  analisisId: string;
-  analisis: string;
   ordenId: string;
+  analisisId: string;
+  analisisNombre: string;
   laboratorioId: string;
-  estado: string;
-  valor: string;
+  valorResultado: string;
   unidad: string;
-  observacion: string;
-  parametros: Parametro[];
-  fechaRegistro: string;
-  fechaValidacion: string;
+  observaciones: string;
+  estado: string;
+  validado: boolean;
+  fechaRegistro: any;
+  fechaValidacion: any;
   validadoPor: string;
+  validadoPorNombre: string;
 };
 
-type Filtro = "todos" | "pendientes" | "validados";
+type ValorParametro = {
+  id: string;
+  nombre: string;
+  valor: string;
+  unidad: string;
+  referencia: string;
+  observacion: string;
+  registrado: boolean;
+};
 
 // =====================================================
 // FUNCIONES AUXILIARES
 // =====================================================
 
-function texto(valor: unknown): string {
+function texto(valor: any): string {
   if (valor === null || valor === undefined) {
     return "";
   }
 
-  return String(valor);
-}
-
-function fecha(valor: any): string {
-  if (!valor) return "";
-
-  if (typeof valor.toDate === "function") {
-    return valor.toDate().toLocaleString("es-BO");
+  if (typeof valor === "object") {
+    return "";
   }
 
-  if (valor instanceof Date) {
-    return valor.toLocaleString("es-BO");
-  }
-
-  if (typeof valor === "string") {
-    return valor;
-  }
-
-  return "";
+  return String(valor).trim();
 }
 
-function estaValidado(estado: string): boolean {
-  return estado.toLowerCase().trim() === "validado";
+function obtenerNombre(datos: any): string {
+  const nombreCompleto = texto(datos.nombreCompleto);
+
+  if (nombreCompleto) {
+    return nombreCompleto;
+  }
+
+  const nombres = texto(datos.nombres || datos.nombre);
+
+  const apellidos = texto(
+    datos.apellidos || datos.apellido
+  );
+
+  return [nombres, apellidos]
+    .filter(Boolean)
+    .join(" ");
 }
 
-function aviso(titulo: string, mensaje: string) {
+function mostrarMensaje(titulo: string, mensaje: string) {
   if (Platform.OS === "web") {
-    if (typeof window !== "undefined") {
-      window.alert(`${titulo}\n\n${mensaje}`);
-    }
+    window.alert(`${titulo}\n\n${mensaje}`);
   } else {
     Alert.alert(titulo, mensaje);
   }
 }
 
-function obtenerParametros(datos: any): Parametro[] {
-  if (!Array.isArray(datos.parametros)) {
+function confirmarAccion(
+  titulo: string,
+  mensaje: string,
+  accion: () => void
+) {
+  if (Platform.OS === "web") {
+    if (window.confirm(`${titulo}\n\n${mensaje}`)) {
+      accion();
+    }
+  } else {
+    Alert.alert(titulo, mensaje, [
+      {
+        text: "Cancelar",
+        style: "cancel",
+      },
+      {
+        text: "Validar",
+        onPress: accion,
+      },
+    ]);
+  }
+}
+
+function mensajeError(error: any): string {
+  if (error?.code === "permission-denied") {
+    return "Firestore rechazó la operación por falta de permisos.";
+  }
+
+  return error?.message || "Ocurrió un error inesperado.";
+}
+
+function convertirFecha(valor: any): string {
+  if (!valor) {
+    return "-";
+  }
+
+  try {
+    if (typeof valor.toDate === "function") {
+      return valor.toDate().toLocaleString("es-BO");
+    }
+
+    if (valor instanceof Date) {
+      return valor.toLocaleString("es-BO");
+    }
+
+    const fecha = new Date(valor);
+
+    if (isNaN(fecha.getTime())) {
+      return "-";
+    }
+
+    return fecha.toLocaleString("es-BO");
+  } catch {
+    return "-";
+  }
+}
+
+function obtenerReferencia(valor: any): string {
+  if (valor === null || valor === undefined) {
+    return "";
+  }
+
+  if (
+    typeof valor === "string" ||
+    typeof valor === "number"
+  ) {
+    return String(valor);
+  }
+
+  if (Array.isArray(valor)) {
+    return valor
+      .map((item) => obtenerReferencia(item))
+      .filter(Boolean)
+      .join(" | ");
+  }
+
+  if (typeof valor === "object") {
+    const minimo =
+      valor.min ??
+      valor.minimo ??
+      valor.desde ??
+      valor.valorMinimo;
+
+    const maximo =
+      valor.max ??
+      valor.maximo ??
+      valor.hasta ??
+      valor.valorMaximo;
+
+    if (minimo !== undefined && maximo !== undefined) {
+      return `${minimo} - ${maximo}`;
+    }
+
+    if (minimo !== undefined) {
+      return `Desde ${minimo}`;
+    }
+
+    if (maximo !== undefined) {
+      return `Hasta ${maximo}`;
+    }
+
+    return Object.entries(valor)
+      .map(
+        ([clave, dato]) =>
+          `${clave}: ${obtenerReferencia(dato)}`
+      )
+      .join(" | ");
+  }
+
+  return "";
+}
+
+function crearParametro(
+  datos: any,
+  id: string
+): ValorParametro {
+  return {
+    id,
+
+    nombre:
+      texto(datos.nombreParametro) ||
+      texto(datos.nombre) ||
+      texto(datos.parametro) ||
+      texto(datos.descripcion) ||
+      texto(datos.prueba) ||
+      "Parámetro",
+
+    valor:
+      texto(datos.valor) ||
+      texto(datos.valorResultado) ||
+      texto(datos.resultado),
+
+    unidad:
+      texto(datos.unidad) ||
+      texto(datos.unidadMedida) ||
+      texto(datos.unidades),
+
+    referencia: obtenerReferencia(
+      datos.rangoReferencia ??
+      datos.valorReferencia ??
+      datos.referencia ??
+      datos.rango ??
+      datos.valoresReferencia
+    ),
+
+    observacion:
+      texto(datos.observacion) ||
+      texto(datos.observaciones),
+
+    registrado: false,
+  };
+}
+
+function extraerParametros(
+  datos: any,
+  idBase: string
+): ValorParametro[] {
+  if (!datos || typeof datos !== "object") {
     return [];
   }
 
-  return datos.parametros.map(
-    (parametro: any, indice: number) => ({
-      id: texto(parametro.id ?? indice),
-      nombre: texto(parametro.nombre),
-      valor: texto(parametro.valor),
-      unidad: texto(parametro.unidad),
-      valorReferencia: texto(parametro.valorReferencia),
-    })
+  const posiblesHijos = [
+    datos.subparametros,
+    datos.subParametros,
+    datos.parametros,
+    datos.pruebas,
+    datos.items,
+    datos.componentes,
+    datos.determinaciones,
+  ];
+
+  const hijos = posiblesHijos.filter(
+    (item) => Array.isArray(item) && item.length > 0
   );
-}
 
-function tieneValoresCompletos(datos: any): boolean {
-  const parametros = obtenerParametros(datos);
+  if (hijos.length > 0) {
+    const encontrados: ValorParametro[] = [];
 
-  if (parametros.length > 0) {
-    return parametros.every(
-      (parametro) =>
-        parametro.nombre.trim() !== "" &&
-        parametro.valor.trim() !== ""
-    );
+    hijos.forEach((arreglo, indiceArreglo) => {
+      arreglo.forEach((item: any, indice: number) => {
+        const id =
+          texto(item?.id) ||
+          texto(item?.parametroId) ||
+          `${idBase}_${indiceArreglo}_${indice}`;
+
+        if (typeof item === "string") {
+          encontrados.push(
+            crearParametro({ nombre: item }, id)
+          );
+        } else {
+          encontrados.push(
+            ...extraerParametros(item, id)
+          );
+        }
+      });
+    });
+
+    return encontrados;
   }
 
-  const valor = texto(datos.valor ?? datos.resultado);
+  return [crearParametro(datos, idBase)];
+}
 
-  return valor.trim() !== "";
+// =====================================================
+// OBTENER NOMBRE DEL BIOQUÍMICO
+// =====================================================
+
+async function obtenerNombreBioquimico(
+  uid: string,
+  laboratorioId: string
+): Promise<string> {
+  if (!uid) {
+    return "No registrado";
+  }
+
+  const usuarioSnap = await getDoc(
+    doc(db, "usuarios", uid)
+  );
+
+  if (!usuarioSnap.exists()) {
+    return "Usuario no encontrado";
+  }
+
+  const datos = usuarioSnap.data();
+
+  if (
+    texto(datos.laboratorioId) !== laboratorioId
+  ) {
+    return "Usuario de otro laboratorio";
+  }
+
+  return obtenerNombre(datos) || "Nombre no registrado";
 }
 
 // =====================================================
 // PANTALLA PRINCIPAL
 // =====================================================
 
-export default function ValidacionResultadosScreen() {
-  const [resultados, setResultados] = useState<Resultado[]>([]);
+export default function ValidacionResultados() {
+  const router = useRouter();
 
-  const [cargando, setCargando] = useState(true);
-  const [guardando, setGuardando] = useState(false);
+  const [usuario, setUsuario] =
+    useState<Usuario | null>(null);
 
-  const [busqueda, setBusqueda] = useState("");
-  const [filtro, setFiltro] = useState<Filtro>("todos");
+  const [resultados, setResultados] =
+    useState<Resultado[]>([]);
 
-  const [error, setError] = useState("");
+  const [pacientes, setPacientes] = useState<
+    Record<string, Paciente>
+  >({});
 
-  const [seleccionado, setSeleccionado] =
+  const [resultadoSeleccionado, setResultadoSeleccionado] =
     useState<Resultado | null>(null);
 
-  const [confirmando, setConfirmando] = useState(false);
+  const [valoresParametros, setValoresParametros] =
+    useState<ValorParametro[]>([]);
+
+  const [nombreBioquimico, setNombreBioquimico] =
+    useState("");
+
+  const [modalVisible, setModalVisible] = useState(false);
+
+  const [cargando, setCargando] = useState(true);
+
+  const [cargandoDetalle, setCargandoDetalle] =
+    useState(false);
+
+  const [validando, setValidando] = useState(false);
+
+  const [busqueda, setBusqueda] = useState("");
 
   // ===================================================
-  // OBTENER NOMBRE DEL PACIENTE
+  // CARGAR RESULTADOS Y PACIENTES
   // ===================================================
 
-  async function obtenerPaciente(
-    pacienteId: string
-  ): Promise<string> {
-    if (!pacienteId) {
-      return "Sin paciente";
-    }
-
-    try {
-      const documento = await getDoc(
-        doc(db, "pacientes", pacienteId)
-      );
-
-      if (!documento.exists()) {
-        return pacienteId;
-      }
-
-      const datos = documento.data();
-
-      const nombre = texto(
-        datos.nombre || datos.nombres
-      );
-
-      const apellido = texto(
-        datos.apellido || datos.apellidos
-      );
-
-      return `${nombre} ${apellido}`.trim() || pacienteId;
-    } catch {
-      return pacienteId;
-    }
-  }
-
-  // ===================================================
-  // OBTENER NOMBRE DEL ANÁLISIS
-  // ===================================================
-
-  async function obtenerAnalisis(
-    analisisId: string
-  ): Promise<string> {
-    if (!analisisId) {
-      return "Sin análisis";
-    }
-
-    try {
-      const documento = await getDoc(
-        doc(db, "analisis", analisisId)
-      );
-
-      if (!documento.exists()) {
-        return analisisId;
-      }
-
-      const datos = documento.data();
-
-      return texto(
-        datos.nombre ||
-          datos.nombreAnalisis ||
-          datos.descripcion ||
-          analisisId
-      );
-    } catch {
-      return analisisId;
-    }
-  }
-
-  // ===================================================
-  // CARGAR RESULTADOS
-  // ===================================================
-
-  const cargar = useCallback(async () => {
+  const cargarDatos = useCallback(async () => {
     try {
       setCargando(true);
-      setError("");
 
-      const usuario = getAuth().currentUser;
+      const firebaseUser = auth.currentUser;
 
-      if (!usuario) {
+      if (!firebaseUser) {
         throw new Error("Debes iniciar sesión.");
       }
 
-      const usuarioDoc = await getDoc(
-        doc(db, "usuarios", usuario.uid)
+      const usuarioSnap = await getDoc(
+        doc(db, "usuarios", firebaseUser.uid)
       );
 
-      if (!usuarioDoc.exists()) {
-        throw new Error(
-          "No se encontró tu usuario en Firestore."
-        );
+      if (!usuarioSnap.exists()) {
+        throw new Error("Usuario no encontrado.");
       }
 
-      const datosUsuario = usuarioDoc.data();
+      const datosUsuario = usuarioSnap.data();
 
-      if (datosUsuario.activo === false) {
+      if (datosUsuario.activo !== true) {
+        throw new Error("Usuario inactivo.");
+      }
+
+      if (datosUsuario.rol !== "bioquimico") {
         throw new Error(
-          "Tu cuenta está desactivada."
+          "Esta pantalla corresponde al Bioquímico."
         );
       }
 
@@ -266,135 +425,390 @@ export default function ValidacionResultadosScreen() {
 
       if (!laboratorioId) {
         throw new Error(
-          "No tienes laboratorio asignado."
+          "No tienes un laboratorio asignado."
         );
       }
 
-      const consulta = query(
-        collection(db, "resultados"),
-        where("laboratorioId", "==", laboratorioId)
+      setUsuario({
+        uid: firebaseUser.uid,
+        laboratorioId,
+        nombre:
+          obtenerNombre(datosUsuario) ||
+          texto(firebaseUser.displayName) ||
+          "Bioquímico",
+      });
+
+      const [resultadosSnap, pacientesSnap] =
+        await Promise.all([
+          getDocs(
+            query(
+              collection(db, "resultados"),
+              where("laboratorioId", "==", laboratorioId)
+            )
+          ),
+
+          getDocs(
+            query(
+              collection(db, "pacientes"),
+              where("laboratorioId", "==", laboratorioId)
+            )
+          ),
+        ]);
+
+      const listaResultados: Resultado[] =
+        resultadosSnap.docs.map((documento) => {
+          const datos = documento.data();
+
+          return {
+            id: documento.id,
+
+            muestraId: texto(datos.muestraId),
+
+            pacienteId: texto(datos.pacienteId),
+
+            ordenId: texto(datos.ordenId),
+
+            analisisId: texto(datos.analisisId),
+
+            analisisNombre:
+              texto(datos.analisisNombre) || "Análisis",
+
+            laboratorioId: texto(datos.laboratorioId),
+
+            valorResultado: texto(datos.valorResultado),
+
+            unidad: texto(datos.unidad),
+
+            observaciones: texto(datos.observaciones),
+
+            estado: texto(datos.estado) || "borrador",
+
+            validado: datos.validado === true,
+
+            fechaRegistro: datos.fechaRegistro || null,
+
+            fechaValidacion: datos.fechaValidacion || null,
+
+            validadoPor: texto(datos.validadoPor),
+
+            validadoPorNombre: texto(
+              datos.validadoPorNombre
+            ),
+          };
+        });
+
+      setResultados(listaResultados);
+
+      const mapaPacientes: Record<string, Paciente> = {};
+
+      pacientesSnap.docs.forEach((documento) => {
+        const datos = documento.data();
+
+        mapaPacientes[documento.id] = {
+          nombre:
+            [
+              texto(datos.nombres || datos.nombre),
+              texto(datos.apellidos || datos.apellido),
+            ]
+              .filter(Boolean)
+              .join(" ") || "Paciente",
+
+          ci: texto(datos.ci),
+        };
+      });
+
+      setPacientes(mapaPacientes);
+    } catch (error: any) {
+      console.error(
+        "Error cargando resultados:",
+        error
       );
 
-      const consultaResultados = await getDocs(
-        consulta
+      mostrarMensaje(
+        "Error",
+        mensajeError(error)
       );
-
-      const lista = await Promise.all(
-        consultaResultados.docs.map(
-          async (documento) => {
-            const datos = documento.data();
-
-            const pacienteId = texto(
-              datos.pacienteId
-            );
-
-            const analisisId = texto(
-              datos.analisisId
-            );
-
-            const paciente =
-              texto(
-                datos.pacienteNombre ||
-                  datos.nombrePaciente
-              ) ||
-              (await obtenerPaciente(pacienteId));
-
-            const analisis =
-              texto(
-                datos.analisisNombre ||
-                  datos.nombreAnalisis
-              ) ||
-              (await obtenerAnalisis(analisisId));
-
-            const resultado: Resultado = {
-              id: documento.id,
-
-              codigo: texto(
-                datos.codigo ||
-                  datos.codigoResultado ||
-                  documento.id
-              ),
-
-              muestraId: texto(datos.muestraId),
-
-              pacienteId,
-              paciente,
-
-              analisisId,
-              analisis,
-
-              ordenId: texto(datos.ordenId),
-
-              laboratorioId,
-
-              estado: texto(
-                datos.estado || "registrado"
-              ),
-
-              valor: texto(
-                datos.valor ?? datos.resultado
-              ),
-
-              unidad: texto(datos.unidad),
-
-              observacion: texto(
-                datos.observacion
-              ),
-
-              parametros: obtenerParametros(datos),
-
-              fechaRegistro: fecha(
-                datos.fechaRegistro
-              ),
-
-              fechaValidacion: fecha(
-                datos.fechaValidacion
-              ),
-
-              validadoPor: texto(
-                datos.validadoPor
-              ),
-            };
-
-            return resultado;
-          }
-        )
-      );
-
-      setResultados(lista);
-    } catch (e: unknown) {
-      setError(
-        e instanceof Error
-          ? e.message
-          : "No se pudieron cargar los resultados."
-      );
-
-      setResultados([]);
     } finally {
       setCargando(false);
     }
   }, []);
 
   useEffect(() => {
-    cargar();
-  }, [cargar]);
+    cargarDatos();
+  }, [cargarDatos]);
 
   // ===================================================
-  // COMPROBAR SI UN RESULTADO ESTÁ COMPLETO
+  // CARGAR PARÁMETROS CONFIGURADOS
   // ===================================================
 
-  const resultadoCompleto = (
-    resultado: Resultado
-  ): boolean => {
-    if (resultado.parametros.length > 0) {
-      return resultado.parametros.every(
-        (parametro) =>
-          parametro.nombre.trim() !== "" &&
-          parametro.valor.trim() !== ""
+  const cargarParametrosConfigurados = async (
+    analisisId: string
+  ): Promise<ValorParametro[]> => {
+    if (!analisisId) {
+      return [];
+    }
+
+    const encontrados: ValorParametro[] = [];
+
+    const analisisSnap = await getDoc(
+      doc(db, "analisis", analisisId)
+    );
+
+    if (!analisisSnap.exists()) {
+      return [];
+    }
+
+    const datosAnalisis = analisisSnap.data();
+
+    if (
+      usuario &&
+      datosAnalisis.laboratorioId !== usuario.laboratorioId
+    ) {
+      throw new Error(
+        "El análisis pertenece a otro laboratorio."
       );
     }
 
-    return resultado.valor.trim() !== "";
+    const arreglos = [
+      datosAnalisis.parametros,
+      datosAnalisis.parametrosAnalisis,
+      datosAnalisis.valoresParametros,
+      datosAnalisis.pruebas,
+      datosAnalisis.items,
+    ];
+
+    arreglos.forEach((arreglo, indiceArreglo) => {
+      if (!Array.isArray(arreglo)) {
+        return;
+      }
+
+      arreglo.forEach((item: any, indice: number) => {
+        const id = `array_${indiceArreglo}_${indice}`;
+
+        if (typeof item === "string") {
+          encontrados.push(
+            crearParametro({ nombre: item }, id)
+          );
+        } else {
+          encontrados.push(
+            ...extraerParametros(item, id)
+          );
+        }
+      });
+    });
+
+    const parametrosSnap = await getDocs(
+      collection(
+        db,
+        "analisis",
+        analisisId,
+        "parametros"
+      )
+    );
+
+    parametrosSnap.docs.forEach((documento) => {
+      encontrados.push(
+        ...extraerParametros(
+          documento.data(),
+          documento.id
+        )
+      );
+    });
+
+    const mapa = new Map<string, ValorParametro>();
+
+    encontrados.forEach((parametro) => {
+      const clave = parametro.nombre
+        .toLowerCase()
+        .trim();
+
+      if (!mapa.has(clave)) {
+        mapa.set(clave, parametro);
+      }
+    });
+
+    return Array.from(mapa.values());
+  };
+
+  // ===================================================
+  // CARGAR VALORES GUARDADOS
+  // ===================================================
+
+  const cargarValoresGuardados = async (
+    resultadoId: string
+  ): Promise<ValorParametro[]> => {
+    const valoresSnap = await getDocs(
+      collection(
+        db,
+        "resultados",
+        resultadoId,
+        "valores"
+      )
+    );
+
+    return valoresSnap.docs.map((documento) => {
+      const datos = documento.data();
+
+      return {
+        ...crearParametro(datos, documento.id),
+
+        registrado: true,
+      };
+    });
+  };
+
+  // ===================================================
+  // UNIR PARÁMETROS Y VALORES
+  // ===================================================
+
+  const unirParametros = (
+    configurados: ValorParametro[],
+    guardados: ValorParametro[]
+  ): ValorParametro[] => {
+    const mapa = new Map<string, ValorParametro>();
+
+    configurados.forEach((parametro) => {
+      mapa.set(
+        parametro.nombre.toLowerCase().trim(),
+        parametro
+      );
+    });
+
+    guardados.forEach((guardado) => {
+      const clave = guardado.nombre.toLowerCase().trim();
+
+      const anterior = mapa.get(clave);
+
+      if (anterior) {
+        mapa.set(clave, {
+          ...anterior,
+
+          valor: guardado.valor,
+
+          unidad: guardado.unidad || anterior.unidad,
+
+          referencia:
+            guardado.referencia || anterior.referencia,
+
+          observacion: guardado.observacion,
+
+          registrado: true,
+        });
+      } else {
+        mapa.set(clave, guardado);
+      }
+    });
+
+    return Array.from(mapa.values());
+  };
+
+  // ===================================================
+  // REVISAR Y VALIDAR RESULTADO
+  // ===================================================
+
+  const revisarYValidar = async (resultado: Resultado) => {
+    try {
+      if (!usuario) {
+        throw new Error("No hay sesión activa.");
+      }
+
+      setCargandoDetalle(true);
+
+      const resultadoSnap = await getDoc(
+        doc(db, "resultados", resultado.id)
+      );
+
+      if (!resultadoSnap.exists()) {
+        throw new Error(
+          "El resultado ya no existe."
+        );
+      }
+
+      const datos = resultadoSnap.data();
+
+      if (
+        datos.laboratorioId !== usuario.laboratorioId
+      ) {
+        throw new Error(
+          "El resultado pertenece a otro laboratorio."
+        );
+      }
+
+      const resultadoActualizado: Resultado = {
+        ...resultado,
+
+        valorResultado: texto(datos.valorResultado),
+
+        unidad: texto(datos.unidad),
+
+        observaciones: texto(datos.observaciones),
+
+        estado: texto(datos.estado) || "borrador",
+
+        validado: datos.validado === true,
+
+        fechaValidacion: datos.fechaValidacion || null,
+
+        validadoPor: texto(datos.validadoPor),
+
+        validadoPorNombre: texto(
+          datos.validadoPorNombre
+        ),
+      };
+
+      const configurados =
+        await cargarParametrosConfigurados(
+          resultadoActualizado.analisisId
+        );
+
+      const guardados =
+        await cargarValoresGuardados(
+          resultadoActualizado.id
+        );
+
+      setValoresParametros(
+        unirParametros(configurados, guardados)
+      );
+
+      let nombre =
+        resultadoActualizado.validadoPorNombre;
+
+      if (
+        !nombre &&
+        resultadoActualizado.validadoPor
+      ) {
+        try {
+          nombre = await obtenerNombreBioquimico(
+            resultadoActualizado.validadoPor,
+            usuario.laboratorioId
+          );
+        } catch (error) {
+          // El detalle debe abrirse incluso si el perfil
+          // del bioquímico no se puede consultar.
+          nombre = "Nombre no disponible";
+        }
+      }
+
+      setNombreBioquimico(
+        nombre || "Nombre no registrado"
+      );
+
+      setResultadoSeleccionado(resultadoActualizado);
+
+      setModalVisible(true);
+    } catch (error: any) {
+      console.error(
+        "Error revisando resultado:",
+        error
+      );
+
+      mostrarMensaje(
+        "Error",
+        mensajeError(error)
+      );
+    } finally {
+      setCargandoDetalle(false);
+    }
   };
 
   // ===================================================
@@ -402,205 +816,166 @@ export default function ValidacionResultadosScreen() {
   // ===================================================
 
   const validarResultado = async () => {
-    if (!seleccionado || guardando) {
-      return;
-    }
-
     try {
-      setGuardando(true);
-
-      const usuario = getAuth().currentUser;
-
       if (!usuario) {
-        throw new Error(
-          "Debes iniciar sesión."
-        );
+        throw new Error("No hay sesión activa.");
       }
 
-      const usuarioDoc = await getDoc(
-        doc(db, "usuarios", usuario.uid)
-      );
-
-      if (!usuarioDoc.exists()) {
+      if (!resultadoSeleccionado) {
         throw new Error(
-          "No se encontró tu usuario."
+          "Selecciona un resultado."
         );
       }
-
-      const datosUsuario = usuarioDoc.data();
-
-      if (datosUsuario.activo === false) {
-        throw new Error(
-          "Tu usuario está desactivado."
-        );
-      }
-
-      const laboratorioId = texto(
-        datosUsuario.laboratorioId
-      );
 
       if (
-        laboratorioId !==
-        seleccionado.laboratorioId
+        resultadoSeleccionado.validado ||
+        resultadoSeleccionado.estado === "validado"
       ) {
         throw new Error(
-          "No tienes permiso para validar este resultado."
+          "Este resultado ya fue validado."
         );
       }
 
-      const referencia = doc(
+      setValidando(true);
+
+      const resultadoRef = doc(
         db,
         "resultados",
-        seleccionado.id
+        resultadoSeleccionado.id
       );
 
-      await runTransaction(
-        db,
-        async (transaction) => {
-          const documento = await transaction.get(
-            referencia
+      await runTransaction(db, async (transaction) => {
+        const resultadoSnap = await transaction.get(
+          resultadoRef
+        );
+
+        if (!resultadoSnap.exists()) {
+          throw new Error(
+            "El resultado ya no existe."
           );
-
-          if (!documento.exists()) {
-            throw new Error(
-              "El resultado ya no existe."
-            );
-          }
-
-          const datos = documento.data();
-
-          if (
-            texto(datos.laboratorioId) !==
-            laboratorioId
-          ) {
-            throw new Error(
-              "El resultado pertenece a otro laboratorio."
-            );
-          }
-
-          if (
-            estaValidado(
-              texto(datos.estado)
-            )
-          ) {
-            throw new Error(
-              "Este resultado ya fue validado."
-            );
-          }
-
-          if (!tieneValoresCompletos(datos)) {
-            throw new Error(
-              "No puedes validar un resultado incompleto."
-            );
-          }
-
-          transaction.update(referencia, {
-            estado: "validado",
-            validadoPor: usuario.uid,
-            fechaValidacion: serverTimestamp(),
-            fechaActualizacion: serverTimestamp(),
-          });
         }
-      );
 
-      setSeleccionado(null);
-      setConfirmando(false);
+        const datos = resultadoSnap.data();
 
-      await cargar();
+        if (
+          datos.laboratorioId !== usuario.laboratorioId
+        ) {
+          throw new Error(
+            "El resultado pertenece a otro laboratorio."
+          );
+        }
 
-      aviso(
-        "Correcto",
+        if (
+          datos.validado === true ||
+          datos.estado === "validado"
+        ) {
+          throw new Error(
+            "Este resultado ya está validado."
+          );
+        }
+
+        if (!texto(datos.valorResultado)) {
+          throw new Error(
+            "El resultado no tiene un valor registrado."
+          );
+        }
+
+        transaction.update(resultadoRef, {
+          estado: "validado",
+          validado: true,
+          validadoPor: usuario.uid,
+          validadoPorNombre: usuario.nombre,
+          fechaValidacion: serverTimestamp(),
+        });
+      });
+
+      mostrarMensaje(
+        "Resultado validado",
         "El resultado fue validado correctamente."
       );
-    } catch (e: unknown) {
-      aviso(
-        "Error",
-        e instanceof Error
-          ? e.message
-          : "No se pudo validar el resultado."
+
+      setModalVisible(false);
+      setResultadoSeleccionado(null);
+      setValoresParametros([]);
+
+      await cargarDatos();
+    } catch (error: any) {
+      console.error(
+        "Error validando resultado:",
+        error
+      );
+
+      mostrarMensaje(
+        "No se pudo validar",
+        mensajeError(error)
       );
     } finally {
-      setGuardando(false);
+      setValidando(false);
     }
   };
 
-  // ===================================================
-  // CONTADORES
-  // ===================================================
-
-  const total = resultados.length;
-
-  const validados = resultados.filter(
-    (resultado) =>
-      estaValidado(resultado.estado)
-  ).length;
-
-  const pendientes = resultados.filter(
-    (resultado) =>
-      !estaValidado(resultado.estado)
-  ).length;
+  const confirmarValidacion = () => {
+    confirmarAccion(
+      "Confirmar validación",
+      "¿Estás seguro de que deseas validar este resultado?",
+      validarResultado
+    );
+  };
 
   // ===================================================
-  // BUSCADOR Y FILTROS
+  // FILTRAR RESULTADOS
   // ===================================================
 
-  const filtrados = resultados.filter(
+  const resultadosFiltrados = resultados.filter(
     (resultado) => {
+      const paciente = pacientes[resultado.pacienteId];
+
       const contenido = [
-        resultado.codigo,
-        resultado.paciente,
-        resultado.pacienteId,
-        resultado.analisis,
-        resultado.analisisId,
+        resultado.analisisNombre,
+        resultado.id,
         resultado.muestraId,
-        resultado.ordenId,
+        paciente?.nombre || "",
+        paciente?.ci || "",
       ]
         .join(" ")
         .toLowerCase();
 
-      const coincideBusqueda =
-        contenido.includes(
-          busqueda.trim().toLowerCase()
-        );
-
-      let coincideFiltro = true;
-
-      if (filtro === "pendientes") {
-        coincideFiltro = !estaValidado(
-          resultado.estado
-        );
-      }
-
-      if (filtro === "validados") {
-        coincideFiltro = estaValidado(
-          resultado.estado
-        );
-      }
-
-      return (
-        coincideBusqueda &&
-        coincideFiltro
+      return contenido.includes(
+        busqueda.trim().toLowerCase()
       );
     }
   );
 
+  const pendientes = resultados.filter(
+    (resultado) =>
+      !resultado.validado &&
+      resultado.estado !== "validado"
+  ).length;
+
+  const validados = resultados.filter(
+    (resultado) =>
+      resultado.validado ||
+      resultado.estado === "validado"
+  ).length;
+
   // ===================================================
-  // ABRIR DETALLE
+  // CARGANDO
   // ===================================================
 
-  const abrirDetalle = (
-    resultado: Resultado
-  ) => {
-    setSeleccionado(resultado);
-    setConfirmando(false);
-  };
+  if (cargando) {
+    return (
+      <View style={styles.cargando}>
+        <ActivityIndicator
+          size="large"
+          color="#19385F"
+        />
 
-  const cerrarDetalle = () => {
-    if (guardando) return;
-
-    setSeleccionado(null);
-    setConfirmando(false);
-  };
+        <Text style={styles.textoCargando}>
+          Cargando validación de resultados...
+        </Text>
+      </View>
+    );
+  }
 
   // ===================================================
   // INTERFAZ
@@ -610,19 +985,28 @@ export default function ValidacionResultadosScreen() {
     <View style={styles.contenedor}>
       <ScrollView
         contentContainerStyle={styles.contenido}
+        keyboardShouldPersistTaps="handled"
       >
-        {/* TÍTULO */}
+        <View style={styles.encabezado}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.titulo}>
+              Validación de resultados
+            </Text>
 
-        <Text style={styles.titulo}>
-          Validación de resultados
-        </Text>
+            <Text style={styles.subtitulo}>
+              Revisa y valida los resultados registrados.
+            </Text>
+          </View>
 
-        <Text style={styles.subtitulo}>
-          Revisa y valida los resultados
-          registrados por el Bioquímico.
-        </Text>
-
-        {/* CONTADORES */}
+          <Pressable
+            style={styles.botonVolver}
+            onPress={() => router.back()}
+          >
+            <Text style={styles.textoBoton}>
+              Volver
+            </Text>
+          </Pressable>
+        </View>
 
         <View style={styles.contadores}>
           <View style={styles.contador}>
@@ -631,7 +1015,7 @@ export default function ValidacionResultadosScreen() {
             </Text>
 
             <Text style={styles.contadorNumero}>
-              {total}
+              {resultados.length}
             </Text>
           </View>
 
@@ -656,593 +1040,310 @@ export default function ValidacionResultadosScreen() {
           </View>
         </View>
 
-        {/* PANEL */}
+        <View style={styles.panel}>
+          <Text style={styles.etiqueta}>
+            Buscar resultado
+          </Text>
+
+          <TextInput
+            style={styles.input}
+            placeholder="Paciente, CI o análisis"
+            value={busqueda}
+            onChangeText={setBusqueda}
+          />
+
+          <Pressable
+            style={styles.botonActualizar}
+            onPress={cargarDatos}
+          >
+            <Text style={styles.textoActualizar}>
+              Actualizar
+            </Text>
+          </Pressable>
+        </View>
 
         <View style={styles.panel}>
-          {/* BUSCADOR */}
+          <Text style={styles.seccionTitulo}>
+            Resultados registrados
+          </Text>
 
-          <View style={styles.barra}>
-            <TextInput
-              style={styles.buscador}
-              placeholder="Buscar por paciente, análisis, muestra u orden..."
-              placeholderTextColor="#94A3B8"
-              value={busqueda}
-              onChangeText={setBusqueda}
-            />
-
-            <Pressable
-              style={styles.botonActualizar}
-              onPress={cargar}
-              disabled={cargando}
-            >
-              <Text style={styles.textoBlanco}>
-                Actualizar
-              </Text>
-            </Pressable>
-          </View>
-
-          {/* FILTROS */}
-
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={styles.filtros}
-          >
-            {(
-              [
-                ["todos", "Todos"],
-                ["pendientes", "Pendientes"],
-                ["validados", "Validados"],
-              ] as [Filtro, string][]
-            ).map(([valor, nombre]) => (
-              <Pressable
-                key={valor}
-                style={[
-                  styles.filtro,
-                  filtro === valor &&
-                    styles.filtroActivo,
-                ]}
-                onPress={() =>
-                  setFiltro(valor)
-                }
-              >
-                <Text
-                  style={[
-                    styles.filtroTexto,
-                    filtro === valor &&
-                      styles.filtroTextoActivo,
-                  ]}
-                >
-                  {nombre}
-                </Text>
-              </Pressable>
-            ))}
-          </ScrollView>
-
-          {/* ERRORES */}
-
-          {error !== "" && (
-            <Text style={styles.error}>
-              {error}
+          {resultadosFiltrados.length === 0 ? (
+            <Text style={styles.textoVacio}>
+              No se encontraron resultados.
             </Text>
-          )}
-
-          {/* TABLA */}
-
-          {cargando ? (
-            <ActivityIndicator
-              size="large"
-              color="#17365D"
-              style={{
-                marginTop: 30,
-              }}
-            />
           ) : (
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator
-            >
-              <View style={styles.tabla}>
-                {/* CABECERA */}
+            resultadosFiltrados.map((resultado) => {
+              const paciente =
+                pacientes[resultado.pacienteId];
 
-                <View style={styles.cabecera}>
-                  <Text
-                    style={[
-                      styles.cabeceraTexto,
-                      styles.colCodigo,
-                    ]}
-                  >
-                    Código
+              const estaValidado =
+                resultado.validado ||
+                resultado.estado === "validado";
+
+              return (
+                <View
+                  key={resultado.id}
+                  style={styles.tarjeta}
+                >
+                  <Text style={styles.nombreAnalisis}>
+                    {resultado.analisisNombre}
+                  </Text>
+
+                  <Text style={styles.dato}>
+                    Paciente:{" "}
+                    {paciente?.nombre || "Sin identificar"}
+                  </Text>
+
+                  <Text style={styles.dato}>
+                    CI: {paciente?.ci || "-"}
+                  </Text>
+
+                  <Text style={styles.dato}>
+                    Valor:{" "}
+                    {resultado.valorResultado || "Sin valor"}
+                  </Text>
+
+                  <Text style={styles.dato}>
+                    Fecha:{" "}
+                    {convertirFecha(
+                      resultado.fechaRegistro
+                    )}
                   </Text>
 
                   <Text
                     style={[
-                      styles.cabeceraTexto,
-                      styles.colPaciente,
+                      styles.estado,
+                      {
+                        color: estaValidado
+                          ? "#059669"
+                          : "#D97706",
+                      },
                     ]}
                   >
-                    Paciente
+                    {estaValidado
+                      ? "Validado"
+                      : "Pendiente de validación"}
                   </Text>
 
-                  <Text
+                  <Pressable
                     style={[
-                      styles.cabeceraTexto,
-                      styles.colAnalisis,
+                      styles.botonVer,
+                      cargandoDetalle &&
+                        styles.botonDeshabilitado,
                     ]}
+                    disabled={cargandoDetalle}
+                    onPress={() =>
+                      revisarYValidar(resultado)
+                    }
                   >
-                    Análisis
-                  </Text>
-
-                  <Text
-                    style={[
-                      styles.cabeceraTexto,
-                      styles.colResultado,
-                    ]}
-                  >
-                    Resultado
-                  </Text>
-
-                  <Text
-                    style={[
-                      styles.cabeceraTexto,
-                      styles.colEstado,
-                    ]}
-                  >
-                    Estado
-                  </Text>
-
-                  <Text
-                    style={[
-                      styles.cabeceraTexto,
-                      styles.colFecha,
-                    ]}
-                  >
-                    Fecha
-                  </Text>
-
-                  <Text
-                    style={[
-                      styles.cabeceraTexto,
-                      styles.colAcciones,
-                    ]}
-                  >
-                    Acciones
-                  </Text>
+                    <Text style={styles.textoBoton}>
+                      {cargandoDetalle
+                        ? "Cargando..."
+                        : estaValidado
+                        ? "Ver resultado"
+                        : "Revisar y validar"}
+                    </Text>
+                  </Pressable>
                 </View>
-
-                {/* FILAS */}
-
-                {filtrados.map(
-                  (resultado) => {
-                    const validado =
-                      estaValidado(
-                        resultado.estado
-                      );
-
-                    const completo =
-                      resultadoCompleto(
-                        resultado
-                      );
-
-                    return (
-                      <View
-                        style={styles.fila}
-                        key={resultado.id}
-                      >
-                        <Text
-                          style={[
-                            styles.celda,
-                            styles.colCodigo,
-                          ]}
-                        >
-                          {resultado.codigo}
-                        </Text>
-
-                        <Text
-                          style={[
-                            styles.celda,
-                            styles.colPaciente,
-                          ]}
-                        >
-                          {resultado.paciente}
-                        </Text>
-
-                        <Text
-                          style={[
-                            styles.celda,
-                            styles.colAnalisis,
-                          ]}
-                        >
-                          {resultado.analisis}
-                        </Text>
-
-                        <Text
-                          style={[
-                            styles.celda,
-                            styles.colResultado,
-                          ]}
-                        >
-                          {resultado.parametros
-                            .length > 0
-                            ? `${resultado.parametros.length} parámetros`
-                            : resultado.valor
-                            ? `${resultado.valor} ${resultado.unidad}`.trim()
-                            : "Sin valores"}
-                        </Text>
-
-                        <View
-                          style={styles.colEstado}
-                        >
-                          <View
-                            style={[
-                              styles.estadoBadge,
-                              validado
-                                ? styles.estadoValidado
-                                : styles.estadoPendiente,
-                            ]}
-                          >
-                            <Text
-                              style={[
-                                styles.estadoTexto,
-                                validado
-                                  ? styles.textoValidado
-                                  : styles.textoPendiente,
-                              ]}
-                            >
-                              {validado
-                                ? "Validado"
-                                : resultado.estado ||
-                                  "Pendiente"}
-                            </Text>
-                          </View>
-                        </View>
-
-                        <Text
-                          style={[
-                            styles.celda,
-                            styles.colFecha,
-                          ]}
-                        >
-                          {resultado.fechaRegistro ||
-                            "-"}
-                        </Text>
-
-                        <View
-                          style={styles.colAcciones}
-                        >
-                          <Pressable
-                            style={
-                              validado
-                                ? styles.botonVer
-                                : completo
-                                ? styles.botonValidar
-                                : styles.botonRevisar
-                            }
-                            onPress={() =>
-                              abrirDetalle(
-                                resultado
-                              )
-                            }
-                          >
-                            <Text
-                              style={
-                                styles.textoBlanco
-                              }
-                            >
-                              {validado
-                                ? "Ver detalle"
-                                : completo
-                                ? "Revisar y validar"
-                                : "Revisar"}
-                            </Text>
-                          </Pressable>
-                        </View>
-                      </View>
-                    );
-                  }
-                )}
-
-                {filtrados.length === 0 && (
-                  <Text
-                    style={styles.sinDatos}
-                  >
-                    No se encontraron resultados.
-                  </Text>
-                )}
-              </View>
-            </ScrollView>
+              );
+            })
           )}
         </View>
       </ScrollView>
 
-      {/* MODAL DE DETALLE */}
-
       <Modal
-        visible={seleccionado !== null}
+        visible={modalVisible}
+        animationType="slide"
         transparent
-        animationType="fade"
-        onRequestClose={cerrarDetalle}
+        onRequestClose={() => {
+          if (!validando) {
+            setModalVisible(false);
+          }
+        }}
       >
         <View style={styles.fondoModal}>
           <View style={styles.modal}>
-            <ScrollView>
-              <Text style={styles.modalTitulo}>
-                Validación de resultado
+            <ScrollView
+              contentContainerStyle={styles.contenidoModal}
+            >
+              <Text style={styles.tituloModal}>
+                Detalle del resultado
               </Text>
 
-              <Text style={styles.modalDato}>
-                Código: {seleccionado?.codigo}
-              </Text>
+              {resultadoSeleccionado && (
+                <>
+                  <View style={styles.resumen}>
+                    <Text style={styles.dato}>
+                      Análisis:{" "}
+                      {resultadoSeleccionado.analisisNombre}
+                    </Text>
 
-              <Text style={styles.modalDato}>
-                Paciente:{" "}
-                {seleccionado?.paciente}
-              </Text>
+                    <Text style={styles.dato}>
+                      Paciente:{" "}
+                      {pacientes[
+                        resultadoSeleccionado.pacienteId
+                      ]?.nombre || "Sin identificar"}
+                    </Text>
 
-              <Text style={styles.modalDato}>
-                Análisis:{" "}
-                {seleccionado?.analisis}
-              </Text>
+                    <Text style={styles.dato}>
+                      CI:{" "}
+                      {pacientes[
+                        resultadoSeleccionado.pacienteId
+                      ]?.ci || "-"}
+                    </Text>
 
-              <Text style={styles.modalDato}>
-                Muestra:{" "}
-                {seleccionado?.muestraId}
-              </Text>
+                    <Text style={styles.dato}>
+                      Estado:{" "}
+                      {resultadoSeleccionado.validado ||
+                      resultadoSeleccionado.estado === "validado"
+                        ? "Validado"
+                        : "Pendiente"}
+                    </Text>
+                  </View>
 
-              <Text style={styles.modalDato}>
-                Orden:{" "}
-                {seleccionado?.ordenId}
-              </Text>
+                  <View style={styles.tarjetaDetalle}>
+                    <Text style={styles.seccionTitulo}>
+                      Resultado principal
+                    </Text>
 
-              <Text style={styles.modalDato}>
-                Estado:{" "}
-                {seleccionado?.estado}
-              </Text>
+                    <Text style={styles.dato}>
+                      Valor:{" "}
+                      {resultadoSeleccionado.valorResultado ||
+                        "Sin registrar"}
+                    </Text>
 
-              <View style={styles.separador} />
+                    <Text style={styles.dato}>
+                      Unidad:{" "}
+                      {resultadoSeleccionado.unidad || "-"}
+                    </Text>
 
-              <Text style={styles.seccionTitulo}>
-                Valores registrados
-              </Text>
+                    <Text style={styles.dato}>
+                      Observaciones:{" "}
+                      {resultadoSeleccionado.observaciones ||
+                        "Sin observaciones"}
+                    </Text>
 
-              {seleccionado &&
-              seleccionado.parametros.length >
-                0 ? (
-                seleccionado.parametros.map(
-                  (parametro) => (
-                    <View
-                      style={
-                        styles.parametro
-                      }
-                      key={parametro.id}
-                    >
-                      <Text
-                        style={
-                          styles.nombreParametro
-                        }
-                      >
-                        {parametro.nombre}
+                    <Text style={styles.dato}>
+                      Fecha de registro:{" "}
+                      {convertirFecha(
+                        resultadoSeleccionado.fechaRegistro
+                      )}
+                    </Text>
+                  </View>
+
+                  <View style={styles.tarjetaDetalle}>
+                    <Text style={styles.seccionTitulo}>
+                      Valores por parámetros
+                    </Text>
+
+                    {valoresParametros.length === 0 ? (
+                      <Text style={styles.textoVacio}>
+                        No existen parámetros configurados
+                        ni valores individuales registrados
+                        para este resultado.
+                      </Text>
+                    ) : (
+                      valoresParametros.map(
+                        (parametro, indice) => (
+                          <View
+                            key={`${parametro.id}_${indice}`}
+                            style={styles.parametro}
+                          >
+                            <Text style={styles.nombreParametro}>
+                              {indice + 1}. {parametro.nombre}
+                            </Text>
+
+                            <Text style={styles.dato}>
+                              Valor:{" "}
+                              {parametro.registrado &&
+                              parametro.valor
+                                ? parametro.valor
+                                : "Sin valor registrado"}
+                            </Text>
+
+                            {parametro.unidad !== "" && (
+                              <Text style={styles.dato}>
+                                Unidad: {parametro.unidad}
+                              </Text>
+                            )}
+
+                            {parametro.referencia !== "" && (
+                              <Text style={styles.dato}>
+                                Referencia:{" "}
+                                {parametro.referencia}
+                              </Text>
+                            )}
+
+                            {parametro.observacion !== "" && (
+                              <Text style={styles.dato}>
+                                Observación:{" "}
+                                {parametro.observacion}
+                              </Text>
+                            )}
+                          </View>
+                        )
+                      )
+                    )}
+                  </View>
+
+                  {(resultadoSeleccionado.validado ||
+                    resultadoSeleccionado.estado === "validado") && (
+                    <View style={styles.tarjetaValidado}>
+                      <Text style={styles.validadoTitulo}>
+                        Resultado validado
                       </Text>
 
-                      <Text
-                        style={styles.modalDato}
-                      >
-                        Valor:{" "}
-                        {parametro.valor ||
-                          "Sin registrar"}
+                      <Text style={styles.dato}>
+                        Fecha:{" "}
+                        {convertirFecha(
+                          resultadoSeleccionado.fechaValidacion
+                        )}
                       </Text>
 
-                      <Text
-                        style={styles.modalDato}
-                      >
-                        Unidad:{" "}
-                        {parametro.unidad ||
-                          "-"}
-                      </Text>
-
-                      <Text
-                        style={styles.modalDato}
-                      >
-                        Referencia:{" "}
-                        {parametro.valorReferencia ||
-                          "-"}
+                      <Text style={styles.dato}>
+                        Validado por:{" "}
+                        {nombreBioquimico}
                       </Text>
                     </View>
-                  )
-                )
-              ) : (
-                <View
-                  style={styles.parametro}
-                >
-                  <Text
-                    style={
-                      styles.modalDato
-                    }
-                  >
-                    Resultado:{" "}
-                    {seleccionado?.valor ||
-                      "Sin registrar"}
-                  </Text>
-
-                  <Text
-                    style={
-                      styles.modalDato
-                    }
-                  >
-                    Unidad:{" "}
-                    {seleccionado?.unidad ||
-                      "-"}
-                  </Text>
-                </View>
-              )}
-
-              {seleccionado?.observacion !==
-                "" && (
-                <View>
-                  <Text
-                    style={
-                      styles.seccionTitulo
-                    }
-                  >
-                    Observaciones
-                  </Text>
-
-                  <Text
-                    style={styles.modalDato}
-                  >
-                    {
-                      seleccionado?.observacion
-                    }
-                  </Text>
-                </View>
-              )}
-
-              {seleccionado &&
-                estaValidado(
-                  seleccionado.estado
-                ) && (
-                  <View
-                    style={
-                      styles.informacionValidada
-                    }
-                  >
-                    <Text
-                      style={
-                        styles.textoValidado
-                      }
-                    >
-                      Resultado validado
-                    </Text>
-
-                    <Text
-                      style={
-                        styles.modalDato
-                      }
-                    >
-                      Fecha:{" "}
-                      {seleccionado.fechaValidacion ||
-                        "No registrada"}
-                    </Text>
-
-                    <Text
-                      style={
-                        styles.modalDato
-                      }
-                    >
-                      Responsable:{" "}
-                      {seleccionado.validadoPor ||
-                        "No registrado"}
-                    </Text>
-                  </View>
-                )}
-
-              {seleccionado &&
-                !estaValidado(
-                  seleccionado.estado
-                ) &&
-                !resultadoCompleto(
-                  seleccionado
-                ) && (
-                  <View
-                    style={
-                      styles.advertencia
-                    }
-                  >
-                    <Text
-                      style={
-                        styles.advertenciaTexto
-                      }
-                    >
-                      Este resultado está incompleto.
-                      Debes registrar todos sus valores
-                      antes de validarlo.
-                    </Text>
-                  </View>
-                )}
-
-              {confirmando && (
-                <View
-                  style={
-                    styles.confirmacion
-                  }
-                >
-                  <Text
-                    style={
-                      styles.confirmacionTexto
-                    }
-                  >
-                    ¿Confirmas que revisaste los
-                    valores y deseas validar este
-                    resultado?
-                  </Text>
-                </View>
-              )}
-
-              {/* BOTONES */}
-
-              <View style={styles.botones}>
-                <Pressable
-                  style={
-                    styles.botonCancelar
-                  }
-                  disabled={guardando}
-                  onPress={
-                    cerrarDetalle
-                  }
-                >
-                  <Text
-                    style={
-                      styles.textoCancelar
-                    }
-                  >
-                    Cerrar
-                  </Text>
-                </Pressable>
-
-                {seleccionado &&
-                  !estaValidado(
-                    seleccionado.estado
-                  ) &&
-                  resultadoCompleto(
-                    seleccionado
-                  ) && (
-                    <Pressable
-                      style={
-                        styles.botonValidar
-                      }
-                      disabled={
-                        guardando
-                      }
-                      onPress={() => {
-                        if (
-                          !confirmando
-                        ) {
-                          setConfirmando(
-                            true
-                          );
-                        } else {
-                          validarResultado();
-                        }
-                      }}
-                    >
-                      {guardando ? (
-                        <ActivityIndicator
-                          color="#FFFFFF"
-                        />
-                      ) : (
-                        <Text
-                          style={
-                            styles.textoBlanco
-                          }
-                        >
-                          {confirmando
-                            ? "Confirmar validación"
-                            : "Validar resultado"}
-                        </Text>
-                      )}
-                    </Pressable>
                   )}
-              </View>
+
+                  <View style={styles.accionesModal}>
+                    <Pressable
+                      style={styles.botonCerrar}
+                      disabled={validando}
+                      onPress={() => setModalVisible(false)}
+                    >
+                      <Text style={styles.textoBoton}>
+                        Cerrar
+                      </Text>
+                    </Pressable>
+
+                    {!resultadoSeleccionado.validado &&
+                      resultadoSeleccionado.estado !==
+                        "validado" && (
+                        <Pressable
+                          style={[
+                            styles.botonValidar,
+                            validando &&
+                              styles.botonDeshabilitado,
+                          ]}
+                          disabled={validando}
+                          onPress={confirmarValidacion}
+                        >
+                          {validando ? (
+                            <ActivityIndicator
+                              color="#FFFFFF"
+                            />
+                          ) : (
+                            <Text style={styles.textoBoton}>
+                              Validar resultado
+                            </Text>
+                          )}
+                        </Pressable>
+                      )}
+                  </View>
+                </>
+              )}
             </ScrollView>
           </View>
         </View>
@@ -1258,343 +1359,270 @@ export default function ValidacionResultadosScreen() {
 const styles = StyleSheet.create({
   contenedor: {
     flex: 1,
-    backgroundColor: "#F3F6FB",
+    backgroundColor: "#F4F7FB",
   },
 
   contenido: {
     padding: 20,
-    paddingBottom: 40,
+    paddingBottom: 50,
+  },
+
+  cargando: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#F4F7FB",
+  },
+
+  textoCargando: {
+    marginTop: 12,
+    color: "#64748B",
+  },
+
+  encabezado: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 20,
+    gap: 12,
   },
 
   titulo: {
-    fontSize: 27,
-    fontWeight: "800",
-    color: "#17365D",
-    marginBottom: 8,
+    fontSize: 28,
+    fontWeight: "bold",
+    color: "#19385F",
   },
 
   subtitulo: {
-    fontSize: 14,
+    fontSize: 15,
     color: "#64748B",
-    marginBottom: 22,
+    marginTop: 6,
+  },
+
+  botonVolver: {
+    backgroundColor: "#334155",
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+    borderRadius: 9,
+  },
+
+  textoBoton: {
+    color: "#FFFFFF",
+    fontWeight: "bold",
   },
 
   contadores: {
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 12,
-    marginBottom: 22,
+    marginBottom: 20,
   },
 
   contador: {
-    flex: 1,
-    minWidth: 145,
+    flexGrow: 1,
+    minWidth: 150,
+    padding: 18,
     backgroundColor: "#FFFFFF",
     borderRadius: 12,
-    padding: 18,
     borderWidth: 1,
     borderColor: "#E2E8F0",
   },
 
   contadorTitulo: {
-    fontSize: 13,
     color: "#64748B",
+    fontSize: 13,
+    fontWeight: "600",
   },
 
   contadorNumero: {
-    fontSize: 25,
-    fontWeight: "800",
-    color: "#17365D",
+    fontSize: 28,
+    fontWeight: "bold",
+    color: "#19385F",
     marginTop: 8,
   },
 
   panel: {
     backgroundColor: "#FFFFFF",
-    borderRadius: 12,
-    padding: 16,
+    padding: 18,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    marginBottom: 18,
   },
 
-  barra: {
-    flexDirection: "row",
-    gap: 10,
-    marginBottom: 15,
+  etiqueta: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#334155",
+    marginBottom: 8,
   },
 
-  buscador: {
-    flex: 1,
+  input: {
     borderWidth: 1,
     borderColor: "#CBD5E1",
-    borderRadius: 8,
-    padding: 12,
+    borderRadius: 9,
+    padding: 13,
+    fontSize: 15,
+    backgroundColor: "#FFFFFF",
     color: "#0F172A",
+    marginBottom: 10,
   },
 
   botonActualizar: {
-    backgroundColor: "#2563EB",
-    borderRadius: 8,
-    paddingHorizontal: 15,
-    justifyContent: "center",
-  },
-
-  textoBlanco: {
-    color: "#FFFFFF",
-    fontSize: 12,
-    fontWeight: "700",
-  },
-
-  filtros: {
-    marginBottom: 15,
-  },
-
-  filtro: {
     backgroundColor: "#E2E8F0",
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 8,
-    marginRight: 8,
-  },
-
-  filtroActivo: {
-    backgroundColor: "#17365D",
-  },
-
-  filtroTexto: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: "#334155",
-  },
-
-  filtroTextoActivo: {
-    color: "#FFFFFF",
-  },
-
-  tabla: {
-    minWidth: 1250,
-  },
-
-  cabecera: {
-    flexDirection: "row",
-    backgroundColor: "#17365D",
-    padding: 12,
-  },
-
-  cabeceraTexto: {
-    color: "#FFFFFF",
-    fontSize: 12,
-    fontWeight: "800",
-  },
-
-  fila: {
-    flexDirection: "row",
-    alignItems: "center",
-    padding: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: "#E2E8F0",
-  },
-
-  celda: {
-    fontSize: 12,
-    color: "#0F172A",
-  },
-
-  colCodigo: {
-    width: 180,
-  },
-
-  colPaciente: {
-    width: 210,
-  },
-
-  colAnalisis: {
-    width: 210,
-  },
-
-  colResultado: {
-    width: 170,
-  },
-
-  colEstado: {
-    width: 140,
-  },
-
-  colFecha: {
-    width: 170,
-  },
-
-  colAcciones: {
-    width: 170,
-    alignItems: "center",
-  },
-
-  estadoBadge: {
-    borderRadius: 20,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+    borderRadius: 9,
     alignSelf: "flex-start",
   },
 
-  estadoValidado: {
-    backgroundColor: "#DCFCE7",
+  textoActualizar: {
+    color: "#19385F",
+    fontWeight: "600",
   },
 
-  estadoPendiente: {
-    backgroundColor: "#FEF3C7",
+  seccionTitulo: {
+    fontSize: 19,
+    fontWeight: "bold",
+    color: "#19385F",
+    marginBottom: 15,
   },
 
-  estadoTexto: {
-    fontSize: 11,
-    fontWeight: "800",
+  tarjeta: {
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 12,
   },
 
-  textoValidado: {
-    color: "#166534",
-    fontWeight: "800",
+  nombreAnalisis: {
+    fontSize: 17,
+    fontWeight: "bold",
+    color: "#19385F",
+    marginBottom: 10,
   },
 
-  textoPendiente: {
-    color: "#92400E",
+  dato: {
+    fontSize: 14,
+    color: "#475569",
+    marginBottom: 7,
   },
 
-  botonValidar: {
-    backgroundColor: "#16A34A",
-    borderRadius: 8,
-    paddingHorizontal: 15,
-    paddingVertical: 11,
-    alignItems: "center",
-  },
-
-  botonRevisar: {
-    backgroundColor: "#2563EB",
-    borderRadius: 8,
-    paddingHorizontal: 15,
-    paddingVertical: 11,
-    alignItems: "center",
+  estado: {
+    fontSize: 14,
+    fontWeight: "bold",
+    marginVertical: 10,
   },
 
   botonVer: {
-    backgroundColor: "#64748B",
-    borderRadius: 8,
-    paddingHorizontal: 15,
-    paddingVertical: 11,
+    backgroundColor: "#2563EB",
+    padding: 13,
+    borderRadius: 9,
     alignItems: "center",
+    marginTop: 10,
   },
 
-  sinDatos: {
-    padding: 25,
-    textAlign: "center",
+  botonDeshabilitado: {
+    opacity: 0.5,
+  },
+
+  textoVacio: {
     color: "#64748B",
-  },
-
-  error: {
-    color: "#DC2626",
-    marginBottom: 12,
+    fontSize: 14,
+    paddingVertical: 15,
   },
 
   fondoModal: {
     flex: 1,
-    backgroundColor: "rgba(15,23,42,0.65)",
+    backgroundColor: "rgba(0,0,0,0.5)",
     justifyContent: "center",
-    padding: 20,
+    alignItems: "center",
+    padding: 15,
   },
 
   modal: {
     backgroundColor: "#FFFFFF",
+    width: "100%",
+    maxWidth: 700,
+    maxHeight: "90%",
     borderRadius: 14,
-    padding: 20,
-    maxHeight: "85%",
+    overflow: "hidden",
   },
 
-  modalTitulo: {
-    fontSize: 21,
-    fontWeight: "800",
-    color: "#17365D",
+  contenidoModal: {
+    padding: 20,
+    paddingBottom: 35,
+  },
+
+  tituloModal: {
+    fontSize: 22,
+    fontWeight: "bold",
+    color: "#19385F",
     marginBottom: 15,
   },
 
-  modalDato: {
-    fontSize: 13,
-    color: "#475569",
-    marginBottom: 8,
+  resumen: {
+    backgroundColor: "#F1F5F9",
+    padding: 15,
+    borderRadius: 10,
+    marginBottom: 15,
   },
 
-  separador: {
-    height: 1,
-    backgroundColor: "#E2E8F0",
-    marginVertical: 15,
-  },
-
-  seccionTitulo: {
-    fontSize: 15,
-    fontWeight: "800",
-    color: "#17365D",
-    marginTop: 14,
-    marginBottom: 10,
-  },
-
-  parametro: {
-    backgroundColor: "#F8FAFC",
+  tarjetaDetalle: {
     borderWidth: 1,
     borderColor: "#E2E8F0",
     borderRadius: 10,
-    padding: 13,
-    marginBottom: 10,
+    padding: 15,
+    marginBottom: 15,
+  },
+
+  parametro: {
+    borderTopWidth: 1,
+    borderTopColor: "#E2E8F0",
+    paddingVertical: 12,
   },
 
   nombreParametro: {
-    fontSize: 14,
-    fontWeight: "800",
-    color: "#17365D",
+    fontSize: 15,
+    fontWeight: "bold",
+    color: "#19385F",
     marginBottom: 8,
   },
 
-  informacionValidada: {
-    backgroundColor: "#F0FDF4",
+  tarjetaValidado: {
+    backgroundColor: "#ECFDF5",
     borderRadius: 10,
-    padding: 13,
-    marginTop: 15,
+    padding: 15,
+    marginBottom: 15,
   },
 
-  advertencia: {
-    backgroundColor: "#FEF3C7",
-    borderRadius: 10,
-    padding: 13,
-    marginTop: 15,
+  validadoTitulo: {
+    color: "#059669",
+    fontWeight: "bold",
+    fontSize: 16,
+    marginBottom: 10,
   },
 
-  advertenciaTexto: {
-    fontSize: 13,
-    color: "#92400E",
-  },
-
-  confirmacion: {
-    backgroundColor: "#EFF6FF",
-    borderRadius: 10,
-    padding: 13,
-    marginTop: 15,
-  },
-
-  confirmacionTexto: {
-    fontSize: 13,
-    color: "#1D4ED8",
-    fontWeight: "700",
-  },
-
-  botones: {
+  accionesModal: {
     flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "flex-end",
     gap: 10,
-    marginTop: 22,
+    marginTop: 15,
   },
 
-  botonCancelar: {
-    flex: 1,
-    backgroundColor: "#E2E8F0",
-    borderRadius: 8,
-    padding: 13,
-    alignItems: "center",
+  botonCerrar: {
+    backgroundColor: "#64748B",
+    paddingHorizontal: 18,
+    paddingVertical: 13,
+    borderRadius: 9,
   },
 
-  textoCancelar: {
-    color: "#334155",
-    fontWeight: "700",
+  botonValidar: {
+    backgroundColor: "#059669",
+    paddingHorizontal: 18,
+    paddingVertical: 13,
+    borderRadius: 9,
   },
 });
