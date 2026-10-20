@@ -7,8 +7,13 @@ import GestionResultados from "./GestionResultados";
 import ValoresResultados from "./ValoresResultados";
 import EstadoAnalisis from "./EstadoAnalisis";
 import ValidacionResultados from "./ValidacionResultados";
+import InformeResultados from "./InformeResultados";
+import HistorialResultados from "./HistorialResultados";
 
-export default function ModuloMuestras({ usuario, onVolver }) {
+export default function ModuloMuestras({
+  usuario,
+  onVolver,
+}) {
   const [seccion, setSeccion] = useState("registro");
 
   const estiloBoton = (activo) => ({
@@ -24,7 +29,6 @@ export default function ModuloMuestras({ usuario, onVolver }) {
 
   return (
     <div>
-      {/* MENÚ DE MÓDULOS */}
       <div
         style={{
           display: "flex",
@@ -35,7 +39,6 @@ export default function ModuloMuestras({ usuario, onVolver }) {
           borderBottom: "1px solid #e2e8f0",
         }}
       >
-        {/* HU-22 Y HU-23 */}
         <button
           type="button"
           style={estiloBoton(seccion === "registro")}
@@ -44,7 +47,6 @@ export default function ModuloMuestras({ usuario, onVolver }) {
           Registro de muestras
         </button>
 
-        {/* HU-24 */}
         <button
           type="button"
           style={estiloBoton(seccion === "validacion")}
@@ -53,7 +55,6 @@ export default function ModuloMuestras({ usuario, onVolver }) {
           Recepción y validación
         </button>
 
-        {/* HU-25 */}
         <button
           type="button"
           style={estiloBoton(seccion === "seguimiento")}
@@ -62,7 +63,6 @@ export default function ModuloMuestras({ usuario, onVolver }) {
           Seguimiento de muestras
         </button>
 
-        {/* HU-26 */}
         <button
           type="button"
           style={estiloBoton(seccion === "resultados")}
@@ -71,7 +71,6 @@ export default function ModuloMuestras({ usuario, onVolver }) {
           Registro de resultados
         </button>
 
-        {/* HU-27 */}
         <button
           type="button"
           style={estiloBoton(seccion === "parametros")}
@@ -79,27 +78,40 @@ export default function ModuloMuestras({ usuario, onVolver }) {
         >
           Valores por parámetros
         </button>
-        {/* HU-28 */}
-        <button
-  type="button"
-  style={estiloBoton(seccion === "estadoAnalisis")}
-  onClick={() => setSeccion("estadoAnalisis")}
->
-  Estado de análisis
-</button>
 
-        {/* HU-29 */}
         <button
-  type="button"
-  style={estiloBoton(seccion === "validacionResultados")}
-  onClick={() => setSeccion("validacionResultados")}
->
-  Validación de resultados
-</button>
+          type="button"
+          style={estiloBoton(seccion === "estadoAnalisis")}
+          onClick={() => setSeccion("estadoAnalisis")}
+        >
+          Estado de análisis
+        </button>
 
+        <button
+          type="button"
+          style={estiloBoton(seccion === "validacionResultados")}
+          onClick={() => setSeccion("validacionResultados")}
+        >
+          Validación de resultados
+        </button>
+
+        <button
+          type="button"
+          style={estiloBoton(seccion === "informeResultados")}
+          onClick={() => setSeccion("informeResultados")}
+        >
+          Informe de resultados
+        </button>
+
+        <button
+          type="button"
+          style={estiloBoton(seccion === "historialResultados")}
+          onClick={() => setSeccion("historialResultados")}
+        >
+          Historial de resultados
+        </button>
       </div>
 
-      {/* HU-22 Y HU-23: REGISTRO DE MUESTRAS */}
       {seccion === "registro" && (
         <GestionMuestras
           usuario={usuario}
@@ -107,7 +119,6 @@ export default function ModuloMuestras({ usuario, onVolver }) {
         />
       )}
 
-      {/* HU-24: RECEPCIÓN Y VALIDACIÓN */}
       {seccion === "validacion" && (
         <ValidacionMuestras
           usuario={usuario}
@@ -115,7 +126,6 @@ export default function ModuloMuestras({ usuario, onVolver }) {
         />
       )}
 
-      {/* HU-25: SEGUIMIENTO DE MUESTRAS */}
       {seccion === "seguimiento" && (
         <SeguimientoMuestras
           usuario={usuario}
@@ -123,7 +133,6 @@ export default function ModuloMuestras({ usuario, onVolver }) {
         />
       )}
 
-      {/* HU-26: REGISTRO DE RESULTADOS */}
       {seccion === "resultados" && (
         <GestionResultados
           usuario={usuario}
@@ -131,7 +140,6 @@ export default function ModuloMuestras({ usuario, onVolver }) {
         />
       )}
 
-      {/* HU-27: VALORES POR PARÁMETROS */}
       {seccion === "parametros" && (
         <ValoresResultados
           usuario={usuario}
@@ -139,20 +147,33 @@ export default function ModuloMuestras({ usuario, onVolver }) {
         />
       )}
 
-      {/* HU-28: ESTADO DE ANÁLISIS */}
       {seccion === "estadoAnalisis" && (
-  <EstadoAnalisis
-    usuario={usuario}
-    onVolver={onVolver}
-  />
-)}
-      {/* HU-29: VALIDACIÓN DE RESULTADOS */}
+        <EstadoAnalisis
+          usuario={usuario}
+          onVolver={onVolver}
+        />
+      )}
+
       {seccion === "validacionResultados" && (
-  <ValidacionResultados
-    usuario={usuario}
-    onVolver={onVolver}
-  />
-)}
+        <ValidacionResultados
+          usuario={usuario}
+          onVolver={onVolver}
+        />
+      )}
+
+      {seccion === "informeResultados" && (
+        <InformeResultados
+          usuario={usuario}
+          onVolver={onVolver}
+        />
+      )}
+
+      {seccion === "historialResultados" && (
+        <HistorialResultados
+          usuario={usuario}
+          onVolver={onVolver}
+        />
+      )}
     </div>
   );
 }

@@ -20,6 +20,8 @@ import GestionAnalisis from "./GestionAnalisis";
 import GestionSolicitudes from "./GestionSolicitudes";
 import GestionVentas from "./GestionVentas";
 import ModuloMuestras from "./ModuloMuestras";
+import ModuloAdministracionSprint3 from "./ModuloAdministracionSprint3";
+
 
 
 import SuperAdminDashboard from "./SuperAdminDashboard";
@@ -567,6 +569,19 @@ if (
   );
 }
 
+if (
+  vista === "sprint3Admin" &&
+  usuario.rol === "administrador"
+) {
+  return (
+    <ModuloAdministracionSprint3
+      usuario={usuario}
+      onVolver={() =>
+        setVista("dashboard")
+      }
+    />
+  );
+}
 
   // =====================================================
   // PERSONALIZACIÓN DEL DASHBOARD
@@ -1217,7 +1232,22 @@ if (
             )}
 
 
+            {/* =============================================
+              SPRINT 3 - ADMINISTRADOR
+            ============================================= */}
 
+            {usuario.rol === "administrador" && (
+              <ModuloCard
+                icono="📈"
+                titulo="Panel del laboratorio"
+                descripcion="Dashboard, reportes, notificaciones y auditoría del laboratorio."
+                fondo="#EDE9FE"
+                color="#7C3AED"
+                onClick={() =>
+                  setVista("sprint3Admin")
+                }
+              />
+            )}
 
             {/* =============================================
                 RESULTADOS

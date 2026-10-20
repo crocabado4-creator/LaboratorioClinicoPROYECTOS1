@@ -9,6 +9,9 @@ import {
 } from "firebase/firestore";
 
 import { db } from "../firebase/firebase";
+import {
+  registrarEventoSprint3,
+} from "./eventosSprint3Service";
 
 // =============================================
 // HU-26 - REGISTRO DE RESULTADOS
@@ -163,6 +166,15 @@ export async function registrarResultado({
       validadoPor: null,
       fechaValidacion: null,
     });
+  });
+  await registrarEventoSprint3({
+    laboratorioId: idLaboratorio,
+    accion: "Resultado registrado",
+    entidad: "resultados",
+    entidadId: idMuestra,
+    detalle:
+      "Se registró un nuevo resultado clínico en borrador.",
+    notificarAdministrador: true,
   });
 
   return true;
