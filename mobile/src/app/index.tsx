@@ -1002,7 +1002,7 @@ export default function Index() {
               color="#1D4ED8"
               fondo="#DBEAFE"
               onPress={() =>
-                moduloNoDisponible("Resultados")
+                abrirModulo("/resultados")
               }
             />
           )}
@@ -1017,7 +1017,7 @@ export default function Index() {
               color="#7C3AED"
               fondo="#EDE9FE"
               onPress={() =>
-                moduloNoDisponible("Reportes")
+                abrirModulo("/sprint3-admin")
               }
             />
           )}
