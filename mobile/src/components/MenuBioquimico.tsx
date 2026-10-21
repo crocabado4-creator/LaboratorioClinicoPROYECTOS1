@@ -8,6 +8,8 @@ import {
 } from "react-native";
 import { router, usePathname } from "expo-router";
 
+
+
 const opciones = [
   { nombre: "Registro de muestras", ruta: "/muestras" },
   { nombre: "Recepción y validación", ruta: "/validar-muestras" },
@@ -16,7 +18,12 @@ const opciones = [
   { nombre: "Valores por parámetros", ruta: "/valores-parametros" },
   { nombre: "Estado de análisis", ruta: "/estado-analisis" },
   { nombre: "Validación de resultados", ruta: "/validacion-resultados" },
+  { nombre: "Informes clínicos", ruta: "/informe-resultados" },
+  { nombre: "Historial de resultados", ruta: "/historial-resultados" },
 ];
+
+
+
 
 export default function MenuBioquimico() {
   const [abierto, setAbierto] = useState(false);
