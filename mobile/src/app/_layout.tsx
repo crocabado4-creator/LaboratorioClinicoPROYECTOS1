@@ -4,6 +4,7 @@ import { Stack, usePathname } from "expo-router";
 
 import MenuBioquimico from "../components/MenuBioquimico";
 
+
 const rutasBioquimico = [
   "/muestras",
   "/validar-muestras",
@@ -12,7 +13,11 @@ const rutasBioquimico = [
   "/valores-parametros",
   "/estado-analisis",
   "/validacion-resultados",
+  "/informe-resultados",
+  "/historial-resultados",
+  "/resultados",
 ];
+
 
 export default function RootLayout() {
   const pathname = usePathname();
