@@ -1,4 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 
 import {
   collection,
@@ -9,18 +14,22 @@ import {
 
 import { db } from "../firebase/firebase";
 
+import {
+  listarResultadosParaParametros,
+  listarParametrosAnalisis,
+  listarValoresResultado,
+  guardarValorParametro,
+  resultadoPermiteEditarValores,
+} from "../services/valoresResultadosService";
+
 import "./ValoresResultados.css";
 
-// ======================================================
-// FUNCIONES AUXILIARES
-// ======================================================
-
 function texto(valor) {
-  if (valor === null || valor === undefined) {
-    return "";
-  }
-
-  if (typeof valor === "object") {
+  if (
+    valor === null ||
+    valor === undefined ||
+    typeof valor === "object"
+  ) {
     return "";
   }
 
@@ -28,9 +37,11 @@ function texto(valor) {
 }
 
 function mostrar(valor, defecto = "No registrado") {
-  const contenido = texto(valor);
+  return texto(valor) || defecto;
+}
 
-  return contenido !== "" ? contenido : defecto;
+function normalizar(valor) {
+  return texto(valor).toLowerCase();
 }
 
 function fechaTexto(valor) {
@@ -64,15 +75,26 @@ function nombrePaciente(paciente) {
     return "Paciente no identificado";
   }
 
-  if (paciente.nombreCompleto) {
-    return paciente.nombreCompleto;
-  }
+  const nombres = texto(
+    paciente.nombres ||
+      paciente.nombre ||
+      paciente.primerNombre
+  );
 
-  const nombre = paciente.nombres || paciente.nombre || "";
-  const apellido = paciente.apellidos || paciente.apellido || "";
+  const apellidos = texto(
+    paciente.apellidos ||
+      paciente.apellido ||
+      [
+        paciente.apellidoPaterno,
+        paciente.apellidoMaterno,
+      ]
+        .filter(Boolean)
+        .join(" ")
+  );
 
   return (
-    `${nombre} ${apellido}`.trim() ||
+    [nombres, apellidos].filter(Boolean).join(" ") ||
+    texto(paciente.nombreCompleto) ||
     "Paciente no identificado"
   );
 }
@@ -82,6 +104,7 @@ function ciPaciente(paciente) {
     paciente?.ci ||
     paciente?.carnet ||
     paciente?.carnetIdentidad ||
+    paciente?.numeroDocumento ||
     "Sin CI"
   );
 }
@@ -126,13 +149,51 @@ function referenciaTexto(referencia) {
   );
 }
 
-function obtenerParametros(analisis) {
-  if (!analisis || !Array.isArray(analisis.parametros)) {
+function obtenerReferenciaParametro(parametro) {
+  const referencia =
+    parametro.rangoReferencia ??
+    parametro.referencia ??
+    parametro.rango;
+
+  if (
+    referencia !== undefined &&
+    referencia !== null &&
+    referencia !== ""
+  ) {
+    return referenciaTexto(referencia);
+  }
+
+  const minimo =
+    parametro.valorMinimo ??
+    parametro.minimo ??
+    parametro.min;
+
+  const maximo =
+    parametro.valorMaximo ??
+    parametro.maximo ??
+    parametro.max;
+
+  if (
+    minimo !== undefined &&
+    maximo !== undefined
+  ) {
+    return `${minimo} - ${maximo}`;
+  }
+
+  return "No configurada";
+}
+
+function normalizarParametros(parametros) {
+  if (!Array.isArray(parametros)) {
     return [];
   }
 
-  return analisis.parametros
-    .filter((parametro) => parametro.activo !== false)
+  return parametros
+    .filter(
+      (parametro) =>
+        parametro &&
+        parametro.activo !== false
+    )
     .map((parametro, indice) => ({
       ...parametro,
 
@@ -157,20 +218,157 @@ function obtenerParametros(analisis) {
     }));
 }
 
-// ======================================================
-// COMPONENTE PRINCIPAL
-// ======================================================
+function obtenerParametros(analisis) {
+  return normalizarParametros(
+    analisis?.parametros
+  );
+}
+
+function obtenerMensajeError(error) {
+  if (error?.code === "permission-denied") {
+    return (
+      "Firestore rechazó la operación. Verifica los " +
+      "permisos sobre análisis, resultados y parámetros."
+    );
+  }
+
+  if (error?.code === "unavailable") {
+    return (
+      "No se pudo conectar con Firebase. " +
+      "Comprueba tu conexión a Internet."
+    );
+  }
+
+  return (
+    error?.message ||
+    "Ocurrió un error inesperado."
+  );
+}
+
+function buscarValorEnLista(
+  parametro,
+  valores,
+  resultado
+) {
+  const parametrosResultado = Array.isArray(
+    resultado?.parametros
+  )
+    ? resultado.parametros
+    : [];
+
+  const registros = [
+    ...valores,
+    ...parametrosResultado,
+  ];
+
+  const parametroId = texto(parametro.id);
+
+  const coincidenciaId = registros.find(
+    (registro) =>
+      texto(
+        registro.parametroId ||
+          registro.id
+      ) === parametroId
+  );
+
+  if (coincidenciaId) {
+    return coincidenciaId;
+  }
+
+  const nombreBuscado = normalizar(
+    parametro.nombre
+  );
+
+  return (
+    registros.find(
+      (registro) =>
+        normalizar(
+          registro.nombreParametro ||
+            registro.nombre
+        ) === nombreBuscado
+    ) || null
+  );
+}
+
+function valorRegistradoTexto(registro) {
+  return texto(
+    registro?.valor ??
+      registro?.valorResultado ??
+      registro?.resultado
+  );
+}
+
+const estiloBotonesTarjeta = {
+  display: "grid",
+  gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+  gap: "10px",
+  width: "100%",
+  marginTop: "12px",
+};
+
+const estiloBotonSecundario = {
+  background: "#17365D",
+  color: "#FFFFFF",
+  border: "none",
+  borderRadius: "7px",
+  padding: "12px",
+  cursor: "pointer",
+  fontWeight: 600,
+  width: "100%",
+};
+
+const estiloBotonRegistrar = {
+  background: "#16A34A",
+  color: "#FFFFFF",
+  border: "none",
+  borderRadius: "7px",
+  padding: "12px",
+  cursor: "pointer",
+  fontWeight: 600,
+  width: "100%",
+};
+
+const estiloBotonDeshabilitado = {
+  background: "#94A3B8",
+  color: "#FFFFFF",
+  border: "none",
+  borderRadius: "7px",
+  padding: "12px",
+  cursor: "not-allowed",
+  fontWeight: 600,
+  width: "100%",
+};
+
+const estiloCampo = {
+  width: "100%",
+  padding: "12px",
+  border: "1px solid #CBD5E1",
+  borderRadius: "8px",
+  boxSizing: "border-box",
+};
+
+const estiloEtiqueta = {
+  display: "block",
+  marginBottom: "8px",
+  fontWeight: 600,
+};
 
 export default function ValoresResultados({
   usuario,
   onVolver,
   volver,
 }) {
-  const laboratorioId = usuario?.laboratorioId || "";
+  const laboratorioId = texto(
+    usuario?.laboratorioId
+  );
 
-  // ====================================================
-  // ESTADOS
-  // ====================================================
+  const rolUsuario = normalizar(
+    usuario?.rol
+  );
+
+  const puedeRegistrar =
+    rolUsuario === "bioquimico" &&
+    usuario?.activo === true;
 
   const [muestras, setMuestras] = useState([]);
   const [pacientes, setPacientes] = useState([]);
@@ -181,253 +379,412 @@ export default function ValoresResultados({
 
   const [detalle, setDetalle] = useState(null);
 
-  const [valoresRegistrados, setValoresRegistrados] =
-    useState([]);
+  const [
+    valoresRegistrados,
+    setValoresRegistrados,
+  ] = useState([]);
 
   const [cargando, setCargando] = useState(true);
 
-  const [actualizando, setActualizando] = useState(false);
+  const [
+    actualizando,
+    setActualizando,
+  ] = useState(false);
 
-  const [cargandoValores, setCargandoValores] =
-    useState(false);
+  const [
+    cargandoValores,
+    setCargandoValores,
+  ] = useState(false);
+
+  const [
+    guardandoParametro,
+    setGuardandoParametro,
+  ] = useState("");
+
+  const [
+    parametroEditando,
+    setParametroEditando,
+  ] = useState(null);
+
+  const [
+    valorFormulario,
+    setValorFormulario,
+  ] = useState("");
+
+  const [
+    unidadFormulario,
+    setUnidadFormulario,
+  ] = useState("");
+
+  const [
+    observacionFormulario,
+    setObservacionFormulario,
+  ] = useState("");
 
   const [error, setError] = useState("");
 
-  const [errorValores, setErrorValores] = useState("");
+  const [
+    errorValores,
+    setErrorValores,
+  ] = useState("");
 
-  // ====================================================
-  // CARGAR INFORMACIÓN
-  // ====================================================
+  const [
+    mensajeValores,
+    setMensajeValores,
+  ] = useState("");
 
-  async function cargarDatos() {
-    if (!laboratorioId) {
-      setError(
-        "No se encontró el laboratorio del usuario."
-      );
+  const cargarDatos = useCallback(
+    async (mostrarCarga = true) => {
+      if (!laboratorioId) {
+        setError(
+          "No se encontró el laboratorio del usuario."
+        );
 
-      setCargando(false);
-      setActualizando(false);
+        setCargando(false);
+        setActualizando(false);
 
-      return;
-    }
+        return;
+      }
 
-    try {
-      setError("");
+      try {
+        if (mostrarCarga) {
+          setCargando(true);
+        } else {
+          setActualizando(true);
+        }
 
-      const [
-        muestrasSnap,
-        pacientesSnap,
-        analisisSnap,
-        resultadosSnap,
-      ] = await Promise.all([
-        getDocs(
-          query(
-            collection(db, "muestras"),
-            where("laboratorioId", "==", laboratorioId)
-          )
-        ),
+        setError("");
 
-        getDocs(
-          query(
-            collection(db, "pacientes"),
-            where("laboratorioId", "==", laboratorioId)
-          )
-        ),
+        const [
+          muestrasSnap,
+          pacientesSnap,
+          analisisSnap,
+          listaResultados,
+        ] = await Promise.all([
+          getDocs(
+            query(
+              collection(db, "muestras"),
+              where(
+                "laboratorioId",
+                "==",
+                laboratorioId
+              )
+            )
+          ),
 
-        getDocs(
-          query(
-            collection(db, "analisis"),
-            where("laboratorioId", "==", laboratorioId)
-          )
-        ),
+          getDocs(
+            query(
+              collection(db, "pacientes"),
+              where(
+                "laboratorioId",
+                "==",
+                laboratorioId
+              )
+            )
+          ),
 
-        getDocs(
-          query(
-            collection(db, "resultados"),
-            where("laboratorioId", "==", laboratorioId)
-          )
-        ),
-      ]);
+          getDocs(
+            query(
+              collection(db, "analisis"),
+              where(
+                "laboratorioId",
+                "==",
+                laboratorioId
+              )
+            )
+          ),
 
-      setMuestras(
-        muestrasSnap.docs.map((documento) => ({
-          ...documento.data(),
-          id: documento.id,
-        }))
-      );
+          listarResultadosParaParametros(
+            laboratorioId
+          ),
+        ]);
 
-      setPacientes(
-        pacientesSnap.docs.map((documento) => ({
-          ...documento.data(),
-          id: documento.id,
-        }))
-      );
+        setMuestras(
+          muestrasSnap.docs.map((documento) => ({
+            ...documento.data(),
+            id: documento.id,
+          }))
+        );
 
-      setAnalisis(
-        analisisSnap.docs.map((documento) => ({
-          ...documento.data(),
-          id: documento.id,
-        }))
-      );
+        setPacientes(
+          pacientesSnap.docs.map((documento) => ({
+            ...documento.data(),
+            id: documento.id,
+          }))
+        );
 
-      setResultados(
-        resultadosSnap.docs.map((documento) => ({
-          ...documento.data(),
-          id: documento.id,
-        }))
-      );
-    } catch (errorConsulta) {
-      console.error(
-        "Error cargando valores por parámetros:",
-        errorConsulta
-      );
+        setAnalisis(
+          analisisSnap.docs.map((documento) => ({
+            ...documento.data(),
+            id: documento.id,
+          }))
+        );
 
-      setError(
-        errorConsulta.message ||
-        "No se pudieron cargar los datos."
-      );
-    } finally {
-      setCargando(false);
-      setActualizando(false);
-    }
-  }
+        setResultados(
+          Array.isArray(listaResultados)
+            ? listaResultados
+            : []
+        );
+      } catch (errorConsulta) {
+        console.error(
+          "Error cargando valores por parámetros:",
+          errorConsulta
+        );
+
+        setError(
+          obtenerMensajeError(errorConsulta)
+        );
+      } finally {
+        setCargando(false);
+        setActualizando(false);
+      }
+    },
+    [laboratorioId]
+  );
 
   useEffect(() => {
-    setCargando(true);
-
     cargarDatos();
-  }, [laboratorioId]);
+  }, [cargarDatos]);
 
-  // ====================================================
-  // BUSCAR PACIENTE
-  // ====================================================
+  const pacientesPorId = useMemo(() => {
+    const mapa = new Map();
 
-  function buscarPaciente(pacienteId) {
-    return pacientes.find(
-      (paciente) =>
-        texto(paciente.id) === texto(pacienteId)
-    );
-  }
+    pacientes.forEach((paciente) => {
+      mapa.set(
+        texto(paciente.id),
+        paciente
+      );
 
-  // ====================================================
-  // BUSCAR ANÁLISIS
-  // ====================================================
+      if (paciente.pacienteId) {
+        mapa.set(
+          texto(paciente.pacienteId),
+          paciente
+        );
+      }
+    });
 
-  function buscarAnalisis(analisisId) {
-    return analisis.find(
-      (item) =>
-        texto(item.id) === texto(analisisId)
-    );
-  }
+    return mapa;
+  }, [pacientes]);
 
-  // ====================================================
-  // BUSCAR RESULTADO
-  // ====================================================
+  const buscarPaciente = useCallback(
+    (pacienteId) =>
+      pacientesPorId.get(texto(pacienteId)),
+    [pacientesPorId]
+  );
 
-  function buscarResultado(muestraId) {
-    return resultados.find(
-      (resultado) =>
-        texto(resultado.muestraId) === texto(muestraId) ||
-        texto(resultado.id) === texto(muestraId)
-    );
-  }
+  const analisisPorId = useMemo(() => {
+    const mapa = new Map();
 
-  // ====================================================
-  // NOMBRE DEL ANÁLISIS
-  // ====================================================
+    analisis.forEach((item) => {
+      mapa.set(
+        texto(item.id),
+        item
+      );
+    });
 
-  function nombreAnalisis(muestra) {
-    if (muestra.analisisNombre) {
-      return muestra.analisisNombre;
-    }
+    return mapa;
+  }, [analisis]);
 
-    const encontrado = buscarAnalisis(
-      muestra.analisisId
-    );
+  const buscarAnalisis = useCallback(
+    (analisisId) =>
+      analisisPorId.get(texto(analisisId)),
+    [analisisPorId]
+  );
 
-    return (
-      encontrado?.nombre ||
-      encontrado?.nombreAnalisis ||
-      "Análisis no identificado"
-    );
-  }
+  const resultadosPorMuestra = useMemo(() => {
+    const mapa = new Map();
 
-  // ====================================================
-  // MUESTRAS PROCESADAS
-  // ====================================================
+    resultados.forEach((resultado) => {
+      const muestraId = texto(
+        resultado.muestraId
+      );
+
+      if (muestraId) {
+        mapa.set(muestraId, resultado);
+      }
+
+      if (resultado.id) {
+        mapa.set(
+          texto(resultado.id),
+          resultado
+        );
+      }
+    });
+
+    return mapa;
+  }, [resultados]);
+
+  const buscarResultado = useCallback(
+    (muestraId) =>
+      resultadosPorMuestra.get(
+        texto(muestraId)
+      ),
+    [resultadosPorMuestra]
+  );
+
+  const nombreAnalisis = useCallback(
+    (muestra) => {
+      if (muestra?.analisisNombre) {
+        return muestra.analisisNombre;
+      }
+
+      const encontrado = buscarAnalisis(
+        muestra?.analisisId
+      );
+
+      return (
+        encontrado?.nombre ||
+        encontrado?.nombreAnalisis ||
+        "Análisis no identificado"
+      );
+    },
+    [buscarAnalisis]
+  );
 
   const muestrasProcesadas = useMemo(() => {
     return muestras.filter(
       (muestra) =>
-        texto(muestra.estado).toLowerCase() ===
-        "procesada"
+        normalizar(muestra.estado) ===
+          "procesada" &&
+        muestra.aceptada === true
     );
   }, [muestras]);
 
-  // ====================================================
-  // FILTRO DE BÚSQUEDA
-  // ====================================================
-
   const muestrasFiltradas = useMemo(() => {
-    const buscar = busqueda.trim().toLowerCase();
+    const buscar = normalizar(busqueda);
 
-    return muestrasProcesadas.filter((muestra) => {
-      const paciente = buscarPaciente(
-        muestra.pacienteId
-      );
+    return muestrasProcesadas.filter(
+      (muestra) => {
+        const paciente = buscarPaciente(
+          muestra.pacienteId
+        );
 
-      const contenido = [
-        nombrePaciente(paciente),
-        ciPaciente(paciente),
-        nombreAnalisis(muestra),
-        muestra.codigoEtiqueta,
-        muestra.codigoMuestra,
-        muestra.id,
-      ]
-        .map(texto)
-        .join(" ")
-        .toLowerCase();
+        const contenido = [
+          nombrePaciente(paciente),
+          ciPaciente(paciente),
+          nombreAnalisis(muestra),
+          muestra.codigoEtiqueta,
+          muestra.codigoMuestra,
+          muestra.id,
+          muestra.ordenId,
+        ]
+          .map(texto)
+          .join(" ")
+          .toLowerCase();
 
-      return contenido.includes(buscar);
-    });
+        return contenido.includes(buscar);
+      }
+    );
   }, [
     muestrasProcesadas,
     busqueda,
-    pacientes,
-    analisis,
+    buscarPaciente,
+    nombreAnalisis,
   ]);
 
-  // ====================================================
-  // CARGAR VALORES REALES DE FIRESTORE
-  // ====================================================
-
-  async function cargarValoresResultado(resultadoId) {
+  const cargarValores = async (resultadoId) => {
     if (!resultadoId) {
+      setValoresRegistrados([]);
       return [];
     }
 
-    const referenciaValores = collection(
-      db,
-      "resultados",
-      resultadoId,
-      "valores"
+    try {
+      setCargandoValores(true);
+      setErrorValores("");
+
+      const valores = await listarValoresResultado(
+        resultadoId
+      );
+
+      const lista = Array.isArray(valores)
+        ? valores
+        : [];
+
+      setValoresRegistrados(lista);
+
+      return lista;
+    } catch (errorConsulta) {
+      console.error(
+        "Error consultando valores:",
+        errorConsulta
+      );
+
+      setErrorValores(
+        obtenerMensajeError(errorConsulta)
+      );
+
+      throw errorConsulta;
+    } finally {
+      setCargandoValores(false);
+    }
+  };
+
+  const cargarParametros = async (
+    analisisEncontrado
+  ) => {
+    if (!analisisEncontrado) {
+      return [];
+    }
+
+    const parametrosSubcoleccion =
+      await listarParametrosAnalisis(
+        analisisEncontrado.id,
+        laboratorioId
+      );
+
+    if (
+      Array.isArray(parametrosSubcoleccion) &&
+      parametrosSubcoleccion.length > 0
+    ) {
+      return normalizarParametros(
+        parametrosSubcoleccion
+      );
+    }
+
+    return obtenerParametros(
+      analisisEncontrado
+    );
+  };
+
+  const prepararFormulario = (
+    parametro,
+    valores,
+    resultado
+  ) => {
+    const registro = buscarValorEnLista(
+      parametro,
+      valores,
+      resultado
     );
 
-    const consulta = await getDocs(
-      referenciaValores
+    setParametroEditando(parametro);
+
+    setValorFormulario(
+      valorRegistradoTexto(registro)
     );
 
-    return consulta.docs.map((documento) => ({
-      ...documento.data(),
-      id: documento.id,
-    }));
-  }
+    setUnidadFormulario(
+      texto(
+        registro?.unidad ??
+          parametro.unidad
+      )
+    );
 
-  // ====================================================
-  // ABRIR DETALLE
-  // ====================================================
+    setObservacionFormulario(
+      texto(
+        registro?.observacion ??
+          registro?.observaciones
+      )
+    );
 
-  async function abrirDetalle(muestra) {
+    setErrorValores("");
+    setMensajeValores("");
+  };
+
+  const abrirDetalle = async (
+    muestra,
+    abrirRegistro = false
+  ) => {
     const paciente = buscarPaciente(
       muestra.pacienteId
     );
@@ -440,164 +797,290 @@ export default function ValoresResultados({
       muestra.id
     );
 
-    const parametros = obtenerParametros(
-      analisisEncontrado
-    );
-
     setDetalle({
       muestra,
       paciente,
       analisis: analisisEncontrado,
       resultado,
-      parametros,
+      parametros: [],
     });
 
     setValoresRegistrados([]);
     setErrorValores("");
-
-    if (!resultado) {
-      return;
-    }
+    setMensajeValores("");
+    setParametroEditando(null);
 
     try {
       setCargandoValores(true);
 
-      const valores = await cargarValoresResultado(
-        resultado.id
+      const parametros = await cargarParametros(
+        analisisEncontrado
       );
 
+      let valores = [];
+
+      if (resultado) {
+        valores = await listarValoresResultado(
+          resultado.id
+        );
+
+        if (!Array.isArray(valores)) {
+          valores = [];
+        }
+      }
+
+      setDetalle({
+        muestra,
+        paciente,
+        analisis: analisisEncontrado,
+        resultado,
+        parametros,
+      });
+
       setValoresRegistrados(valores);
+
+      if (abrirRegistro) {
+        if (!puedeRegistrar) {
+          setErrorValores(
+            "Solo el Bioquímico puede registrar valores."
+          );
+
+          return;
+        }
+
+        if (!resultado) {
+          setErrorValores(
+            "Primero debes registrar el resultado general del análisis."
+          );
+
+          return;
+        }
+
+        if (
+          !resultadoPermiteEditarValores(
+            resultado
+          )
+        ) {
+          setErrorValores(
+            "Este resultado ya fue validado o no está en borrador."
+          );
+
+          return;
+        }
+
+        if (parametros.length === 0) {
+          setErrorValores(
+            "Este análisis no tiene parámetros configurados."
+          );
+
+          return;
+        }
+
+        const pendiente = parametros.find(
+          (parametro) => {
+            const registro = buscarValorEnLista(
+              parametro,
+              valores,
+              resultado
+            );
+
+            return (
+              valorRegistradoTexto(registro) === ""
+            );
+          }
+        );
+
+        const parametroInicial =
+          pendiente || parametros[0];
+
+        prepararFormulario(
+          parametroInicial,
+          valores,
+          resultado
+        );
+      }
     } catch (errorConsulta) {
       console.error(
-        "Error consultando valores registrados:",
+        "Error abriendo detalle:",
         errorConsulta
       );
 
       setErrorValores(
-        "No se pudieron consultar los valores individuales del resultado."
+        obtenerMensajeError(errorConsulta)
       );
     } finally {
       setCargandoValores(false);
     }
-  }
+  };
 
-  // ====================================================
-  // BUSCAR VALOR DE UN PARÁMETRO
-  // ====================================================
-
-  function buscarValorParametro(parametro) {
-    if (!detalle?.resultado) {
-      return null;
-    }
-
-    const resultado = detalle.resultado;
-
-    const parametrosEnResultado = Array.isArray(
-      resultado.parametros
-    )
-      ? resultado.parametros
-      : [];
-
-    // Primero buscar en la subcolección de Firestore.
-
-    const valorSubcoleccion =
-      valoresRegistrados.find((valor) => {
-        return (
-          texto(valor.parametroId) ===
-            texto(parametro.id) ||
-          texto(valor.id) === texto(parametro.id)
-        );
-      });
-
-    if (valorSubcoleccion) {
-      return valorSubcoleccion;
-    }
-
-    // Compatibilidad con resultados que guardan
-    // los parámetros directamente en un arreglo.
-
-    const valorEnResultado =
-      parametrosEnResultado.find((valor) => {
-        return (
-          texto(valor.parametroId || valor.id) ===
-          texto(parametro.id)
-        );
-      });
-
-    if (valorEnResultado) {
-      return valorEnResultado;
-    }
-
-    // Compatibilidad con documentos antiguos que
-    // no tenían un identificador de parámetro.
-
-    const nombreBuscado = texto(
-      parametro.nombre
-    ).toLowerCase();
-
-    const valorPorNombre =
-      valoresRegistrados.find((valor) => {
-        return (
-          texto(
-            valor.nombreParametro ||
-              valor.nombre
-          ).toLowerCase() === nombreBuscado
-        );
-      });
-
-    if (valorPorNombre) {
-      return valorPorNombre;
-    }
-
-    return (
-      parametrosEnResultado.find((valor) => {
-        return (
-          texto(
-            valor.nombreParametro ||
-              valor.nombre
-          ).toLowerCase() === nombreBuscado
-        );
-      }) || null
+  const buscarValorParametro = (parametro) => {
+    return buscarValorEnLista(
+      parametro,
+      valoresRegistrados,
+      detalle?.resultado
     );
-  }
+  };
 
-  // ====================================================
-  // ACTUALIZAR
-  // ====================================================
+  const editarParametro = (parametro) => {
+    if (!puedeRegistrar) {
+      setErrorValores(
+        "Solo el Bioquímico puede registrar valores."
+      );
 
-  async function actualizar() {
-    setActualizando(true);
+      return;
+    }
 
-    await cargarDatos();
-  }
+    if (!detalle?.resultado) {
+      setErrorValores(
+        "Primero debes registrar el resultado general del análisis."
+      );
 
-  // ====================================================
-  // CERRAR DETALLE
-  // ====================================================
+      return;
+    }
 
-  function cerrarDetalle() {
+    if (
+      !resultadoPermiteEditarValores(
+        detalle.resultado
+      )
+    ) {
+      setErrorValores(
+        "El resultado ya está validado o no se encuentra en borrador."
+      );
+
+      return;
+    }
+
+    prepararFormulario(
+      parametro,
+      valoresRegistrados,
+      detalle.resultado
+    );
+  };
+
+  const cerrarFormulario = () => {
+    if (guardandoParametro) {
+      return;
+    }
+
+    setParametroEditando(null);
+    setValorFormulario("");
+    setUnidadFormulario("");
+    setObservacionFormulario("");
+  };
+
+  const guardarValor = async (evento) => {
+    evento.preventDefault();
+
+    if (
+      guardandoParametro ||
+      !parametroEditando ||
+      !detalle?.resultado
+    ) {
+      return;
+    }
+
+    if (!puedeRegistrar) {
+      setErrorValores(
+        "Solo el Bioquímico puede registrar valores."
+      );
+
+      return;
+    }
+
+    const valorIngresado = texto(
+      valorFormulario
+    );
+
+    if (!valorIngresado) {
+      setErrorValores(
+        "Debes ingresar el valor del parámetro."
+      );
+
+      return;
+    }
+
+    const resultadoId = detalle.resultado.id;
+    const parametroId = parametroEditando.id;
+
+    try {
+      setGuardandoParametro(parametroId);
+      setErrorValores("");
+      setMensajeValores("");
+
+      await guardarValorParametro({
+        resultadoId,
+        laboratorioId,
+        parametroId,
+
+        nombreParametro:
+          parametroEditando.nombre,
+
+        valor: valorIngresado,
+
+        unidad: unidadFormulario,
+
+        rangoReferencia:
+          obtenerReferenciaParametro(
+            parametroEditando
+          ),
+
+        observacion:
+          observacionFormulario,
+      });
+
+      await cargarValores(resultadoId);
+
+      setParametroEditando(null);
+      setValorFormulario("");
+      setUnidadFormulario("");
+      setObservacionFormulario("");
+
+      setMensajeValores(
+        "Valor del parámetro guardado correctamente."
+      );
+    } catch (errorGuardado) {
+      console.error(
+        "Error guardando parámetro:",
+        errorGuardado
+      );
+
+      setErrorValores(
+        obtenerMensajeError(errorGuardado)
+      );
+    } finally {
+      setGuardandoParametro("");
+    }
+  };
+
+  const actualizar = async () => {
+    await cargarDatos(false);
+  };
+
+  const cerrarDetalle = () => {
+    if (guardandoParametro) {
+      return;
+    }
+
     setDetalle(null);
     setValoresRegistrados([]);
     setErrorValores("");
-  }
-
-  // ====================================================
-  // INTERFAZ
-  // ====================================================
+    setMensajeValores("");
+    setParametroEditando(null);
+    setValorFormulario("");
+    setUnidadFormulario("");
+    setObservacionFormulario("");
+  };
 
   return (
     <div className="vr-page">
-
-      {/* ENCABEZADO */}
-
       <header className="vr-header">
         <div>
           <h1>Valores por parámetros</h1>
 
           <p>
             Consulta los parámetros configurados,
-            sus rangos de referencia y los valores
-            registrados de cada análisis.
+            sus rangos de referencia y registra
+            los valores individuales de cada análisis.
           </p>
         </div>
 
@@ -612,10 +1095,7 @@ export default function ValoresResultados({
         )}
       </header>
 
-      {/* ESTADÍSTICAS */}
-
       <section className="vr-stats">
-
         <article>
           <span>Muestras procesadas</span>
 
@@ -627,33 +1107,33 @@ export default function ValoresResultados({
         <article>
           <span>Análisis configurados</span>
 
-          <strong>
-            {analisis.length}
-          </strong>
+          <strong>{analisis.length}</strong>
         </article>
 
         <article>
           <span>Resultados registrados</span>
 
-          <strong>
-            {resultados.length}
-          </strong>
+          <strong>{resultados.length}</strong>
         </article>
-
       </section>
 
-      {/* ERRORES */}
-
       {error && (
-        <div className="vr-error">
+        <div
+          className="vr-error"
+          role="alert"
+        >
           {error}
         </div>
       )}
 
-      {/* BUSCADOR */}
+      {!puedeRegistrar && (
+        <div className="vr-error">
+          Solo el Bioquímico puede registrar
+          o modificar valores individuales.
+        </div>
+      )}
 
       <section className="vr-card">
-
         <div className="vr-card-header">
           <h2>Buscar muestra procesada</h2>
 
@@ -664,7 +1144,6 @@ export default function ValoresResultados({
         </div>
 
         <div className="vr-search">
-
           <input
             type="text"
             placeholder="Paciente, CI, análisis o etiqueta..."
@@ -678,27 +1157,26 @@ export default function ValoresResultados({
             type="button"
             className="vr-btn-primary"
             onClick={actualizar}
-            disabled={actualizando}
+            disabled={
+              actualizando ||
+              cargando ||
+              Boolean(guardandoParametro)
+            }
           >
             {actualizando
               ? "Actualizando..."
               : "Actualizar"}
           </button>
-
         </div>
-
       </section>
 
-      {/* MUESTRAS */}
-
       <section className="vr-card">
-
         <div className="vr-card-header">
           <h2>Muestras disponibles</h2>
 
           <p>
             Selecciona una muestra para consultar
-            sus parámetros y resultados.
+            o registrar sus parámetros y resultados.
           </p>
         </div>
 
@@ -712,7 +1190,6 @@ export default function ValoresResultados({
           </div>
         ) : (
           <div className="vr-list">
-
             {muestrasFiltradas.map((muestra) => {
               const paciente = buscarPaciente(
                 muestra.pacienteId
@@ -723,23 +1200,27 @@ export default function ValoresResultados({
                   muestra.analisisId
                 );
 
-              const parametros =
-                obtenerParametros(
-                  analisisEncontrado
-                );
+              const parametros = obtenerParametros(
+                analisisEncontrado
+              );
 
               const resultado = buscarResultado(
                 muestra.id
               );
+
+              const permiteRegistrar =
+                puedeRegistrar &&
+                Boolean(resultado) &&
+                resultadoPermiteEditarValores(
+                  resultado
+                );
 
               return (
                 <article
                   key={muestra.id}
                   className="vr-item"
                 >
-
                   <div className="vr-item-top">
-
                     <div>
                       <h3>
                         {nombreAnalisis(muestra)}
@@ -768,7 +1249,6 @@ export default function ValoresResultados({
                     <span className="vr-badge">
                       {parametros.length} parámetros
                     </span>
-
                   </div>
 
                   <div className="vr-result-status">
@@ -784,52 +1264,87 @@ export default function ValoresResultados({
                     </strong>
                   </div>
 
-                  <button
-                    type="button"
-                    className="vr-btn-primary vr-btn-full"
-                    onClick={() =>
-                      abrirDetalle(muestra)
-                    }
+                  <div
+                    className="vr-item-actions"
+                    style={estiloBotonesTarjeta}
                   >
-                    Ver parámetros
-                  </button>
+                    <button
+                      type="button"
+                      className="vr-btn-primary"
+                      style={estiloBotonSecundario}
+                      onClick={() =>
+                        abrirDetalle(
+                          muestra,
+                          false
+                        )
+                      }
+                    >
+                      Ver parámetros
+                    </button>
 
+                    <button
+                      type="button"
+                      className="vr-btn-primary"
+                      style={
+                        permiteRegistrar
+                          ? estiloBotonRegistrar
+                          : estiloBotonDeshabilitado
+                      }
+                      disabled={
+                        !permiteRegistrar ||
+                        Boolean(guardandoParametro)
+                      }
+                      onClick={() =>
+                        abrirDetalle(
+                          muestra,
+                          true
+                        )
+                      }
+                      title={
+                        !resultado
+                          ? "Primero registra el resultado general."
+                          : !permiteRegistrar
+                          ? "Este resultado no permite registrar valores."
+                          : "Registrar un valor individual."
+                      }
+                    >
+                      Registrar valor
+                    </button>
+                  </div>
                 </article>
               );
             })}
-
           </div>
         )}
-
       </section>
-
-      {/* MODAL DE DETALLE */}
 
       {detalle && (
         <div
           className="vr-overlay"
-          onClick={cerrarDetalle}
+          onMouseDown={(evento) => {
+            if (
+              evento.target ===
+              evento.currentTarget
+            ) {
+              cerrarDetalle();
+            }
+          }}
         >
-
           <div
             className="vr-modal"
-            onClick={(evento) =>
-              evento.stopPropagation()
-            }
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="vr-titulo-modal"
           >
-
-            {/* ENCABEZADO DEL MODAL */}
-
             <div className="vr-modal-header">
-
               <div>
-                <h2>
+                <h2 id="vr-titulo-modal">
                   Valores de parámetros
                 </h2>
 
                 <p>
                   Detalle completo del análisis
-                  y sus resultados registrados.
+                  y sus valores registrados.
                 </p>
               </div>
 
@@ -837,16 +1352,16 @@ export default function ValoresResultados({
                 type="button"
                 className="vr-close"
                 onClick={cerrarDetalle}
+                disabled={
+                  Boolean(guardandoParametro)
+                }
+                aria-label="Cerrar detalle"
               >
                 ×
               </button>
-
             </div>
 
-            {/* INFORMACIÓN DEL ANÁLISIS */}
-
             <div className="vr-summary">
-
               <h3>
                 {nombreAnalisis(
                   detalle.muestra
@@ -854,7 +1369,6 @@ export default function ValoresResultados({
               </h3>
 
               <div className="vr-summary-grid">
-
                 <p>
                   <strong>Paciente:</strong>{" "}
                   {nombrePaciente(
@@ -873,43 +1387,43 @@ export default function ValoresResultados({
                   <strong>Código:</strong>{" "}
                   {mostrar(
                     detalle.muestra.codigoEtiqueta ||
+                      detalle.muestra.codigoMuestra ||
                       detalle.muestra.id
                   )}
                 </p>
 
                 <p>
-                  <strong>Total de parámetros:</strong>{" "}
+                  <strong>
+                    Total de parámetros:
+                  </strong>{" "}
                   {detalle.parametros.length}
                 </p>
 
                 <p>
-                  <strong>Estado de muestra:</strong>{" "}
+                  <strong>
+                    Estado de muestra:
+                  </strong>{" "}
                   {mostrar(
                     detalle.muestra.estado
                   )}
                 </p>
 
                 <p>
-                  <strong>Estado del resultado:</strong>{" "}
+                  <strong>
+                    Estado del resultado:
+                  </strong>{" "}
                   {detalle.resultado
                     ? mostrar(
                         detalle.resultado.estado
                       )
                     : "Sin resultado"}
                 </p>
-
               </div>
-
             </div>
 
-            {/* RESULTADO PRINCIPAL */}
-
-            {detalle.resultado && (
+            {detalle.resultado ? (
               <div className="vr-main-result">
-
-                <h3>
-                  Resultado principal
-                </h3>
+                <h3>Resultado principal</h3>
 
                 <p>
                   <strong>Valor:</strong>{" "}
@@ -927,7 +1441,9 @@ export default function ValoresResultados({
                 </p>
 
                 <p>
-                  <strong>Observaciones:</strong>{" "}
+                  <strong>
+                    Observaciones:
+                  </strong>{" "}
                   {mostrar(
                     detalle.resultado.observaciones,
                     "Sin observaciones"
@@ -935,16 +1451,40 @@ export default function ValoresResultados({
                 </p>
 
                 <p>
-                  <strong>Fecha de registro:</strong>{" "}
+                  <strong>
+                    Fecha de registro:
+                  </strong>{" "}
                   {fechaTexto(
                     detalle.resultado.fechaRegistro
                   )}
                 </p>
-
+              </div>
+            ) : (
+              <div className="vr-error">
+                Esta muestra todavía no tiene
+                un resultado general registrado.
+                Primero debes registrarlo desde
+                el módulo Registro de resultados.
               </div>
             )}
 
-            {/* PARÁMETROS */}
+            {errorValores && (
+              <div
+                className="vr-error"
+                role="alert"
+              >
+                {errorValores}
+              </div>
+            )}
+
+            {mensajeValores && (
+              <div
+                className="vr-main-result"
+                role="status"
+              >
+                {mensajeValores}
+              </div>
+            )}
 
             <h3 className="vr-parameters-title">
               Parámetros del análisis
@@ -952,173 +1492,335 @@ export default function ValoresResultados({
 
             {cargandoValores && (
               <div className="vr-empty">
-                Consultando valores registrados...
+                Consultando parámetros y valores...
               </div>
             )}
 
-            {errorValores && (
-              <div className="vr-error">
-                {errorValores}
-              </div>
-            )}
+            {!cargandoValores &&
+              detalle.parametros.length === 0 && (
+                <div className="vr-empty">
+                  Este análisis no tiene parámetros
+                  configurados.
+                </div>
+              )}
 
-            {detalle.parametros.length === 0 ? (
-              <div className="vr-empty">
-                Este análisis no tiene parámetros
-                configurados.
-              </div>
-            ) : (
-              <div className="vr-parameters">
+            {!cargandoValores &&
+              detalle.parametros.length > 0 && (
+                <div className="vr-parameters">
+                  {detalle.parametros.map(
+                    (parametro, indice) => {
+                      const valorRegistrado =
+                        buscarValorParametro(
+                          parametro
+                        );
 
-                {detalle.parametros.map(
-                  (parametro, indice) => {
-                    const valorRegistrado =
-                      buscarValorParametro(
-                        parametro
-                      );
+                      const valor =
+                        valorRegistradoTexto(
+                          valorRegistrado
+                        );
 
-                    const valor =
-                      valorRegistrado?.valor ??
-                      valorRegistrado?.valorResultado ??
-                      valorRegistrado?.resultado;
+                      const observacion =
+                        valorRegistrado?.observacion ??
+                        valorRegistrado?.observaciones;
 
-                    const observacion =
-                      valorRegistrado?.observacion ??
-                      valorRegistrado?.observaciones;
+                      const puedeEditar =
+                        puedeRegistrar &&
+                        Boolean(
+                          detalle.resultado
+                        ) &&
+                        resultadoPermiteEditarValores(
+                          detalle.resultado
+                        );
 
-                    return (
-                      <div
-                        key={parametro.id}
-                        className="vr-parameter"
-                      >
+                      return (
+                        <div
+                          key={parametro.id}
+                          className="vr-parameter"
+                        >
+                          <div className="vr-parameter-header">
+                            <h4>
+                              {indice + 1}.{" "}
+                              {parametro.nombre}
+                            </h4>
 
-                        {/* NOMBRE */}
-
-                        <div className="vr-parameter-header">
-
-                          <h4>
-                            {indice + 1}.{" "}
-                            {parametro.nombre}
-                          </h4>
-
-                          <span>
-                            {mostrar(
-                              parametro.unidad,
-                              "Sin unidad"
-                            )}
-                          </span>
-
-                        </div>
-
-                        {/* DATOS */}
-
-                        <div className="vr-parameter-grid">
-
-                          <div>
-                            <label>
-                              Referencia
-                            </label>
-
-                            <strong>
-                              {referenciaTexto(
-                                parametro.referencia
-                              )}
-                            </strong>
-                          </div>
-
-                          <div>
-                            <label>
-                              Unidad
-                            </label>
-
-                            <strong>
+                            <span>
                               {mostrar(
                                 parametro.unidad,
-                                "No configurada"
+                                "Sin unidad"
                               )}
-                            </strong>
+                            </span>
                           </div>
 
-                          <div>
-                            <label>
-                              Valor registrado
-                            </label>
+                          <div className="vr-parameter-grid">
+                            <div>
+                              <label>
+                                Referencia
+                              </label>
 
-                            <strong>
-                              {cargandoValores
-                                ? "Consultando..."
-                                : mostrar(
-                                    valor,
-                                    "Sin valor registrado"
-                                  )}
-                            </strong>
+                              <strong>
+                                {obtenerReferenciaParametro(
+                                  parametro
+                                )}
+                              </strong>
+                            </div>
+
+                            <div>
+                              <label>
+                                Unidad
+                              </label>
+
+                              <strong>
+                                {mostrar(
+                                  valorRegistrado?.unidad ??
+                                    parametro.unidad,
+                                  "No configurada"
+                                )}
+                              </strong>
+                            </div>
+
+                            <div>
+                              <label>
+                                Valor registrado
+                              </label>
+
+                              <strong>
+                                {mostrar(
+                                  valor,
+                                  "Sin valor registrado"
+                                )}
+                              </strong>
+                            </div>
+
+                            <div>
+                              <label>
+                                Observación
+                              </label>
+
+                              <strong>
+                                {mostrar(
+                                  observacion,
+                                  "Sin observación"
+                                )}
+                              </strong>
+                            </div>
                           </div>
 
-                          <div>
-                            <label>
-                              Observación
-                            </label>
+                          {parametro.descripcion && (
+                            <p className="vr-description">
+                              {parametro.descripcion}
+                            </p>
+                          )}
 
-                            <strong>
-                              {cargandoValores
-                                ? "Consultando..."
-                                : mostrar(
-                                    observacion,
-                                    "Sin observación"
-                                  )}
-                            </strong>
-                          </div>
+                          {valorRegistrado?.fechaRegistro && (
+                            <p className="vr-description">
+                              <strong>
+                                Fecha de registro:
+                              </strong>{" "}
+                              {fechaTexto(
+                                valorRegistrado.fechaRegistro
+                              )}
+                            </p>
+                          )}
 
-                        </div>
+                          {puedeEditar && (
+                            <button
+                              type="button"
+                              className="vr-btn-primary"
+                              style={{
+                                marginTop: "14px",
+                              }}
+                              disabled={
+                                Boolean(
+                                  guardandoParametro
+                                )
+                              }
+                              onClick={() =>
+                                editarParametro(
+                                  parametro
+                                )
+                              }
+                            >
+                              {valor
+                                ? "Editar valor"
+                                : "Registrar valor"}
+                            </button>
+                          )}
 
-                        {/* DESCRIPCIÓN */}
-
-                        {parametro.descripcion && (
-                          <p className="vr-description">
-                            {parametro.descripcion}
-                          </p>
-                        )}
-
-                        {/* FECHA DEL VALOR */}
-
-                        {valorRegistrado?.fechaRegistro && (
-                          <p className="vr-description">
-                            <strong>
-                              Fecha de registro:
-                            </strong>{" "}
-                            {fechaTexto(
-                              valorRegistrado.fechaRegistro
+                          {detalle.resultado &&
+                            !resultadoPermiteEditarValores(
+                              detalle.resultado
+                            ) && (
+                              <p className="vr-description">
+                                Este resultado ya no
+                                permite modificaciones.
+                              </p>
                             )}
-                          </p>
-                        )}
+                        </div>
+                      );
+                    }
+                  )}
+                </div>
+              )}
 
-                      </div>
-                    );
-                  }
-                )}
+            {parametroEditando && (
+              <div
+                className="vr-main-result"
+                style={{
+                  marginTop: "20px",
+                }}
+              >
+                <h3>
+                  Registrar valor:{" "}
+                  {parametroEditando.nombre}
+                </h3>
 
+                <form onSubmit={guardarValor}>
+                  <div
+                    style={{
+                      display: "grid",
+                      gap: "14px",
+                    }}
+                  >
+                    <div>
+                      <label
+                        htmlFor="vr-valor"
+                        style={estiloEtiqueta}
+                      >
+                        Valor del parámetro
+                      </label>
+
+                      <input
+                        id="vr-valor"
+                        type="text"
+                        value={valorFormulario}
+                        onChange={(evento) =>
+                          setValorFormulario(
+                            evento.target.value
+                          )
+                        }
+                        placeholder="Ingrese el valor"
+                        disabled={
+                          Boolean(
+                            guardandoParametro
+                          )
+                        }
+                        required
+                        style={estiloCampo}
+                      />
+                    </div>
+
+                    <div>
+                      <label
+                        htmlFor="vr-unidad"
+                        style={estiloEtiqueta}
+                      >
+                        Unidad
+                      </label>
+
+                      <input
+                        id="vr-unidad"
+                        type="text"
+                        value={unidadFormulario}
+                        onChange={(evento) =>
+                          setUnidadFormulario(
+                            evento.target.value
+                          )
+                        }
+                        disabled={
+                          Boolean(
+                            guardandoParametro
+                          )
+                        }
+                        style={estiloCampo}
+                      />
+                    </div>
+
+                    <div>
+                      <label
+                        htmlFor="vr-observacion"
+                        style={estiloEtiqueta}
+                      >
+                        Observación
+                      </label>
+
+                      <textarea
+                        id="vr-observacion"
+                        rows={3}
+                        value={
+                          observacionFormulario
+                        }
+                        onChange={(evento) =>
+                          setObservacionFormulario(
+                            evento.target.value
+                          )
+                        }
+                        disabled={
+                          Boolean(
+                            guardandoParametro
+                          )
+                        }
+                        style={estiloCampo}
+                      />
+                    </div>
+                  </div>
+
+                  <div
+                    className="vr-modal-footer"
+                    style={{
+                      marginTop: "18px",
+                    }}
+                  >
+                    <button
+                      type="button"
+                      className="vr-btn-back"
+                      onClick={
+                        cerrarFormulario
+                      }
+                      disabled={
+                        Boolean(
+                          guardandoParametro
+                        )
+                      }
+                    >
+                      Cancelar
+                    </button>
+
+                    <button
+                      type="submit"
+                      className="vr-btn-primary"
+                      disabled={
+                        Boolean(
+                          guardandoParametro
+                        ) ||
+                        !valorFormulario.trim()
+                      }
+                    >
+                      {guardandoParametro
+                        ? "Guardando..."
+                        : "Guardar valor"}
+                    </button>
+                  </div>
+                </form>
               </div>
             )}
 
-            {/* CERRAR */}
-
             <div className="vr-modal-footer">
-
               <button
                 type="button"
                 className="vr-btn-back"
                 onClick={cerrarDetalle}
+                disabled={
+                  Boolean(
+                    guardandoParametro
+                  )
+                }
               >
                 Cerrar
               </button>
-
             </div>
-
           </div>
-
         </div>
       )}
-
     </div>
   );
 }
