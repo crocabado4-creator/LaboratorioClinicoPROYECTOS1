@@ -1,4 +1,9 @@
-import React, { useEffect, useState, useCallback } from "react";
+import React, {
+  useEffect,
+  useState,
+  useCallback,
+  useMemo,
+} from "react";
 
 import {
   collection,
@@ -7,14 +12,20 @@ import {
   getDocs,
   getDoc,
   doc,
-  updateDoc,
-  serverTimestamp,
-  arrayUnion,
 } from "firebase/firestore";
 
 import { onAuthStateChanged } from "firebase/auth";
 
 import { auth, db } from "../firebase/firebase";
+
+import {
+  obtenerMuestrasSeguimiento,
+  obtenerHistorialMuestra,
+  puedeIniciarProcesamiento,
+  puedeFinalizarProcesamiento,
+  cambiarEstadoMuestra,
+  obtenerDescripcionEstadoMuestra,
+} from "../services/seguimientoMuestrasService";
 
 // ======================================================
 // FUNCIONES AUXILIARES
@@ -42,13 +53,13 @@ function mostrarFecha(valor) {
 
     if (typeof valor.toDate === "function") {
       fecha = valor.toDate();
-    } else if (valor.seconds) {
+    } else if (typeof valor.seconds === "number") {
       fecha = new Date(valor.seconds * 1000);
     } else {
       fecha = new Date(valor);
     }
 
-    if (isNaN(fecha.getTime())) {
+    if (Number.isNaN(fecha.getTime())) {
       return "No registrada";
     }
 
@@ -83,24 +94,39 @@ function obtenerNombrePaciente(paciente) {
 }
 
 function obtenerAnalisis(muestra) {
+  if (!muestra) {
+    return "Análisis no identificado";
+  }
+
   return (
     muestra.analisisNombre ||
     muestra.nombreAnalisis ||
     muestra.analisis?.nombre ||
+    muestra.analisisId ||
     "Análisis no identificado"
   );
 }
 
 function obtenerCodigo(muestra) {
+  if (!muestra) {
+    return "Sin código";
+  }
+
   return (
     muestra.codigoEtiqueta ||
     muestra.codigoMuestra ||
     muestra.codigo ||
-    muestra.id
+    muestra.muestraId ||
+    muestra.id ||
+    "Sin código"
   );
 }
 
 function obtenerTipo(muestra) {
+  if (!muestra) {
+    return "No especificado";
+  }
+
   return (
     muestra.tipoMuestra ||
     muestra.tipo ||
@@ -142,8 +168,50 @@ function colorEstado(estado) {
   }
 }
 
+function obtenerMensajeError(error) {
+  if (error?.code === "permission-denied") {
+    return (
+      "Firestore rechazó la operación. Verifica " +
+      "los permisos del usuario y del laboratorio."
+    );
+  }
+
+  if (error?.code === "unavailable") {
+    return (
+      "No se pudo conectar con Firebase. " +
+      "Comprueba tu conexión a Internet."
+    );
+  }
+
+  if (error?.code === "unauthenticated") {
+    return "Tu sesión ha expirado.";
+  }
+
+  return (
+    error?.message ||
+    "Ocurrió un error inesperado."
+  );
+}
+
+function obtenerFechaHistorial(registro) {
+  return (
+    registro?.fecha ||
+    registro?.fechaCambio ||
+    registro?.fechaActualizacion ||
+    null
+  );
+}
+
+function obtenerEstadoHistorial(registro) {
+  return (
+    registro?.estadoNuevo ||
+    registro?.estado ||
+    "Sin estado"
+  );
+}
+
 // ======================================================
-// ESTILOS
+// ESTILOS ORIGINALES
 // ======================================================
 
 const styles = {
@@ -161,6 +229,7 @@ const styles = {
     alignItems: "flex-start",
     gap: "20px",
     marginBottom: "24px",
+    flexWrap: "wrap",
   },
 
   title: {
@@ -248,6 +317,15 @@ const styles = {
     background: "#64748B",
   },
 
+  buttonGreen: {
+    background: "#059669",
+  },
+
+  buttonDisabled: {
+    opacity: 0.55,
+    cursor: "not-allowed",
+  },
+
   sampleCard: {
     border: "1px solid #DFE7F0",
     borderRadius: "12px",
@@ -262,6 +340,7 @@ const styles = {
     alignItems: "center",
     gap: "12px",
     marginBottom: "12px",
+    flexWrap: "wrap",
   },
 
   sampleTitle: {
@@ -359,6 +438,25 @@ const styles = {
     marginTop: "25px",
     flexWrap: "wrap",
   },
+
+  historialItem: {
+    padding: "12px",
+    borderBottom: "1px solid #E2E8F0",
+  },
+
+  historialFecha: {
+    color: "#64748B",
+    fontSize: "12px",
+    marginTop: "5px",
+  },
+
+  aviso: {
+    background: "#FEF3C7",
+    color: "#92400E",
+    padding: "14px",
+    borderRadius: "8px",
+    marginBottom: "18px",
+  },
 };
 
 // ======================================================
@@ -377,16 +475,23 @@ export default function SeguimientoMuestras({
   const [usuarioActual, setUsuarioActual] =
     useState(null);
 
+  const [datosUsuario, setDatosUsuario] =
+    useState(null);
+
   const [laboratorioId, setLaboratorioId] =
     useState("");
 
-  const [muestras, setMuestras] = useState([]);
+  const [muestras, setMuestras] =
+    useState([]);
 
-  const [pacientes, setPacientes] = useState({});
+  const [pacientes, setPacientes] =
+    useState({});
 
-  const [busqueda, setBusqueda] = useState("");
+  const [busqueda, setBusqueda] =
+    useState("");
 
-  const [cargando, setCargando] = useState(true);
+  const [cargando, setCargando] =
+    useState(true);
 
   const [actualizando, setActualizando] =
     useState(false);
@@ -397,78 +502,91 @@ export default function SeguimientoMuestras({
   const [muestraDetalle, setMuestraDetalle] =
     useState(null);
 
-  const [error, setError] = useState("");
+  const [error, setError] =
+    useState("");
 
-  const [mensaje, setMensaje] = useState("");
+  const [mensaje, setMensaje] =
+    useState("");
+
+  // ====================================================
+  // PERMISOS
+  // ====================================================
+
+  const puedeProcesar =
+    datosUsuario?.rol === "bioquimico" &&
+    datosUsuario?.activo === true;
 
   // ====================================================
   // CARGAR DATOS
   // ====================================================
 
-  const cargarDatos = useCallback(async (idLaboratorio) => {
-    if (!idLaboratorio) {
-      return;
-    }
+  const cargarDatos = useCallback(
+    async (idLaboratorio) => {
+      if (!idLaboratorio) {
+        throw new Error(
+          "No se identificó el laboratorio."
+        );
+      }
 
-    const muestrasRef = collection(db, "muestras");
+      const consultaPacientes = query(
+        collection(db, "pacientes"),
+        where(
+          "laboratorioId",
+          "==",
+          idLaboratorio
+        )
+      );
 
-    const pacientesRef = collection(db, "pacientes");
-
-    const consultaMuestras = query(
-      muestrasRef,
-      where("laboratorioId", "==", idLaboratorio)
-    );
-
-    const consultaPacientes = query(
-      pacientesRef,
-      where("laboratorioId", "==", idLaboratorio)
-    );
-
-    const [muestrasSnap, pacientesSnap] =
-      await Promise.all([
-        getDocs(consultaMuestras),
+      const [
+        listaMuestras,
+        pacientesSnap,
+      ] = await Promise.all([
+        obtenerMuestrasSeguimiento(
+          idLaboratorio
+        ),
         getDocs(consultaPacientes),
       ]);
 
-    const listaMuestras = muestrasSnap.docs.map(
-      (documento) => ({
-        id: documento.id,
-        ...documento.data(),
-      })
-    );
+      const mapaPacientes = {};
 
-    const mapaPacientes = {};
+      pacientesSnap.docs.forEach(
+        (documento) => {
+          const datos = documento.data();
 
-    pacientesSnap.docs.forEach((documento) => {
-      mapaPacientes[documento.id] = {
-        id: documento.id,
-        ...documento.data(),
-      };
-    });
+          mapaPacientes[documento.id] = {
+            ...datos,
+            id: documento.id,
+          };
 
-    listaMuestras.sort((a, b) => {
-      const fechaA =
-        a.fechaToma?.seconds ||
-        a.fechaRegistro?.seconds ||
-        0;
+          if (datos.pacienteId) {
+            mapaPacientes[datos.pacienteId] = {
+              ...datos,
+              id: documento.id,
+            };
+          }
+        }
+      );
 
-      const fechaB =
-        b.fechaToma?.seconds ||
-        b.fechaRegistro?.seconds ||
-        0;
+      setMuestras(
+        Array.isArray(listaMuestras)
+          ? listaMuestras
+          : []
+      );
 
-      return fechaB - fechaA;
-    });
+      setPacientes(mapaPacientes);
 
-    setMuestras(listaMuestras);
-    setPacientes(mapaPacientes);
-  }, []);
+      return true;
+    },
+    []
+  );
 
   // ====================================================
   // IDENTIFICAR USUARIO
   // ====================================================
 
   useEffect(() => {
+    let activo = true;
+
     const cancelar = onAuthStateChanged(
       auth,
       async (usuario) => {
@@ -488,7 +606,9 @@ export default function SeguimientoMuestras({
             usuario.uid
           );
 
-          const usuarioSnap = await getDoc(usuarioRef);
+          const usuarioSnap = await getDoc(
+            usuarioRef
+          );
 
           if (!usuarioSnap.exists()) {
             throw new Error(
@@ -496,16 +616,18 @@ export default function SeguimientoMuestras({
             );
           }
 
-          const datosUsuario = usuarioSnap.data();
+          const datos = usuarioSnap.data();
 
-          if (datosUsuario.activo !== true) {
+          if (datos.activo !== true) {
             throw new Error(
               "El usuario está inactivo."
             );
           }
 
           const idLaboratorio =
-            datosUsuario.laboratorioId;
+            obtenerTexto(
+              datos.laboratorioId
+            );
 
           if (!idLaboratorio) {
             throw new Error(
@@ -513,7 +635,12 @@ export default function SeguimientoMuestras({
             );
           }
 
+          if (!activo) {
+            return;
+          }
+
           setUsuarioActual(usuario);
+          setDatosUsuario(datos);
           setLaboratorioId(idLaboratorio);
 
           await cargarDatos(idLaboratorio);
@@ -523,17 +650,26 @@ export default function SeguimientoMuestras({
             e
           );
 
-          setError(
-            e.message ||
-            "No se pudo cargar el seguimiento de muestras."
-          );
+          if (activo) {
+            setError(
+              obtenerMensajeError(e)
+            );
+
+            setMuestras([]);
+            setPacientes({});
+          }
         } finally {
-          setCargando(false);
+          if (activo) {
+            setCargando(false);
+          }
         }
       }
     );
 
-    return () => cancelar();
+    return () => {
+      activo = false;
+      cancelar();
+    };
   }, [cargarDatos]);
 
   // ====================================================
@@ -541,6 +677,13 @@ export default function SeguimientoMuestras({
   // ====================================================
 
   const actualizarMuestras = async () => {
+    if (
+      actualizando ||
+      procesandoId !== null
+    ) {
+      return;
+    }
+
     try {
       setActualizando(true);
       setError("");
@@ -552,11 +695,13 @@ export default function SeguimientoMuestras({
         "Muestras actualizadas correctamente."
       );
     } catch (e) {
-      console.error(e);
+      console.error(
+        "Error actualizando muestras:",
+        e
+      );
 
       setError(
-        e.message ||
-        "No se pudieron actualizar las muestras."
+        obtenerMensajeError(e)
       );
     } finally {
       setActualizando(false);
@@ -577,7 +722,9 @@ export default function SeguimientoMuestras({
         muestra.id
       );
 
-      const muestraSnap = await getDoc(muestraRef);
+      const muestraSnap = await getDoc(
+        muestraRef
+      );
 
       if (!muestraSnap.exists()) {
         throw new Error(
@@ -587,23 +734,147 @@ export default function SeguimientoMuestras({
 
       const datos = muestraSnap.data();
 
-      if (datos.laboratorioId !== laboratorioId) {
+      if (
+        datos.laboratorioId !==
+        laboratorioId
+      ) {
         throw new Error(
           "La muestra no pertenece a tu laboratorio."
         );
       }
 
       setMuestraDetalle({
-        id: muestraSnap.id,
         ...datos,
+        id: muestraSnap.id,
       });
     } catch (e) {
-      console.error(e);
+      console.error(
+        "Error consultando detalle:",
+        e
+      );
 
       setError(
-        e.message ||
-        "No se pudo consultar el detalle de la muestra."
+        obtenerMensajeError(e)
       );
+    }
+  };
+
+  // ====================================================
+  // CAMBIAR ESTADO
+  // ====================================================
+
+  const ejecutarCambioEstado = async (
+    muestra,
+    nuevoEstado
+  ) => {
+    if (procesandoId !== null) {
+      return;
+    }
+
+    if (!usuarioActual) {
+      setError(
+        "Debes iniciar sesión."
+      );
+      return;
+    }
+
+    if (!puedeProcesar) {
+      setError(
+        "Solo el Bioquímico puede modificar el procesamiento de muestras."
+      );
+      return;
+    }
+
+    if (!laboratorioId) {
+      setError(
+        "No se identificó el laboratorio."
+      );
+      return;
+    }
+
+    if (
+      nuevoEstado === "en_proceso" &&
+      !puedeIniciarProcesamiento(muestra)
+    ) {
+      setError(
+        "La muestra debe estar aceptada antes de iniciar su procesamiento."
+      );
+      return;
+    }
+
+    if (
+      nuevoEstado === "procesada" &&
+      !puedeFinalizarProcesamiento(muestra)
+    ) {
+      setError(
+        "La muestra debe estar en proceso antes de finalizar."
+      );
+      return;
+    }
+
+    const mensajeConfirmacion =
+      nuevoEstado === "en_proceso"
+        ? `¿Deseas iniciar el procesamiento de la muestra ${obtenerCodigo(
+            muestra
+          )}?`
+        : `¿Deseas finalizar el procesamiento de la muestra ${obtenerCodigo(
+            muestra
+          )}?`;
+
+    if (
+      !window.confirm(
+        mensajeConfirmacion
+      )
+    ) {
+      return;
+    }
+
+    try {
+      setProcesandoId(muestra.id);
+      setError("");
+      setMensaje("");
+
+      await cambiarEstadoMuestra({
+        muestraId: muestra.id,
+        laboratorioId,
+        usuarioId: usuarioActual.uid,
+        nuevoEstado,
+        observacion:
+          nuevoEstado === "en_proceso"
+            ? "Inicio del procesamiento de la muestra."
+            : "Finalización del procesamiento de la muestra.",
+      });
+
+      await cargarDatos(laboratorioId);
+
+      if (
+        muestraDetalle?.id === muestra.id
+      ) {
+        await verDetalle(muestra);
+      }
+
+      if (
+        nuevoEstado === "en_proceso"
+      ) {
+        setMensaje(
+          "El procesamiento de la muestra se inició correctamente."
+        );
+      } else {
+        setMensaje(
+          "La muestra fue procesada correctamente."
+        );
+      }
+    } catch (e) {
+      console.error(
+        "Error cambiando estado:",
+        e
+      );
+
+      setError(
+        obtenerMensajeError(e)
+      );
+    } finally {
+      setProcesandoId(null);
     }
   };
 
@@ -612,89 +883,10 @@ export default function SeguimientoMuestras({
   // ====================================================
 
   const iniciarProceso = async (muestra) => {
-    if (procesandoId) {
-      return;
-    }
-
-    try {
-      setProcesandoId(muestra.id);
-      setError("");
-      setMensaje("");
-
-      if (!usuarioActual) {
-        throw new Error(
-          "Debes iniciar sesión."
-        );
-      }
-
-      const muestraRef = doc(
-        db,
-        "muestras",
-        muestra.id
-      );
-
-      const muestraSnap = await getDoc(muestraRef);
-
-      if (!muestraSnap.exists()) {
-        throw new Error(
-          "La muestra no existe."
-        );
-      }
-
-      const datos = muestraSnap.data();
-
-      if (datos.laboratorioId !== laboratorioId) {
-        throw new Error(
-          "No puedes modificar esta muestra."
-        );
-      }
-
-      if (datos.estado !== "aceptada") {
-        throw new Error(
-          "Solo se puede iniciar el proceso de una muestra aceptada."
-        );
-      }
-
-      await updateDoc(muestraRef, {
-        estado: "en_proceso",
-
-        aceptada: true,
-
-        fechaInicioProcesamiento: serverTimestamp(),
-
-        fechaActualizacion: serverTimestamp(),
-
-        actualizadoPor: usuarioActual.uid,
-
-        historialEstados: arrayUnion({
-          estado: "en_proceso",
-          fecha: new Date(),
-          usuarioId: usuarioActual.uid,
-        }),
-      });
-
-      await cargarDatos(laboratorioId);
-
-      if (muestraDetalle?.id === muestra.id) {
-        await verDetalle(muestra);
-      }
-
-      setMensaje(
-        "El procesamiento de la muestra se inició correctamente."
-      );
-    } catch (e) {
-      console.error(
-        "Error iniciando proceso:",
-        e
-      );
-
-      setError(
-        e.message ||
-        "No se pudo iniciar el procesamiento."
-      );
-    } finally {
-      setProcesandoId(null);
-    }
+    await ejecutarCambioEstado(
+      muestra,
+      "en_proceso"
+    );
   };
 
   // ====================================================
@@ -702,153 +894,126 @@ export default function SeguimientoMuestras({
   // ====================================================
 
   const finalizarProceso = async (muestra) => {
-    if (procesandoId) {
-      return;
-    }
-
-    try {
-      setProcesandoId(muestra.id);
-      setError("");
-      setMensaje("");
-
-      if (!usuarioActual) {
-        throw new Error(
-          "Debes iniciar sesión."
-        );
-      }
-
-      const muestraRef = doc(
-        db,
-        "muestras",
-        muestra.id
-      );
-
-      const muestraSnap = await getDoc(muestraRef);
-
-      if (!muestraSnap.exists()) {
-        throw new Error(
-          "La muestra no existe."
-        );
-      }
-
-      const datos = muestraSnap.data();
-
-      if (datos.laboratorioId !== laboratorioId) {
-        throw new Error(
-          "No puedes modificar esta muestra."
-        );
-      }
-
-      if (datos.estado !== "en_proceso") {
-        throw new Error(
-          "Solo se puede finalizar una muestra en proceso."
-        );
-      }
-
-      await updateDoc(muestraRef, {
-        estado: "procesada",
-
-        aceptada: true,
-
-        fechaFinProcesamiento: serverTimestamp(),
-
-        fechaActualizacion: serverTimestamp(),
-
-        actualizadoPor: usuarioActual.uid,
-
-        historialEstados: arrayUnion({
-          estado: "procesada",
-          fecha: new Date(),
-          usuarioId: usuarioActual.uid,
-        }),
-      });
-
-      await cargarDatos(laboratorioId);
-
-      if (muestraDetalle?.id === muestra.id) {
-        await verDetalle(muestra);
-      }
-
-      setMensaje(
-        "La muestra fue procesada correctamente."
-      );
-    } catch (e) {
-      console.error(
-        "Error finalizando proceso:",
-        e
-      );
-
-      setError(
-        e.message ||
-        "No se pudo finalizar el procesamiento."
-      );
-    } finally {
-      setProcesandoId(null);
-    }
+    await ejecutarCambioEstado(
+      muestra,
+      "procesada"
+    );
   };
 
   // ====================================================
   // CONTADORES
   // ====================================================
 
-  const total = muestras.length;
+  const estadisticas = useMemo(() => {
+    return {
+      total: muestras.length,
 
-  const tomadas = muestras.filter(
-    (muestra) => muestra.estado === "tomada"
-  ).length;
+      tomadas: muestras.filter(
+        (muestra) =>
+          muestra.estado === "tomada"
+      ).length,
 
-  const aceptadas = muestras.filter(
-    (muestra) => muestra.estado === "aceptada"
-  ).length;
+      aceptadas: muestras.filter(
+        (muestra) =>
+          muestra.estado === "aceptada"
+      ).length,
 
-  const enProceso = muestras.filter(
-    (muestra) => muestra.estado === "en_proceso"
-  ).length;
+      rechazadas: muestras.filter(
+        (muestra) =>
+          muestra.estado === "rechazada"
+      ).length,
 
-  const procesadas = muestras.filter(
-    (muestra) => muestra.estado === "procesada"
-  ).length;
+      enProceso: muestras.filter(
+        (muestra) =>
+          muestra.estado === "en_proceso"
+      ).length,
+
+      procesadas: muestras.filter(
+        (muestra) =>
+          muestra.estado === "procesada"
+      ).length,
+    };
+  }, [muestras]);
 
   // ====================================================
   // BUSCADOR
   // ====================================================
 
-  const muestrasFiltradas = muestras.filter(
-    (muestra) => {
-      const paciente =
-        pacientes[muestra.pacienteId];
+  const muestrasFiltradas = useMemo(() => {
+    const textoBusqueda =
+      busqueda.trim().toLowerCase();
 
-      const contenido = [
-        obtenerNombrePaciente(paciente),
-        paciente?.ci,
-        paciente?.carnet,
-        obtenerAnalisis(muestra),
-        obtenerCodigo(muestra),
-        muestra.ordenId,
-        muestra.solicitudId,
-      ]
-        .map(obtenerTexto)
-        .join(" ")
-        .toLowerCase();
+    return muestras.filter(
+      (muestra) => {
+        const paciente =
+          pacientes[muestra.pacienteId];
 
-      return contenido.includes(
-        busqueda.trim().toLowerCase()
-      );
-    }
-  );
+        const contenido = [
+          obtenerNombrePaciente(paciente),
+
+          paciente?.ci,
+
+          paciente?.carnet,
+
+          paciente?.numeroDocumento,
+
+          obtenerAnalisis(muestra),
+
+          obtenerCodigo(muestra),
+
+          muestra.ordenId,
+
+          muestra.solicitudId,
+
+          obtenerTipo(muestra),
+
+          muestra.estado,
+        ]
+          .map(obtenerTexto)
+          .join(" ")
+          .toLowerCase();
+
+        return contenido.includes(
+          textoBusqueda
+        );
+      }
+    );
+  }, [
+    muestras,
+    pacientes,
+    busqueda,
+  ]);
 
   // ====================================================
   // BOTONES SEGÚN ESTADO
   // ====================================================
 
   const mostrarBotonProceso = (muestra) => {
-    if (muestra.estado === "aceptada") {
+    if (!puedeProcesar) {
+      return null;
+    }
+
+    const bloqueado =
+      procesandoId !== null ||
+      actualizando ||
+      cargando;
+
+    if (
+      puedeIniciarProcesamiento(muestra)
+    ) {
       return (
         <button
           type="button"
-          style={styles.button}
-          disabled={procesandoId !== null}
-          onClick={() => iniciarProceso(muestra)}
+          style={{
+            ...styles.button,
+            ...(bloqueado
+              ? styles.buttonDisabled
+              : {}),
+          }}
+          disabled={bloqueado}
+          onClick={() =>
+            iniciarProceso(muestra)
+          }
         >
           {procesandoId === muestra.id
             ? "Iniciando..."
@@ -857,13 +1022,23 @@ export default function SeguimientoMuestras({
       );
     }
 
-    if (muestra.estado === "en_proceso") {
+    if (
+      puedeFinalizarProcesamiento(muestra)
+    ) {
       return (
         <button
           type="button"
-          style={styles.button}
-          disabled={procesandoId !== null}
-          onClick={() => finalizarProceso(muestra)}
+          style={{
+            ...styles.button,
+            ...styles.buttonGreen,
+            ...(bloqueado
+              ? styles.buttonDisabled
+              : {}),
+          }}
+          disabled={bloqueado}
+          onClick={() =>
+            finalizarProceso(muestra)
+          }
         >
           {procesandoId === muestra.id
             ? "Finalizando..."
@@ -880,17 +1055,23 @@ export default function SeguimientoMuestras({
   // ====================================================
 
   const regresar = () => {
-    if (typeof onVolver === "function") {
+    if (
+      typeof onVolver === "function"
+    ) {
       onVolver();
       return;
     }
 
-    if (typeof volver === "function") {
+    if (
+      typeof volver === "function"
+    ) {
       volver();
       return;
     }
 
-    if (typeof onBack === "function") {
+    if (
+      typeof onBack === "function"
+    ) {
       onBack();
       return;
     }
@@ -904,10 +1085,7 @@ export default function SeguimientoMuestras({
 
   return (
     <div style={styles.container}>
-
-      {/* ================================================
-          ENCABEZADO
-      ================================================ */}
+      {/* ENCABEZADO */}
 
       <div style={styles.header}>
         <div>
@@ -916,8 +1094,8 @@ export default function SeguimientoMuestras({
           </h1>
 
           <p style={styles.subtitle}>
-            Consulta el estado y controla el procesamiento
-            de las muestras.
+            Consulta el estado y controla el
+            procesamiento de las muestras.
           </p>
         </div>
 
@@ -933,12 +1111,22 @@ export default function SeguimientoMuestras({
         </button>
       </div>
 
-      {/* ================================================
-          MENSAJES
-      ================================================ */}
+      {/* MENSAJES */}
+
+      {!puedeProcesar &&
+        !cargando &&
+        usuarioActual && (
+          <div style={styles.aviso}>
+            Tu usuario puede consultar el
+            seguimiento de muestras, pero
+            únicamente el Bioquímico puede
+            iniciar o finalizar su procesamiento.
+          </div>
+        )}
 
       {error && (
         <div
+          role="alert"
           style={{
             padding: "14px",
             marginBottom: "18px",
@@ -953,6 +1141,7 @@ export default function SeguimientoMuestras({
 
       {mensaje && (
         <div
+          role="status"
           style={{
             padding: "14px",
             marginBottom: "18px",
@@ -965,19 +1154,16 @@ export default function SeguimientoMuestras({
         </div>
       )}
 
-      {/* ================================================
-          CONTADORES
-      ================================================ */}
+      {/* CONTADORES */}
 
       <div style={styles.stats}>
-
         <div style={styles.statCard}>
           <div style={styles.statLabel}>
             Total
           </div>
 
           <div style={styles.statValue}>
-            {total}
+            {estadisticas.total}
           </div>
         </div>
 
@@ -987,7 +1173,7 @@ export default function SeguimientoMuestras({
           </div>
 
           <div style={styles.statValue}>
-            {tomadas}
+            {estadisticas.tomadas}
           </div>
         </div>
 
@@ -997,7 +1183,17 @@ export default function SeguimientoMuestras({
           </div>
 
           <div style={styles.statValue}>
-            {aceptadas}
+            {estadisticas.aceptadas}
+          </div>
+        </div>
+
+        <div style={styles.statCard}>
+          <div style={styles.statLabel}>
+            Rechazadas
+          </div>
+
+          <div style={styles.statValue}>
+            {estadisticas.rechazadas}
           </div>
         </div>
 
@@ -1007,7 +1203,7 @@ export default function SeguimientoMuestras({
           </div>
 
           <div style={styles.statValue}>
-            {enProceso}
+            {estadisticas.enProceso}
           </div>
         </div>
 
@@ -1017,18 +1213,14 @@ export default function SeguimientoMuestras({
           </div>
 
           <div style={styles.statValue}>
-            {procesadas}
+            {estadisticas.procesadas}
           </div>
         </div>
-
       </div>
 
-      {/* ================================================
-          BUSCADOR
-      ================================================ */}
+      {/* BUSCADOR */}
 
       <div style={styles.section}>
-
         <h3 style={styles.sectionTitle}>
           Buscar muestra
         </h3>
@@ -1050,21 +1242,21 @@ export default function SeguimientoMuestras({
             marginTop: "12px",
           }}
           onClick={actualizarMuestras}
-          disabled={actualizando}
+          disabled={
+            actualizando ||
+            cargando ||
+            procesandoId !== null
+          }
         >
           {actualizando
             ? "Actualizando..."
             : "Actualizar"}
         </button>
-
       </div>
 
-      {/* ================================================
-          MUESTRAS REGISTRADAS
-      ================================================ */}
+      {/* MUESTRAS REGISTRADAS */}
 
       <div style={styles.section}>
-
         <h3 style={styles.sectionTitle}>
           Muestras registradas
         </h3>
@@ -1072,274 +1264,564 @@ export default function SeguimientoMuestras({
         {cargando ? (
           <p>Cargando muestras...</p>
         ) : muestrasFiltradas.length === 0 ? (
-          <p style={{ color: "#64748B" }}>
+          <p
+            style={{
+              color: "#64748B",
+            }}
+          >
             No se encontraron muestras registradas.
           </p>
         ) : (
-          muestrasFiltradas.map((muestra) => {
-            const paciente =
-              pacientes[muestra.pacienteId];
+          muestrasFiltradas.map(
+            (muestra) => {
+              const paciente =
+                pacientes[
+                  muestra.pacienteId
+                ];
 
-            return (
-              <div
-                key={muestra.id}
-                style={styles.sampleCard}
-              >
+              return (
+                <div
+                  key={muestra.id}
+                  style={styles.sampleCard}
+                >
+                  {/* TÍTULO Y ESTADO */}
 
-                {/* TÍTULO Y ESTADO */}
+                  <div
+                    style={
+                      styles.sampleHeader
+                    }
+                  >
+                    <h3
+                      style={
+                        styles.sampleTitle
+                      }
+                    >
+                      {obtenerAnalisis(
+                        muestra
+                      )}
+                    </h3>
 
-                <div style={styles.sampleHeader}>
-
-                  <h3 style={styles.sampleTitle}>
-                    {obtenerAnalisis(muestra)}
-                  </h3>
-
-                  <span
-                    style={{
-                      ...styles.badge,
-                      background: colorEstado(
+                    <span
+                      style={{
+                        ...styles.badge,
+                        background:
+                          colorEstado(
+                            muestra.estado
+                          ),
+                      }}
+                    >
+                      {mostrarEstado(
                         muestra.estado
-                      ),
-                    }}
+                      )}
+                    </span>
+                  </div>
+
+                  {/* INFORMACIÓN */}
+
+                  <p
+                    style={
+                      styles.sampleText
+                    }
                   >
-                    {mostrarEstado(muestra.estado)}
-                  </span>
+                    Código:{" "}
+                    {obtenerCodigo(
+                      muestra
+                    )}
+                  </p>
 
-                </div>
-
-                {/* INFORMACIÓN */}
-
-                <p style={styles.sampleText}>
-                  Código: {obtenerCodigo(muestra)}
-                </p>
-
-                <p style={styles.sampleText}>
-                  Paciente:{" "}
-                  {obtenerNombrePaciente(paciente)}
-                </p>
-
-                <p style={styles.sampleText}>
-                  CI:{" "}
-                  {paciente?.ci ||
-                    paciente?.carnet ||
-                    "No registrado"}
-                </p>
-
-                <p style={styles.sampleText}>
-                  Tipo: {obtenerTipo(muestra)}
-                </p>
-
-                <p style={styles.sampleText}>
-                  Orden: {muestra.ordenId || "-"}
-                </p>
-
-                <p style={styles.sampleText}>
-                  Fecha de toma:{" "}
-                  {mostrarFecha(muestra.fechaToma)}
-                </p>
-
-                {/* BOTONES */}
-
-                <div style={styles.actions}>
-
-                  <button
-                    type="button"
-                    style={{
-                      ...styles.button,
-                      ...styles.buttonDark,
-                    }}
-                    onClick={() => verDetalle(muestra)}
+                  <p
+                    style={
+                      styles.sampleText
+                    }
                   >
-                    Ver detalle
-                  </button>
+                    Paciente:{" "}
+                    {obtenerNombrePaciente(
+                      paciente
+                    )}
+                  </p>
 
-                  {mostrarBotonProceso(muestra)}
+                  <p
+                    style={
+                      styles.sampleText
+                    }
+                  >
+                    CI:{" "}
+                    {paciente?.ci ||
+                      paciente?.carnet ||
+                      paciente?.numeroDocumento ||
+                      "No registrado"}
+                  </p>
 
+                  <p
+                    style={
+                      styles.sampleText
+                    }
+                  >
+                    Tipo:{" "}
+                    {obtenerTipo(
+                      muestra
+                    )}
+                  </p>
+
+                  <p
+                    style={
+                      styles.sampleText
+                    }
+                  >
+                    Orden:{" "}
+                    {muestra.ordenId ||
+                      "-"}
+                  </p>
+
+                  <p
+                    style={
+                      styles.sampleText
+                    }
+                  >
+                    Fecha de toma:{" "}
+                    {mostrarFecha(
+                      muestra.fechaToma
+                    )}
+                  </p>
+
+                  {/* BOTONES */}
+
+                  <div
+                    style={
+                      styles.actions
+                    }
+                  >
+                    <button
+                      type="button"
+                      style={{
+                        ...styles.button,
+                        ...styles.buttonDark,
+                      }}
+                      onClick={() =>
+                        verDetalle(
+                          muestra
+                        )
+                      }
+                    >
+                      Ver detalle
+                    </button>
+
+                    {mostrarBotonProceso(
+                      muestra
+                    )}
+                  </div>
                 </div>
-
-              </div>
-            );
-          })
+              );
+            }
+          )
         )}
-
       </div>
 
-      {/* ================================================
-          MODAL DETALLE DE MUESTRA
-      ================================================ */}
+      {/* MODAL DETALLE */}
 
       {muestraDetalle && (
         <div
-          style={styles.modalOverlay}
-          onClick={() => setMuestraDetalle(null)}
+          style={
+            styles.modalOverlay
+          }
+          onMouseDown={(e) => {
+            if (
+              e.target ===
+                e.currentTarget &&
+              procesandoId === null
+            ) {
+              setMuestraDetalle(
+                null
+              );
+            }
+          }}
         >
           <div
             style={styles.modal}
-            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="tituloDetalleMuestra"
           >
-
-            <h2 style={styles.modalTitle}>
+            <h2
+              id="tituloDetalleMuestra"
+              style={
+                styles.modalTitle
+              }
+            >
               Detalle de la muestra
             </h2>
 
             {/* DATOS DEL PACIENTE */}
 
-            <div style={styles.detailBox}>
-
+            <div
+              style={
+                styles.detailBox
+              }
+            >
               <h3
                 style={{
                   ...styles.detailTitle,
-                  marginBottom: "8px",
+                  marginBottom:
+                    "8px",
                 }}
               >
-                {obtenerAnalisis(muestraDetalle)}
+                {obtenerAnalisis(
+                  muestraDetalle
+                )}
               </h3>
 
-              <p style={styles.detailText}>
+              <p
+                style={
+                  styles.detailText
+                }
+              >
                 Paciente:{" "}
                 {obtenerNombrePaciente(
-                  pacientes[muestraDetalle.pacienteId]
+                  pacientes[
+                    muestraDetalle
+                      .pacienteId
+                  ]
                 )}
               </p>
 
-              <p style={styles.detailText}>
+              <p
+                style={
+                  styles.detailText
+                }
+              >
                 CI:{" "}
-                {pacientes[muestraDetalle.pacienteId]
-                  ?.ci ||
-                  pacientes[muestraDetalle.pacienteId]
-                    ?.carnet ||
+                {pacientes[
+                  muestraDetalle
+                    .pacienteId
+                ]?.ci ||
+                  pacientes[
+                    muestraDetalle
+                      .pacienteId
+                  ]?.carnet ||
                   "No registrado"}
               </p>
 
-              <p style={styles.detailText}>
+              <p
+                style={
+                  styles.detailText
+                }
+              >
                 Estado:{" "}
-                {mostrarEstado(muestraDetalle.estado)}
+                {mostrarEstado(
+                  muestraDetalle.estado
+                )}
               </p>
-
             </div>
 
             {/* INFORMACIÓN DE LA MUESTRA */}
 
-            <div style={styles.detailSection}>
-
-              <h3 style={styles.detailTitle}>
+            <div
+              style={
+                styles.detailSection
+              }
+            >
+              <h3
+                style={
+                  styles.detailTitle
+                }
+              >
                 Información de la muestra
               </h3>
 
-              <p style={styles.detailText}>
-                Código: {obtenerCodigo(muestraDetalle)}
+              <p
+                style={
+                  styles.detailText
+                }
+              >
+                Código:{" "}
+                {obtenerCodigo(
+                  muestraDetalle
+                )}
               </p>
 
-              <p style={styles.detailText}>
-                ID de muestra: {muestraDetalle.id}
+              <p
+                style={
+                  styles.detailText
+                }
+              >
+                ID de muestra:{" "}
+                {muestraDetalle.id}
               </p>
 
-              <p style={styles.detailText}>
-                Orden: {muestraDetalle.ordenId || "-"}
+              <p
+                style={
+                  styles.detailText
+                }
+              >
+                Orden:{" "}
+                {muestraDetalle.ordenId ||
+                  "-"}
               </p>
 
-              <p style={styles.detailText}>
+              <p
+                style={
+                  styles.detailText
+                }
+              >
                 Solicitud:{" "}
-                {muestraDetalle.solicitudId || "-"}
+                {muestraDetalle.solicitudId ||
+                  "-"}
               </p>
 
-              <p style={styles.detailText}>
+              <p
+                style={
+                  styles.detailText
+                }
+              >
                 Tipo de muestra:{" "}
-                {obtenerTipo(muestraDetalle)}
+                {obtenerTipo(
+                  muestraDetalle
+                )}
               </p>
 
-              <p style={styles.detailText}>
+              <p
+                style={
+                  styles.detailText
+                }
+              >
                 Aceptada:{" "}
-                {muestraDetalle.aceptada === true ||
-                [
-                  "aceptada",
-                  "en_proceso",
-                  "procesada",
-                ].includes(muestraDetalle.estado)
+                {muestraDetalle.aceptada ===
+                true
                   ? "Sí"
                   : "No"}
               </p>
 
               {muestraDetalle.motivoRechazo && (
-                <p style={styles.detailText}>
+                <p
+                  style={
+                    styles.detailText
+                  }
+                >
                   Motivo de rechazo:{" "}
-                  {muestraDetalle.motivoRechazo}
+                  {
+                    muestraDetalle
+                      .motivoRechazo
+                  }
                 </p>
               )}
-
             </div>
 
             {/* SEGUIMIENTO DEL PROCESAMIENTO */}
 
-            <div style={styles.detailSection}>
-
-              <h3 style={styles.detailTitle}>
+            <div
+              style={
+                styles.detailSection
+              }
+            >
+              <h3
+                style={
+                  styles.detailTitle
+                }
+              >
                 Seguimiento del procesamiento
               </h3>
 
-              <p style={styles.detailText}>
+              <p
+                style={
+                  styles.detailText
+                }
+              >
                 Fecha de toma:{" "}
                 {mostrarFecha(
-                  muestraDetalle.fechaToma
+                  muestraDetalle
+                    .fechaToma
                 )}
               </p>
 
-              <p style={styles.detailText}>
+              <p
+                style={
+                  styles.detailText
+                }
+              >
                 Fecha de validación:{" "}
                 {mostrarFecha(
-                  muestraDetalle.fechaValidacion
+                  muestraDetalle
+                    .fechaValidacion
                 )}
               </p>
 
-              <p style={styles.detailText}>
+              <p
+                style={
+                  styles.detailText
+                }
+              >
                 Inicio del proceso:{" "}
                 {mostrarFecha(
-                  muestraDetalle.fechaInicioProcesamiento
+                  muestraDetalle
+                    .fechaInicioProcesamiento
                 )}
               </p>
 
-              <p style={styles.detailText}>
+              <p
+                style={
+                  styles.detailText
+                }
+              >
                 Fin del proceso:{" "}
                 {mostrarFecha(
-                  muestraDetalle.fechaFinProcesamiento
+                  muestraDetalle
+                    .fechaFinProcesamiento
                 )}
               </p>
+            </div>
 
+            {/* HISTORIAL DE ESTADOS */}
+
+            <div
+              style={
+                styles.detailSection
+              }
+            >
+              <h3
+                style={
+                  styles.detailTitle
+                }
+              >
+                Historial de estados
+              </h3>
+
+              {obtenerHistorialMuestra(
+                muestraDetalle
+              ).length === 0 ? (
+                <p
+                  style={
+                    styles.detailText
+                  }
+                >
+                  No existen cambios
+                  registrados.
+                </p>
+              ) : (
+                obtenerHistorialMuestra(
+                  muestraDetalle
+                ).map(
+                  (
+                    registro,
+                    indice
+                  ) => (
+                    <div
+                      key={indice}
+                      style={
+                        styles.historialItem
+                      }
+                    >
+                      <strong>
+                        {obtenerDescripcionEstadoMuestra(
+                          obtenerEstadoHistorial(
+                            registro
+                          )
+                        )}
+                      </strong>
+
+                      {registro.estadoAnterior && (
+                        <p
+                          style={
+                            styles.detailText
+                          }
+                        >
+                          Estado anterior:{" "}
+                          {mostrarEstado(
+                            registro.estadoAnterior
+                          )}
+                        </p>
+                      )}
+
+                      <p
+                        style={
+                          styles.detailText
+                        }
+                      >
+                        Usuario:{" "}
+                        {registro.usuarioId ||
+                          "No registrado"}
+                      </p>
+
+                      {registro.observacion && (
+                        <p
+                          style={
+                            styles.detailText
+                          }
+                        >
+                          Observación:{" "}
+                          {
+                            registro.observacion
+                          }
+                        </p>
+                      )}
+
+                      <p
+                        style={
+                          styles.historialFecha
+                        }
+                      >
+                        {mostrarFecha(
+                          obtenerFechaHistorial(
+                            registro
+                          )
+                        )}
+                      </p>
+                    </div>
+                  )
+                )
+              )}
             </div>
 
             {/* BOTONES DEL MODAL */}
 
-            <div style={styles.modalActions}>
-
+            <div
+              style={
+                styles.modalActions
+              }
+            >
               <button
                 type="button"
                 style={{
                   ...styles.button,
                   ...styles.buttonGray,
                 }}
-                onClick={() => setMuestraDetalle(null)}
+                disabled={
+                  procesandoId !==
+                  null
+                }
+                onClick={() =>
+                  setMuestraDetalle(
+                    null
+                  )
+                }
               >
                 Cerrar
               </button>
 
               <button
                 type="button"
-                style={styles.button}
+                style={
+                  styles.button
+                }
+                disabled={
+                  procesandoId !==
+                  null
+                }
                 onClick={() =>
-                  verDetalle(muestraDetalle)
+                  verDetalle(
+                    muestraDetalle
+                  )
                 }
               >
                 Actualizar detalle
               </button>
 
-              {mostrarBotonProceso(muestraDetalle)}
-
+              {mostrarBotonProceso(
+                muestraDetalle
+              )}
             </div>
-
           </div>
         </div>
       )}
-
     </div>
   );
 }

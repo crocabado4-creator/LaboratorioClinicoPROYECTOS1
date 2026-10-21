@@ -9,333 +9,271 @@ import {
   where,
 } from "firebase/firestore";
 
-import {
-  db,
-} from "../firebase/firebase";
+import { getAuth } from "firebase/auth";
 
+import { db } from "../firebase/firebase";
 
-const COLECCION_ORDENES =
-  "ordenes";
+const COLECCION_ORDENES = "ordenes";
+const COLECCION_SOLICITUDES = "solicitudes";
+const COLECCION_MUESTRAS = "muestras";
 
-const COLECCION_SOLICITUDES =
-  "solicitudes";
-
-const COLECCION_MUESTRAS =
-  "muestras";
-
-
-function limpiarTexto(
-  valor
-) {
-  if (
-    valor === null ||
-    valor === undefined
-  ) {
+function limpiarTexto(valor) {
+  if (valor === null || valor === undefined) {
     return "";
   }
 
-  return String(
-    valor
-  ).trim();
+  return String(valor).trim();
 }
 
-
-function fechaMilisegundos(
-  fecha
-) {
-  if (
-    !fecha
-  ) {
+function fechaMilisegundos(fecha) {
+  if (!fecha) {
     return 0;
   }
 
-
-  if (
-    typeof fecha.toMillis ===
-    "function"
-  ) {
+  if (typeof fecha.toMillis === "function") {
     return fecha.toMillis();
   }
 
-
-  if (
-    typeof fecha.seconds ===
-    "number"
-  ) {
-    return (
-      fecha.seconds *
-      1000
-    );
+  if (typeof fecha.seconds === "number") {
+    return fecha.seconds * 1000;
   }
 
-
-  if (
-    fecha instanceof Date
-  ) {
+  if (fecha instanceof Date) {
     return fecha.getTime();
   }
-
 
   return 0;
 }
 
-
-function normalizarAnalisis(
-  valor
-) {
-  if (
-    !Array.isArray(
-      valor
-    )
-  ) {
+function normalizarAnalisis(valor) {
+  if (!Array.isArray(valor)) {
     return [];
   }
 
-
   return valor
-    .map(
-      (
-        item
-      ) => {
-        if (
-          !item ||
-          typeof item !==
-            "object"
-        ) {
-          return null;
-        }
-
-
-        const analisisId =
-          limpiarTexto(
-            item.analisisId
-          ) ||
-          limpiarTexto(
-            item.id
-          );
-
-
-        if (
-          !analisisId
-        ) {
-          return null;
-        }
-
-
-        const precio =
-          Number(
-            item.precio ||
-            0
-          );
-
-
-        const cantidad =
-          Math.max(
-            1,
-            Number(
-              item.cantidad ||
-              1
-            )
-          );
-
-
-        const subtotalDato =
-          Number(
-            item.subtotal
-          );
-
-
-        return {
-          analisisId,
-
-          nombre:
-            limpiarTexto(
-              item.nombre
-            ) ||
-            "Análisis",
-
-          precio:
-            Number.isFinite(
-              precio
-            )
-              ? precio
-              : 0,
-
-          cantidad:
-            Number.isFinite(
-              cantidad
-            )
-              ? cantidad
-              : 1,
-
-          subtotal:
-            Number.isFinite(
-              subtotalDato
-            )
-              ? subtotalDato
-              : (
-                  Number.isFinite(
-                    precio
-                  )
-                    ? precio
-                    : 0
-                ) *
-                (
-                  Number.isFinite(
-                    cantidad
-                  )
-                    ? cantidad
-                    : 1
-                ),
-        };
+    .map((item) => {
+      if (!item || typeof item !== "object") {
+        return null;
       }
-    )
-    .filter(
-      (
-        item
-      ) =>
-        item !==
-        null
-    );
+
+      const analisisId =
+        limpiarTexto(item.analisisId) ||
+        limpiarTexto(item.id);
+
+      if (!analisisId) {
+        return null;
+      }
+
+      const precio = Number(item.precio || 0);
+
+      const cantidad = Math.max(
+        1,
+        Number(item.cantidad || 1)
+      );
+
+      const subtotalDato = Number(item.subtotal);
+
+      return {
+        analisisId,
+
+        nombre:
+          limpiarTexto(item.nombre) ||
+          "Análisis",
+
+        precio: Number.isFinite(precio)
+          ? precio
+          : 0,
+
+        cantidad: Number.isFinite(cantidad)
+          ? cantidad
+          : 1,
+
+        subtotal: Number.isFinite(subtotalDato)
+          ? subtotalDato
+          : (Number.isFinite(precio) ? precio : 0) *
+            (Number.isFinite(cantidad) ? cantidad : 1),
+      };
+    })
+    .filter((item) => item !== null);
 }
 
-
-function convertirMuestra(
-  documento
-) {
-  const datos =
-    documento.data();
-
+function convertirMuestra(documento) {
+  const datos = documento.data();
 
   return {
-    id:
-      documento.id,
+    id: documento.id,
 
     muestraId:
-      limpiarTexto(
-        datos.muestraId
-      ) ||
+      limpiarTexto(datos.muestraId) ||
       documento.id,
 
     laboratorioId:
-      limpiarTexto(
-        datos.laboratorioId
-      ),
+      limpiarTexto(datos.laboratorioId),
 
     solicitudId:
-      limpiarTexto(
-        datos.solicitudId
-      ),
+      limpiarTexto(datos.solicitudId),
 
     ordenId:
-      limpiarTexto(
-        datos.ordenId
-      ),
+      limpiarTexto(datos.ordenId),
 
     pacienteId:
-      limpiarTexto(
-        datos.pacienteId
-      ),
+      limpiarTexto(datos.pacienteId),
 
     analisisId:
-      limpiarTexto(
-        datos.analisisId
-      ),
+      limpiarTexto(datos.analisisId),
 
     analisisNombre:
-      limpiarTexto(
-        datos.analisisNombre
-      ) ||
+      limpiarTexto(datos.analisisNombre) ||
       "Análisis",
 
     bioquimicoId:
-      limpiarTexto(
-        datos.bioquimicoId
-      ),
+      limpiarTexto(datos.bioquimicoId),
 
     tipo:
-      limpiarTexto(
-        datos.tipo
-      ),
+      limpiarTexto(datos.tipo) ||
+      limpiarTexto(datos.tipoMuestra),
 
     codigoEtiqueta:
-      limpiarTexto(
-        datos.codigoEtiqueta
-      ),
+      limpiarTexto(datos.codigoEtiqueta),
 
     estado:
-      limpiarTexto(
-        datos.estado
-      ) ||
+      limpiarTexto(datos.estado) ||
       "tomada",
 
+    estadoValidacion:
+      limpiarTexto(datos.estadoValidacion) ||
+      "pendiente",
+
+    aceptada:
+      datos.aceptada === true,
+
     fechaToma:
-      datos.fechaToma ||
-      null,
+      datos.fechaToma || null,
+
+    fechaRegistro:
+      datos.fechaRegistro || null,
+
+    registradoPor:
+      limpiarTexto(datos.registradoPor),
   };
 }
 
+async function obtenerUsuarioAutenticado() {
+  const auth = getAuth();
+
+  const usuarioFirebase = auth.currentUser;
+
+  if (!usuarioFirebase) {
+    throw new Error(
+      "Tu sesión ha expirado. Inicia sesión nuevamente."
+    );
+  }
+
+  const usuarioReferencia = doc(
+    db,
+    "usuarios",
+    usuarioFirebase.uid
+  );
+
+  const usuarioDocumento = await getDoc(
+    usuarioReferencia
+  );
+
+  if (!usuarioDocumento.exists()) {
+    throw new Error(
+      "No se encontró tu usuario en el sistema."
+    );
+  }
+
+  const datosUsuario = usuarioDocumento.data();
+
+  if (datosUsuario.activo !== true) {
+    throw new Error(
+      "Tu usuario se encuentra inactivo."
+    );
+  }
+
+  return {
+    uid: usuarioFirebase.uid,
+    rol: limpiarTexto(datosUsuario.rol),
+    laboratorioId: limpiarTexto(
+      datosUsuario.laboratorioId
+    ),
+  };
+}
+
+async function validarAccesoLaboratorio(
+  laboratorioId,
+  rolesPermitidos = [
+    "administrador",
+    "recepcionista",
+    "bioquimico",
+  ]
+) {
+  const idLaboratorio = limpiarTexto(
+    laboratorioId
+  );
+
+  if (!idLaboratorio) {
+    throw new Error(
+      "No se pudo identificar el laboratorio."
+    );
+  }
+
+  const usuario = await obtenerUsuarioAutenticado();
+
+  if (
+    usuario.laboratorioId !== idLaboratorio
+  ) {
+    throw new Error(
+      "No tienes autorización para acceder a este laboratorio."
+    );
+  }
+
+  if (!rolesPermitidos.includes(usuario.rol)) {
+    throw new Error(
+      "No tienes permisos para realizar esta operación."
+    );
+  }
+
+  return usuario;
+}
 
 async function completarOrdenConSolicitud(
   documento,
   laboratorioId
 ) {
-  const datosOrden =
-    documento.data();
+  const datosOrden = documento.data();
 
+  const solicitudId = limpiarTexto(
+    datosOrden.solicitudId
+  );
 
-  const solicitudId =
-    limpiarTexto(
-      datosOrden.solicitudId
-    );
+  let datosSolicitud = null;
 
-
-  let datosSolicitud =
-    null;
-
-
-  /*
-   * Compatibilidad con órdenes antiguas.
-   *
-   * Si una orden no tiene pacienteId
-   * o analisis[], recuperamos esos datos
-   * desde la solicitud asociada.
-   */
-  if (
-    solicitudId
-  ) {
+  if (solicitudId) {
     try {
-      const solicitudSnap =
-        await getDoc(
-          doc(
-            db,
-            COLECCION_SOLICITUDES,
-            solicitudId
-          )
-        );
+      const solicitudSnap = await getDoc(
+        doc(
+          db,
+          COLECCION_SOLICITUDES,
+          solicitudId
+        )
+      );
 
-
-      if (
-        solicitudSnap.exists()
-      ) {
+      if (solicitudSnap.exists()) {
         const posibleSolicitud =
           solicitudSnap.data();
-
 
         if (
           limpiarTexto(
             posibleSolicitud.laboratorioId
-          ) ===
-          laboratorioId
+          ) === laboratorioId
         ) {
-          datosSolicitud =
-            posibleSolicitud;
+          datosSolicitud = posibleSolicitud;
         }
       }
-
-    } catch (
-      error
-    ) {
+    } catch (error) {
       console.warn(
         `No se pudo completar la orden ${documento.id} desde la solicitud ${solicitudId}:`,
         error
@@ -343,66 +281,43 @@ async function completarOrdenConSolicitud(
     }
   }
 
-
   const pacienteId =
-    limpiarTexto(
-      datosOrden.pacienteId
-    ) ||
-    limpiarTexto(
-      datosSolicitud?.pacienteId
-    );
+    limpiarTexto(datosOrden.pacienteId) ||
+    limpiarTexto(datosSolicitud?.pacienteId);
 
+  const analisisOrden = normalizarAnalisis(
+    datosOrden.analisis
+  );
 
-  const analisisOrden =
-    normalizarAnalisis(
-      datosOrden.analisis
-    );
-
-
-  const analisisSolicitud =
-    normalizarAnalisis(
-      datosSolicitud?.analisis
-    );
-
+  const analisisSolicitud = normalizarAnalisis(
+    datosSolicitud?.analisis
+  );
 
   const analisis =
-    analisisOrden.length >
-    0
+    analisisOrden.length > 0
       ? analisisOrden
       : analisisSolicitud;
 
-
   return {
-    id:
-      documento.id,
+    id: documento.id,
 
     ordenId:
-      limpiarTexto(
-        datosOrden.ordenId
-      ) ||
+      limpiarTexto(datosOrden.ordenId) ||
       documento.id,
 
     ventaId:
-      limpiarTexto(
-        datosOrden.ventaId
-      ),
+      limpiarTexto(datosOrden.ventaId),
 
     solicitudId,
 
     laboratorioId:
-      limpiarTexto(
-        datosOrden.laboratorioId
-      ),
+      limpiarTexto(datosOrden.laboratorioId),
 
     pacienteId,
 
     empleadoId:
-      limpiarTexto(
-        datosOrden.empleadoId
-      ) ||
-      limpiarTexto(
-        datosSolicitud?.empleadoId
-      ),
+      limpiarTexto(datosOrden.empleadoId) ||
+      limpiarTexto(datosSolicitud?.empleadoId),
 
     fecha:
       datosOrden.fecha ||
@@ -410,168 +325,124 @@ async function completarOrdenConSolicitud(
       null,
 
     estado:
-      limpiarTexto(
-        datosOrden.estado
-      ) ||
+      limpiarTexto(datosOrden.estado) ||
       "generada",
 
-    total:
-      Number(
-        datosOrden.total ??
-        datosSolicitud?.total ??
-        0
-      ),
+    total: Number(
+      datosOrden.total ??
+      datosSolicitud?.total ??
+      0
+    ),
 
     analisis,
   };
 }
 
-
 export async function obtenerOrdenesParaMuestras(
   laboratorioId
 ) {
-  const idLaboratorio =
-    limpiarTexto(
-      laboratorioId
-    );
+  const idLaboratorio = limpiarTexto(
+    laboratorioId
+  );
 
-
-  if (
-    !idLaboratorio
-  ) {
+  if (!idLaboratorio) {
     return [];
   }
 
+  await validarAccesoLaboratorio(
+    idLaboratorio
+  );
 
-  const consulta =
-    query(
-      collection(
-        db,
-        COLECCION_ORDENES
-      ),
-      where(
-        "laboratorioId",
-        "==",
+  const consulta = query(
+    collection(
+      db,
+      COLECCION_ORDENES
+    ),
+    where(
+      "laboratorioId",
+      "==",
+      idLaboratorio
+    )
+  );
+
+  const resultado = await getDocs(
+    consulta
+  );
+
+  const ordenes = await Promise.all(
+    resultado.docs.map((documento) =>
+      completarOrdenConSolicitud(
+        documento,
         idLaboratorio
       )
-    );
-
-
-  const resultado =
-    await getDocs(
-      consulta
-    );
-
-
-  const ordenes =
-    await Promise.all(
-      resultado.docs.map(
-        (
-          documento
-        ) =>
-          completarOrdenConSolicitud(
-            documento,
-            idLaboratorio
-          )
-      )
-    );
-
+    )
+  );
 
   return ordenes
     .filter(
-      (
-        orden
-      ) =>
+      (orden) =>
         orden.laboratorioId ===
         idLaboratorio
     )
     .sort(
-      (
-        a,
-        b
-      ) =>
-        fechaMilisegundos(
-          b.fecha
-        ) -
-        fechaMilisegundos(
-          a.fecha
-        )
+      (a, b) =>
+        fechaMilisegundos(b.fecha) -
+        fechaMilisegundos(a.fecha)
     );
 }
-
 
 export async function obtenerMuestras(
   laboratorioId
 ) {
-  const idLaboratorio =
-    limpiarTexto(
-      laboratorioId
-    );
+  const idLaboratorio = limpiarTexto(
+    laboratorioId
+  );
 
-
-  if (
-    !idLaboratorio
-  ) {
+  if (!idLaboratorio) {
     return [];
   }
 
+  await validarAccesoLaboratorio(
+    idLaboratorio
+  );
 
-  const consulta =
-    query(
-      collection(
-        db,
-        COLECCION_MUESTRAS
-      ),
-      where(
-        "laboratorioId",
-        "==",
-        idLaboratorio
-      )
-    );
+  const consulta = query(
+    collection(
+      db,
+      COLECCION_MUESTRAS
+    ),
+    where(
+      "laboratorioId",
+      "==",
+      idLaboratorio
+    )
+  );
 
-
-  const resultado =
-    await getDocs(
-      consulta
-    );
-
+  const resultado = await getDocs(
+    consulta
+  );
 
   return resultado.docs
-    .map(
-      convertirMuestra
-    )
+    .map(convertirMuestra)
     .sort(
-      (
-        a,
-        b
-      ) =>
-        fechaMilisegundos(
-          b.fechaToma
-        ) -
-        fechaMilisegundos(
-          a.fechaToma
-        )
+      (a, b) =>
+        fechaMilisegundos(b.fechaToma) -
+        fechaMilisegundos(a.fechaToma)
     );
 }
 
-
 function generarCodigoEtiqueta() {
-  const fecha =
-    Date.now()
-      .toString()
-      .slice(-8);
+  const fecha = Date.now()
+    .toString()
+    .slice(-8);
 
-
-  const aleatorio =
-    Math.random()
-      .toString(36)
-      .slice(2, 7)
-      .toUpperCase();
-
+  const aleatorio = Math.random()
+    .toString(36)
+    .slice(2, 7)
+    .toUpperCase();
 
   return `MUE-${fecha}-${aleatorio}`;
 }
-
 
 export async function registrarMuestra({
   laboratorioId,
@@ -580,240 +451,184 @@ export async function registrarMuestra({
   analisisId,
   tipo,
 }) {
-  const idLaboratorio =
-    limpiarTexto(
-      laboratorioId
-    );
+  const idLaboratorio = limpiarTexto(
+    laboratorioId
+  );
 
+  const idBioquimico = limpiarTexto(
+    bioquimicoId
+  );
 
-  const idBioquimico =
-    limpiarTexto(
-      bioquimicoId
-    );
+  const idOrden = limpiarTexto(
+    ordenId
+  );
 
+  const idAnalisis = limpiarTexto(
+    analisisId
+  );
 
-  const idOrden =
-    limpiarTexto(
-      ordenId
-    );
+  const tipoMuestra = limpiarTexto(
+    tipo
+  );
 
-
-  const idAnalisis =
-    limpiarTexto(
-      analisisId
-    );
-
-
-  const tipoMuestra =
-    limpiarTexto(
-      tipo
-    );
-
-
-  if (
-    !idLaboratorio
-  ) {
+  if (!idLaboratorio) {
     throw new Error(
       "No se pudo identificar el laboratorio."
     );
   }
 
-
-  if (
-    !idBioquimico
-  ) {
+  if (!idBioquimico) {
     throw new Error(
       "No se pudo identificar al Bioquímico."
     );
   }
 
-
-  if (
-    !idOrden
-  ) {
+  if (!idOrden) {
     throw new Error(
       "Debe seleccionar una orden."
     );
   }
 
-
-  if (
-    !idAnalisis
-  ) {
+  if (!idAnalisis) {
     throw new Error(
       "Debe seleccionar un análisis."
     );
   }
 
-
-  if (
-    !tipoMuestra
-  ) {
+  if (!tipoMuestra) {
     throw new Error(
       "Debe seleccionar el tipo de muestra."
     );
   }
 
+  const usuario = await validarAccesoLaboratorio(
+    idLaboratorio,
+    ["bioquimico"]
+  );
 
-  const ordenSnap =
-    await getDoc(
-      doc(
-        db,
-        COLECCION_ORDENES,
-        idOrden
-      )
+  if (usuario.uid !== idBioquimico) {
+    throw new Error(
+      "El Bioquímico seleccionado no coincide con la sesión actual."
     );
+  }
 
+  const ordenSnap = await getDoc(
+    doc(
+      db,
+      COLECCION_ORDENES,
+      idOrden
+    )
+  );
 
-  if (
-    !ordenSnap.exists()
-  ) {
+  if (!ordenSnap.exists()) {
     throw new Error(
       "La orden seleccionada no existe."
     );
   }
 
-
-  const orden =
-    await completarOrdenConSolicitud(
-      ordenSnap,
-      idLaboratorio
-    );
-
+  const orden = await completarOrdenConSolicitud(
+    ordenSnap,
+    idLaboratorio
+  );
 
   if (
-    orden.laboratorioId !==
-    idLaboratorio
+    orden.laboratorioId !== idLaboratorio
   ) {
     throw new Error(
       "La orden pertenece a otro laboratorio."
     );
   }
 
-
-  if (
-    !orden.pacienteId
-  ) {
+  if (!orden.pacienteId) {
     throw new Error(
       "La orden no tiene un paciente asociado."
     );
   }
 
+  const analisis = orden.analisis.find(
+    (item) =>
+      item.analisisId === idAnalisis
+  );
 
-  const analisis =
-    orden.analisis.find(
-      (
-        item
-      ) =>
-        item.analisisId ===
-        idAnalisis
-    );
-
-
-  if (
-    !analisis
-  ) {
+  if (!analisis) {
     throw new Error(
       "El análisis seleccionado no pertenece a la orden."
     );
   }
 
+  const muestrasActuales = await obtenerMuestras(
+    idLaboratorio
+  );
 
-  const muestrasActuales =
-    await obtenerMuestras(
-      idLaboratorio
-    );
+  const yaRegistrada = muestrasActuales.some(
+    (muestra) =>
+      muestra.ordenId === idOrden &&
+      muestra.analisisId === idAnalisis
+  );
 
-
-  const yaRegistrada =
-    muestrasActuales.some(
-      (
-        muestra
-      ) =>
-        muestra.ordenId ===
-          idOrden &&
-        muestra.analisisId ===
-          idAnalisis
-    );
-
-
-  if (
-    yaRegistrada
-  ) {
+  if (yaRegistrada) {
     throw new Error(
       "Ya existe una muestra registrada para este análisis de la orden."
     );
   }
 
-
-  const referencia =
-    doc(
-      collection(
-        db,
-        COLECCION_MUESTRAS
-      )
-    );
-
+  const referencia = doc(
+    collection(
+      db,
+      COLECCION_MUESTRAS
+    )
+  );
 
   const codigoEtiqueta =
     generarCodigoEtiqueta();
 
+  await setDoc(referencia, {
+    muestraId: referencia.id,
 
-  await setDoc(
-    referencia,
-    {
-      muestraId:
-        referencia.id,
+    laboratorioId: idLaboratorio,
 
-      laboratorioId:
-        idLaboratorio,
+    solicitudId: orden.solicitudId,
 
-      solicitudId:
-        orden.solicitudId,
+    ordenId: idOrden,
 
-      ordenId:
-        idOrden,
+    pacienteId: orden.pacienteId,
 
-      pacienteId:
-        orden.pacienteId,
+    analisisId: idAnalisis,
 
-      analisisId:
-        idAnalisis,
+    analisisNombre: analisis.nombre,
 
-      analisisNombre:
-        analisis.nombre,
+    bioquimicoId: usuario.uid,
 
-      bioquimicoId:
-        idBioquimico,
+    registradoPor: usuario.uid,
 
-      tipo:
-        tipoMuestra,
+    tipo: tipoMuestra,
 
-      codigoEtiqueta,
+    tipoMuestra,
 
-      estado:
-        "tomada",
+    codigoEtiqueta,
 
-      fechaToma:
-        serverTimestamp(),
-    }
+    estado: "tomada",
+
+    estadoValidacion: "pendiente",
+
+    aceptada: false,
+
+    motivoRechazo: "",
+
+    fechaToma: serverTimestamp(),
+
+    fechaRegistro: serverTimestamp(),
+  });
+
+  const creada = await getDoc(
+    referencia
   );
 
-
-  const creada =
-    await getDoc(
-      referencia
-    );
-
-
-  if (
-    !creada.exists()
-  ) {
+  if (!creada.exists()) {
     throw new Error(
       "La muestra fue registrada, pero no pudo recuperarse."
     );
   }
-
 
   return convertirMuestra(
     creada
