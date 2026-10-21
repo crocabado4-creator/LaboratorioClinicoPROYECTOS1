@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { obtenerPacientes } from "../services/pacientesService";
 
@@ -10,13 +10,112 @@ import {
 
 import "./GestionMuestras.css";
 
-function GestionMuestras({ usuario, onVolver }) {
-  const laboratorioId = usuario?.laboratorioId || "";
+const TIPOS_MUESTRA = [
+  "Sangre",
+  "Suero",
+  "Plasma",
+  "Orina",
+  "Heces",
+  "Hisopado",
+  "Otro",
+];
 
-  const bioquimicoId =
-    usuario?.uid ||
-    usuario?.id ||
-    "";
+function limpiarTexto(valor) {
+  return String(valor ?? "").trim();
+}
+
+function formatearFecha(fecha) {
+  if (!fecha) {
+    return "Sin fecha";
+  }
+
+  try {
+    if (typeof fecha.toDate === "function") {
+      return fecha.toDate().toLocaleString("es-BO");
+    }
+
+    if (typeof fecha.seconds === "number") {
+      return new Date(
+        fecha.seconds * 1000
+      ).toLocaleString("es-BO");
+    }
+
+    if (fecha instanceof Date) {
+      return fecha.toLocaleString("es-BO");
+    }
+
+    const fechaConvertida = new Date(fecha);
+
+    if (!Number.isNaN(fechaConvertida.getTime())) {
+      return fechaConvertida.toLocaleString("es-BO");
+    }
+
+    return "Sin fecha";
+  } catch {
+    return "Sin fecha";
+  }
+}
+
+function obtenerCodigoMuestra(muestra) {
+  return (
+    muestra?.codigoEtiqueta ||
+    muestra?.codigoMuestra ||
+    muestra?.muestraId ||
+    muestra?.id ||
+    "Sin código"
+  );
+}
+
+function obtenerTipoMuestra(muestra) {
+  return (
+    muestra?.tipo ||
+    muestra?.tipoMuestra ||
+    "Sin tipo"
+  );
+}
+
+function obtenerMensajeError(error) {
+  const codigo = limpiarTexto(error?.code);
+
+  if (codigo === "permission-denied") {
+    return (
+      "Firestore rechazó la operación. Verifica que el usuario " +
+      "esté activo, tenga el rol correspondiente y pertenezca " +
+      "al laboratorio seleccionado."
+    );
+  }
+
+  if (codigo === "unavailable") {
+    return (
+      "No se pudo conectar con Firebase. " +
+      "Comprueba tu conexión a Internet."
+    );
+  }
+
+  if (codigo === "unauthenticated") {
+    return "Tu sesión ha expirado. Inicia sesión nuevamente.";
+  }
+
+  return (
+    error?.message ||
+    "Ocurrió un error al realizar la operación."
+  );
+}
+
+function GestionMuestras({ usuario, onVolver }) {
+  const laboratorioId = limpiarTexto(
+    usuario?.laboratorioId
+  );
+
+  const bioquimicoId = limpiarTexto(
+    usuario?.uid || usuario?.id
+  );
+
+  const rolUsuario = limpiarTexto(
+    usuario?.rol
+  ).toLowerCase();
+
+  const puedeRegistrar = rolUsuario === "bioquimico";
 
   const [pacientes, setPacientes] = useState([]);
   const [ordenes, setOrdenes] = useState([]);
@@ -29,249 +128,261 @@ function GestionMuestras({ usuario, onVolver }) {
   const [detalle, setDetalle] = useState(null);
 
   const [cargando, setCargando] = useState(true);
+  const [actualizando, setActualizando] = useState(false);
   const [guardando, setGuardando] = useState(false);
 
   const [mensaje, setMensaje] = useState("");
   const [error, setError] = useState("");
 
-  const tiposMuestra = [
-    "Sangre",
-    "Suero",
-    "Plasma",
-    "Orina",
-    "Heces",
-    "Hisopado",
-    "Otro",
-  ];
+  const pacientesPorId = useMemo(() => {
+    const mapa = new Map();
 
-  // -----------------------------------
-  // FUNCIONES AUXILIARES
-  // -----------------------------------
+    pacientes.forEach((paciente) => {
+      const id = limpiarTexto(
+        paciente.id || paciente.pacienteId
+      );
 
-  const texto = (valor) => {
-    return String(valor ?? "").trim();
-  };
+      const pacienteId = limpiarTexto(
+        paciente.pacienteId
+      );
 
-  const formatearFecha = (fecha) => {
-    if (!fecha) {
-      return "Sin fecha";
-    }
-
-    try {
-      if (typeof fecha.toDate === "function") {
-        return fecha.toDate().toLocaleString("es-BO");
+      if (id) {
+        mapa.set(id, paciente);
       }
 
-      if (typeof fecha.seconds === "number") {
-        return new Date(
-          fecha.seconds * 1000
-        ).toLocaleString("es-BO");
+      if (pacienteId) {
+        mapa.set(pacienteId, paciente);
+      }
+    });
+
+    return mapa;
+  }, [pacientes]);
+
+  const obtenerNombrePaciente = useCallback(
+    (pacienteId) => {
+      const id = limpiarTexto(pacienteId);
+
+      const paciente = pacientesPorId.get(id);
+
+      if (!paciente) {
+        return id || "Paciente";
       }
 
-      if (fecha instanceof Date) {
-        return fecha.toLocaleString("es-BO");
+      const nombre = [
+        paciente.nombres || paciente.nombre,
+        paciente.apellidos || paciente.apellido,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .trim();
+
+      return nombre || id || "Paciente";
+    },
+    [pacientesPorId]
+  );
+
+  const ordenesPorId = useMemo(() => {
+    const mapa = new Map();
+
+    ordenes.forEach((orden) => {
+      const id = limpiarTexto(orden.id);
+      const codigo = limpiarTexto(orden.ordenId);
+
+      if (id) {
+        mapa.set(id, orden);
       }
 
-      const fechaConvertida = new Date(fecha);
+      if (codigo) {
+        mapa.set(codigo, orden);
+      }
+    });
 
-      if (!isNaN(fechaConvertida.getTime())) {
-        return fechaConvertida.toLocaleString("es-BO");
+    return mapa;
+  }, [ordenes]);
+
+  const obtenerNombreAnalisis = useCallback(
+    (muestra) => {
+      if (muestra?.analisisNombre) {
+        return muestra.analisisNombre;
       }
 
-      return "Sin fecha";
-    } catch {
-      return "Sin fecha";
-    }
-  };
-
-  const obtenerNombrePaciente = (pacienteId) => {
-    const paciente = pacientes.find(
-      (item) =>
-        texto(item.id) === texto(pacienteId) ||
-        texto(item.pacienteId) === texto(pacienteId)
-    );
-
-    if (!paciente) {
-      return pacienteId || "Paciente";
-    }
-
-    const nombre = [
-      paciente.nombres || paciente.nombre,
-      paciente.apellidos || paciente.apellido,
-    ]
-      .filter(Boolean)
-      .join(" ");
-
-    return nombre || "Paciente";
-  };
-
-  const obtenerCodigoMuestra = (muestra) => {
-    return (
-      muestra.codigoEtiqueta ||
-      muestra.codigoMuestra ||
-      muestra.muestraId ||
-      muestra.id ||
-      "Sin código"
-    );
-  };
-
-  const obtenerTipoMuestra = (muestra) => {
-    return (
-      muestra.tipo ||
-      muestra.tipoMuestra ||
-      "Sin tipo"
-    );
-  };
-
-  const obtenerNombreAnalisis = (muestra) => {
-    if (muestra.analisisNombre) {
-      return muestra.analisisNombre;
-    }
-
-    const orden = ordenes.find(
-      (item) =>
-        texto(item.id) === texto(muestra.ordenId) ||
-        texto(item.ordenId) === texto(muestra.ordenId)
-    );
-
-    if (orden && Array.isArray(orden.analisis)) {
-      const analisis = orden.analisis.find(
-        (item) =>
-          texto(item.analisisId || item.id) ===
-          texto(muestra.analisisId)
+      const orden = ordenesPorId.get(
+        limpiarTexto(muestra?.ordenId)
       );
 
-      if (analisis) {
-        return analisis.nombre || "Análisis";
+      if (orden && Array.isArray(orden.analisis)) {
+        const analisis = orden.analisis.find(
+          (item) =>
+            limpiarTexto(
+              item.analisisId || item.id
+            ) === limpiarTexto(muestra?.analisisId)
+        );
+
+        if (analisis) {
+          return analisis.nombre || "Análisis";
+        }
       }
-    }
 
-    return muestra.analisisId || "Análisis";
-  };
+      return muestra?.analisisId || "Análisis";
+    },
+    [ordenesPorId]
+  );
 
-  // -----------------------------------
-  // CARGAR DATOS
-  // -----------------------------------
+  const cargarDatos = useCallback(
+    async ({ mostrarCarga = true } = {}) => {
+      if (!laboratorioId) {
+        setError(
+          "El usuario no está asociado a un laboratorio."
+        );
+        setCargando(false);
+        setActualizando(false);
+        return false;
+      }
 
-  const cargarDatos = async () => {
-    if (!laboratorioId) {
-      setError(
-        "El usuario no está asociado a un laboratorio."
-      );
+      try {
+        if (mostrarCarga) {
+          setCargando(true);
+        } else {
+          setActualizando(true);
+        }
 
-      setCargando(false);
-      return;
-    }
+        setError("");
 
-    try {
-      setCargando(true);
-      setError("");
+        const [
+          pacientesResultado,
+          ordenesResultado,
+          muestrasResultado,
+        ] = await Promise.all([
+          obtenerPacientes(laboratorioId),
+          obtenerOrdenesParaMuestras(laboratorioId),
+          obtenerMuestras(laboratorioId),
+        ]);
 
-      const [
-        pacientesResultado,
-        ordenesResultado,
-        muestrasResultado,
-      ] = await Promise.all([
-        obtenerPacientes(laboratorioId),
+        setPacientes(
+          Array.isArray(pacientesResultado)
+            ? pacientesResultado
+            : []
+        );
 
-        obtenerOrdenesParaMuestras(laboratorioId),
+        setOrdenes(
+          Array.isArray(ordenesResultado)
+            ? ordenesResultado
+            : []
+        );
 
-        obtenerMuestras(laboratorioId),
-      ]);
+        setMuestras(
+          Array.isArray(muestrasResultado)
+            ? muestrasResultado
+            : []
+        );
 
-      setPacientes(
-        Array.isArray(pacientesResultado)
-          ? pacientesResultado
-          : []
-      );
+        return true;
+      } catch (err) {
+        console.error(
+          "Error cargando gestión de muestras:",
+          err
+        );
 
-      setOrdenes(
-        Array.isArray(ordenesResultado)
-          ? ordenesResultado
-          : []
-      );
+        setError(obtenerMensajeError(err));
 
-      setMuestras(
-        Array.isArray(muestrasResultado)
-          ? muestrasResultado
-          : []
-      );
-    } catch (err) {
-      console.error("Error cargando muestras:", err);
-
-      setError(
-        err?.message ||
-          "No se pudo cargar la información."
-      );
-    } finally {
-      setCargando(false);
-    }
-  };
+        return false;
+      } finally {
+        setCargando(false);
+        setActualizando(false);
+      }
+    },
+    [laboratorioId]
+  );
 
   useEffect(() => {
     cargarDatos();
-  }, [laboratorioId]);
+  }, [cargarDatos]);
 
-  // -----------------------------------
-  // VERIFICAR SI UN ANÁLISIS YA TIENE MUESTRA
-  // -----------------------------------
+  const muestrasRegistradas = useMemo(() => {
+    const registros = new Set();
 
-  const tieneMuestraRegistrada = (
-    orden,
-    analisis
-  ) => {
-    const idOrden = texto(orden.id);
-    const codigoOrden = texto(orden.ordenId);
+    muestras.forEach((muestra) => {
+      const idOrden = limpiarTexto(
+        muestra.ordenId
+      );
 
-    const idAnalisis = texto(
-      analisis.analisisId || analisis.id
-    );
+      const idAnalisis = limpiarTexto(
+        muestra.analisisId
+      );
 
-    return muestras.some((muestra) => {
-      const ordenCoincide =
-        texto(muestra.ordenId) === idOrden ||
-        texto(muestra.ordenId) === codigoOrden;
-
-      const analisisCoincide =
-        texto(muestra.analisisId) === idAnalisis;
-
-      return ordenCoincide && analisisCoincide;
+      if (idOrden && idAnalisis) {
+        registros.add(
+          `${idOrden}::${idAnalisis}`
+        );
+      }
     });
-  };
 
-  // -----------------------------------
-  // ANÁLISIS FALTANTES DE CADA ORDEN
-  // -----------------------------------
+    return registros;
+  }, [muestras]);
 
-  const obtenerAnalisisPendientes = (orden) => {
-    if (!orden || !Array.isArray(orden.analisis)) {
-      return [];
-    }
+  const tieneMuestraRegistrada = useCallback(
+    (orden, analisis) => {
+      const idOrden = limpiarTexto(
+        orden?.id
+      );
 
-    return orden.analisis.filter((analisis) => {
-      const idAnalisis =
-        analisis.analisisId || analisis.id;
+      const codigoOrden = limpiarTexto(
+        orden?.ordenId
+      );
+
+      const idAnalisis = limpiarTexto(
+        analisis?.analisisId || analisis?.id
+      );
 
       if (!idAnalisis) {
         return false;
       }
 
-      return !tieneMuestraRegistrada(
-        orden,
-        analisis
+      return (
+        muestrasRegistradas.has(
+          `${idOrden}::${idAnalisis}`
+        ) ||
+        muestrasRegistradas.has(
+          `${codigoOrden}::${idAnalisis}`
+        )
       );
-    });
-  };
+    },
+    [muestrasRegistradas]
+  );
 
-  // -----------------------------------
-  // MOSTRAR SOLO ÓRDENES PENDIENTES
-  // -----------------------------------
+  const obtenerAnalisisPendientes = useCallback(
+    (orden) => {
+      if (
+        !orden ||
+        !Array.isArray(orden.analisis)
+      ) {
+        return [];
+      }
+
+      return orden.analisis.filter((analisis) => {
+        const idAnalisis = limpiarTexto(
+          analisis.analisisId || analisis.id
+        );
+
+        if (!idAnalisis) {
+          return false;
+        }
+
+        return !tieneMuestraRegistrada(
+          orden,
+          analisis
+        );
+      });
+    },
+    [tieneMuestraRegistrada]
+  );
 
   const ordenesPendientes = useMemo(() => {
     return ordenes
-      .filter((orden) => {
-        return obtenerAnalisisPendientes(orden).length > 0;
-      })
+      .filter(
+        (orden) =>
+          obtenerAnalisisPendientes(orden).length > 0
+      )
       .sort((a, b) => {
         const nombreA = obtenerNombrePaciente(
           a.pacienteId
@@ -284,28 +395,28 @@ function GestionMuestras({ usuario, onVolver }) {
         return nombreA.localeCompare(
           nombreB,
           "es",
-          { sensitivity: "base" }
+          {
+            sensitivity: "base",
+          }
         );
       });
-  }, [ordenes, muestras, pacientes]);
-
-  // -----------------------------------
-  // ORDEN SELECCIONADA
-  // -----------------------------------
+  }, [
+    ordenes,
+    obtenerAnalisisPendientes,
+    obtenerNombrePaciente,
+  ]);
 
   const ordenSeleccionada = useMemo(() => {
     return (
       ordenesPendientes.find(
         (orden) =>
-          texto(orden.id) === texto(ordenId) ||
-          texto(orden.ordenId) === texto(ordenId)
+          limpiarTexto(orden.id) ===
+            limpiarTexto(ordenId) ||
+          limpiarTexto(orden.ordenId) ===
+            limpiarTexto(ordenId)
       ) || null
     );
   }, [ordenesPendientes, ordenId]);
-
-  // -----------------------------------
-  // SOLO ANÁLISIS FALTANTES
-  // -----------------------------------
 
   const analisisDisponibles = useMemo(() => {
     if (!ordenSeleccionada) {
@@ -315,15 +426,15 @@ function GestionMuestras({ usuario, onVolver }) {
     return obtenerAnalisisPendientes(
       ordenSeleccionada
     );
-  }, [ordenSeleccionada, muestras]);
+  }, [
+    ordenSeleccionada,
+    obtenerAnalisisPendientes,
+  ]);
 
   useEffect(() => {
     setAnalisisId("");
     setTipo("");
   }, [ordenId]);
-
-  // Si una orden ya no tiene pendientes,
-  // se elimina automáticamente de la selección.
 
   useEffect(() => {
     if (!ordenId) {
@@ -332,8 +443,10 @@ function GestionMuestras({ usuario, onVolver }) {
 
     const siguePendiente = ordenesPendientes.some(
       (orden) =>
-        texto(orden.id) === texto(ordenId) ||
-        texto(orden.ordenId) === texto(ordenId)
+        limpiarTexto(orden.id) ===
+          limpiarTexto(ordenId) ||
+        limpiarTexto(orden.ordenId) ===
+          limpiarTexto(ordenId)
     );
 
     if (!siguePendiente) {
@@ -343,10 +456,6 @@ function GestionMuestras({ usuario, onVolver }) {
     }
   }, [ordenesPendientes, ordenId]);
 
-  // -----------------------------------
-  // TOTAL DE ANÁLISIS FALTANTES
-  // -----------------------------------
-
   const totalPendientes = useMemo(() => {
     return ordenesPendientes.reduce(
       (total, orden) =>
@@ -354,38 +463,59 @@ function GestionMuestras({ usuario, onVolver }) {
         obtenerAnalisisPendientes(orden).length,
       0
     );
-  }, [ordenesPendientes, muestras]);
-
-  // -----------------------------------
-  // REGISTRAR MUESTRA
-  // -----------------------------------
+  }, [
+    ordenesPendientes,
+    obtenerAnalisisPendientes,
+  ]);
 
   const registrar = async (evento) => {
-    if (evento) {
-      evento.preventDefault();
+    evento?.preventDefault();
+
+    if (guardando) {
+      return;
     }
 
     setError("");
     setMensaje("");
 
-    if (!ordenSeleccionada) {
-      setError("Debe seleccionar una orden.");
+    if (!puedeRegistrar) {
+      setError(
+        "Solo el Bioquímico puede registrar muestras."
+      );
       return;
     }
 
-    if (!analisisId) {
-      setError("Debe seleccionar un análisis.");
-      return;
-    }
-
-    if (!tipo) {
-      setError("Debe seleccionar el tipo de muestra.");
+    if (!laboratorioId) {
+      setError(
+        "No se pudo identificar el laboratorio."
+      );
       return;
     }
 
     if (!bioquimicoId) {
       setError(
-        "No se pudo identificar al bioquímico."
+        "No se pudo identificar al Bioquímico."
+      );
+      return;
+    }
+
+    if (!ordenSeleccionada) {
+      setError(
+        "Debe seleccionar una orden."
+      );
+      return;
+    }
+
+    if (!analisisId) {
+      setError(
+        "Debe seleccionar un análisis."
+      );
+      return;
+    }
+
+    if (!tipo) {
+      setError(
+        "Debe seleccionar el tipo de muestra."
       );
       return;
     }
@@ -393,8 +523,9 @@ function GestionMuestras({ usuario, onVolver }) {
     const analisisSeleccionado =
       analisisDisponibles.find(
         (analisis) =>
-          texto(analisis.analisisId || analisis.id) ===
-          texto(analisisId)
+          limpiarTexto(
+            analisis.analisisId || analisis.id
+          ) === limpiarTexto(analisisId)
       );
 
     if (!analisisSeleccionado) {
@@ -415,17 +546,25 @@ function GestionMuestras({ usuario, onVolver }) {
         tipo,
       });
 
-      setMensaje(
-        "Muestra registrada correctamente."
-      );
-
       setAnalisisId("");
       setTipo("");
 
-      await cargarDatos();
+      const datosActualizados = await cargarDatos({
+        mostrarCarga: false,
+      });
 
       if (nuevaMuestra) {
         setDetalle(nuevaMuestra);
+      }
+
+      if (datosActualizados) {
+        setMensaje(
+          "Muestra registrada correctamente."
+        );
+      } else {
+        setMensaje(
+          "La muestra se registró, pero no se pudo actualizar el listado. Utiliza el botón Actualizar."
+        );
       }
     } catch (err) {
       console.error(
@@ -433,20 +572,17 @@ function GestionMuestras({ usuario, onVolver }) {
         err
       );
 
-      setError(
-        err?.message ||
-          "No se pudo registrar la muestra."
-      );
+      setError(obtenerMensajeError(err));
     } finally {
       setGuardando(false);
     }
   };
 
-  // -----------------------------------
-  // PANTALLA DE CARGA
-  // -----------------------------------
-
-  if (cargando && ordenes.length === 0 && muestras.length === 0) {
+  if (
+    cargando &&
+    ordenes.length === 0 &&
+    muestras.length === 0
+  ) {
     return (
       <main className="gm-page">
         <section className="gm-card">
@@ -457,15 +593,8 @@ function GestionMuestras({ usuario, onVolver }) {
     );
   }
 
-  // -----------------------------------
-  // PANTALLA PRINCIPAL
-  // -----------------------------------
-
   return (
     <main className="gm-page">
-
-      {/* ENCABEZADO */}
-
       <header className="gm-header">
         <div>
           {onVolver && (
@@ -485,26 +614,46 @@ function GestionMuestras({ usuario, onVolver }) {
             pendientes de cada orden.
           </p>
         </div>
+
+        <button
+          type="button"
+          className="gm-btn-secondary"
+          onClick={() =>
+            cargarDatos({
+              mostrarCarga: false,
+            })
+          }
+          disabled={
+            actualizando ||
+            cargando ||
+            guardando
+          }
+        >
+          {actualizando
+            ? "Actualizando..."
+            : "Actualizar"}
+        </button>
       </header>
 
-      {/* MENSAJES */}
-
       {mensaje && (
-        <div className="gm-message gm-success">
+        <div
+          className="gm-message gm-success"
+          role="status"
+        >
           {mensaje}
         </div>
       )}
 
       {error && (
-        <div className="gm-message gm-error">
+        <div
+          className="gm-message gm-error"
+          role="alert"
+        >
           {error}
         </div>
       )}
 
-      {/* ESTADÍSTICAS */}
-
       <section className="gm-stats">
-
         <article>
           <span>ÓRDENES PENDIENTES</span>
           <strong>
@@ -525,13 +674,9 @@ function GestionMuestras({ usuario, onVolver }) {
             {totalPendientes}
           </strong>
         </article>
-
       </section>
 
-      {/* REGISTRAR MUESTRA */}
-
       <section className="gm-card">
-
         <div className="gm-card-head">
           <h2>Registrar toma de muestra</h2>
 
@@ -541,28 +686,40 @@ function GestionMuestras({ usuario, onVolver }) {
           </p>
         </div>
 
+        {!puedeRegistrar && (
+          <div
+            className="gm-message gm-error"
+            role="alert"
+          >
+            Tu usuario tiene acceso de consulta.
+            El registro de muestras está
+            reservado al Bioquímico.
+          </div>
+        )}
+
         {ordenesPendientes.length === 0 ? (
           <div className="gm-message gm-success">
             No existen órdenes con análisis
             pendientes de toma de muestra.
           </div>
         ) : (
-
           <form onSubmit={registrar}>
-
             <div className="gm-grid">
-
-              {/* ORDEN */}
-
               <div className="gm-field">
-                <label>
+                <label htmlFor="gm-orden">
                   Orden
                 </label>
 
                 <select
+                  id="gm-orden"
                   value={ordenId}
                   onChange={(e) =>
                     setOrdenId(e.target.value)
+                  }
+                  disabled={
+                    !puedeRegistrar ||
+                    guardando ||
+                    actualizando
                   }
                   required
                 >
@@ -589,19 +746,17 @@ function GestionMuestras({ usuario, onVolver }) {
                       </option>
                     )
                   )}
-
                 </select>
               </div>
 
-              {/* PACIENTE */}
-
               {ordenSeleccionada && (
                 <div className="gm-field">
-                  <label>
+                  <label htmlFor="gm-paciente">
                     Paciente
                   </label>
 
                   <input
+                    id="gm-paciente"
                     type="text"
                     value={obtenerNombrePaciente(
                       ordenSeleccionada.pacienteId
@@ -611,19 +766,23 @@ function GestionMuestras({ usuario, onVolver }) {
                 </div>
               )}
 
-              {/* ANÁLISIS */}
-
               <div className="gm-field">
-                <label>
+                <label htmlFor="gm-analisis">
                   Análisis pendiente
                 </label>
 
                 <select
+                  id="gm-analisis"
                   value={analisisId}
                   onChange={(e) =>
                     setAnalisisId(e.target.value)
                   }
-                  disabled={!ordenSeleccionada}
+                  disabled={
+                    !puedeRegistrar ||
+                    !ordenSeleccionada ||
+                    guardando ||
+                    actualizando
+                  }
                   required
                 >
                   <option value="">
@@ -646,30 +805,33 @@ function GestionMuestras({ usuario, onVolver }) {
                       </option>
                     )
                   )}
-
                 </select>
               </div>
 
-              {/* TIPO */}
-
               <div className="gm-field">
-                <label>
+                <label htmlFor="gm-tipo">
                   Tipo de muestra
                 </label>
 
                 <select
+                  id="gm-tipo"
                   value={tipo}
                   onChange={(e) =>
                     setTipo(e.target.value)
                   }
-                  disabled={!analisisId}
+                  disabled={
+                    !puedeRegistrar ||
+                    !analisisId ||
+                    guardando ||
+                    actualizando
+                  }
                   required
                 >
                   <option value="">
                     Seleccionar tipo
                   </option>
 
-                  {tiposMuestra.map(
+                  {TIPOS_MUESTRA.map(
                     (item) => (
                       <option
                         key={item}
@@ -679,10 +841,8 @@ function GestionMuestras({ usuario, onVolver }) {
                       </option>
                     )
                   )}
-
                 </select>
               </div>
-
             </div>
 
             <button
@@ -690,6 +850,8 @@ function GestionMuestras({ usuario, onVolver }) {
               className="gm-btn-primary"
               disabled={
                 guardando ||
+                actualizando ||
+                !puedeRegistrar ||
                 !ordenSeleccionada ||
                 !analisisId ||
                 !tipo
@@ -699,16 +861,11 @@ function GestionMuestras({ usuario, onVolver }) {
                 ? "Registrando..."
                 : "Registrar muestra"}
             </button>
-
           </form>
         )}
-
       </section>
 
-      {/* MUESTRAS REGISTRADAS */}
-
       <section className="gm-card">
-
         <div className="gm-card-head">
           <h2>Muestras registradas</h2>
 
@@ -723,45 +880,60 @@ function GestionMuestras({ usuario, onVolver }) {
             Todavía no existen muestras registradas.
           </p>
         ) : (
-
           <div className="gm-list">
-
             {muestras.map((muestra) => (
-
               <article
-                key={muestra.id || muestra.muestraId}
+                key={
+                  muestra.id ||
+                  muestra.muestraId
+                }
                 className="gm-item"
               >
-
                 <div>
                   <h3>
-                    {obtenerCodigoMuestra(muestra)}
+                    {obtenerCodigoMuestra(
+                      muestra
+                    )}
                   </h3>
 
                   <p>
-                    <strong>Paciente:</strong>{" "}
+                    <strong>
+                      Paciente:
+                    </strong>{" "}
                     {obtenerNombrePaciente(
                       muestra.pacienteId
                     )}
                   </p>
 
                   <p>
-                    <strong>Análisis:</strong>{" "}
-                    {obtenerNombreAnalisis(muestra)}
+                    <strong>
+                      Análisis:
+                    </strong>{" "}
+                    {obtenerNombreAnalisis(
+                      muestra
+                    )}
                   </p>
 
                   <p>
-                    <strong>Tipo:</strong>{" "}
-                    {obtenerTipoMuestra(muestra)}
+                    <strong>
+                      Tipo:
+                    </strong>{" "}
+                    {obtenerTipoMuestra(
+                      muestra
+                    )}
                   </p>
 
                   <p>
-                    <strong>Estado:</strong>{" "}
+                    <strong>
+                      Estado:
+                    </strong>{" "}
                     {muestra.estado || "tomada"}
                   </p>
 
                   <p>
-                    <strong>Fecha de toma:</strong>{" "}
+                    <strong>
+                      Fecha de toma:
+                    </strong>{" "}
                     {formatearFecha(
                       muestra.fechaToma
                     )}
@@ -777,25 +949,28 @@ function GestionMuestras({ usuario, onVolver }) {
                 >
                   Ver detalle
                 </button>
-
               </article>
-
             ))}
-
           </div>
         )}
-
       </section>
 
-      {/* MODAL DE DETALLE */}
-
       {detalle && (
-
         <div
+          role="presentation"
+          onMouseDown={(evento) => {
+            if (
+              evento.target ===
+              evento.currentTarget
+            ) {
+              setDetalle(null);
+            }
+          }}
           style={{
             position: "fixed",
             inset: 0,
-            background: "rgba(0,0,0,0.55)",
+            background:
+              "rgba(0,0,0,0.55)",
             display: "flex",
             justifyContent: "center",
             alignItems: "center",
@@ -803,8 +978,10 @@ function GestionMuestras({ usuario, onVolver }) {
             padding: 20,
           }}
         >
-
           <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="gm-detalle-titulo"
             style={{
               background: "#fff",
               borderRadius: 14,
@@ -815,45 +992,64 @@ function GestionMuestras({ usuario, onVolver }) {
               overflowY: "auto",
             }}
           >
-
-            <h2>
+            <h2 id="gm-detalle-titulo">
               Detalle de la muestra
             </h2>
 
             <p>
-              <strong>Código:</strong>{" "}
-              {obtenerCodigoMuestra(detalle)}
+              <strong>
+                Código:
+              </strong>{" "}
+              {obtenerCodigoMuestra(
+                detalle
+              )}
             </p>
 
             <p>
-              <strong>Paciente:</strong>{" "}
+              <strong>
+                Paciente:
+              </strong>{" "}
               {obtenerNombrePaciente(
                 detalle.pacienteId
               )}
             </p>
 
             <p>
-              <strong>Análisis:</strong>{" "}
-              {obtenerNombreAnalisis(detalle)}
+              <strong>
+                Análisis:
+              </strong>{" "}
+              {obtenerNombreAnalisis(
+                detalle
+              )}
             </p>
 
             <p>
-              <strong>Tipo:</strong>{" "}
-              {obtenerTipoMuestra(detalle)}
+              <strong>
+                Tipo:
+              </strong>{" "}
+              {obtenerTipoMuestra(
+                detalle
+              )}
             </p>
 
             <p>
-              <strong>Estado:</strong>{" "}
+              <strong>
+                Estado:
+              </strong>{" "}
               {detalle.estado || "tomada"}
             </p>
 
             <p>
-              <strong>Orden:</strong>{" "}
+              <strong>
+                Orden:
+              </strong>{" "}
               {detalle.ordenId || "Sin orden"}
             </p>
 
             <p>
-              <strong>Fecha de toma:</strong>{" "}
+              <strong>
+                Fecha de toma:
+              </strong>{" "}
               {formatearFecha(
                 detalle.fechaToma
               )}
@@ -868,12 +1064,9 @@ function GestionMuestras({ usuario, onVolver }) {
             >
               Cerrar
             </button>
-
           </div>
-
         </div>
       )}
-
     </main>
   );
 }
