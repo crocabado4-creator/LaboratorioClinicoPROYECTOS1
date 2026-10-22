@@ -1,1628 +1,561 @@
-import React, { useCallback, useEffect, useState } from "react";
-
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  ActivityIndicator,
-  Alert,
-  Modal,
-  Platform,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
+  ActivityIndicator, Alert, Modal, Platform, Pressable, RefreshControl,
+  ScrollView, StyleSheet, Text, TextInput, View,
 } from "react-native";
-
 import { useRouter } from "expo-router";
-
 import {
-  collection,
-  doc,
-  getDoc,
-  getDocs,
-  query,
-  runTransaction,
-  serverTimestamp,
-  where,
+  collection, doc, getDoc, getDocs, query, runTransaction,
+  serverTimestamp, where,
 } from "firebase/firestore";
-
 import { auth, db } from "../firebase/firebase";
 
-// =====================================================
-// TIPOS
-// =====================================================
-
-type Usuario = {
-  uid: string;
-  laboratorioId: string;
-  nombre: string;
-};
-
-type Paciente = {
-  nombre: string;
-  ci: string;
-};
-
+type Usuario = { uid: string; laboratorioId: string; nombre: string };
+type Paciente = { nombre: string; ci: string };
 type Resultado = {
-  id: string;
-  muestraId: string;
-  pacienteId: string;
-  ordenId: string;
-  analisisId: string;
-  analisisNombre: string;
-  laboratorioId: string;
-  valorResultado: string;
-  unidad: string;
-  observaciones: string;
-  estado: string;
-  validado: boolean;
-  fechaRegistro: any;
-  fechaValidacion: any;
-  validadoPor: string;
-  validadoPorNombre: string;
+  id: string; laboratorioId: string; muestraId: string; pacienteId: string;
+  ordenId: string; analisisId: string; analisisNombre: string;
+  valorResultado: string; unidad: string; observaciones: string;
+  estado: string; validado: boolean; fechaRegistro: unknown;
+  fechaValidacion: unknown; validadoPor: string; validadoPorNombre: string;
+};
+type Parametro = {
+  id: string; nombre: string; unidad: string; referencia: string;
+  valor: string; observacion: string; registrado: boolean;
+};
+type Filtro = "todos" | "pendientes" | "validados";
+
+const C = {
+  fondo: "#F3F6FC", blanco: "#FFFFFF", azulOscuro: "#17365D",
+  azul: "#2563EB", azulClaro: "#EFF6FF", texto: "#0F172A",
+  secundario: "#64748B", borde: "#E2E8F0", verde: "#059669",
+  verdeClaro: "#ECFDF5", ambar: "#B45309", ambarClaro: "#FFFBEB",
+  rojo: "#DC2626", rojoClaro: "#FEF2F2",
 };
 
-type ValorParametro = {
-  id: string;
-  nombre: string;
-  valor: string;
-  unidad: string;
-  referencia: string;
-  observacion: string;
-  registrado: boolean;
-};
-
-// =====================================================
-// FUNCIONES AUXILIARES
-// =====================================================
-
-function texto(valor: any): string {
-  if (valor === null || valor === undefined) {
-    return "";
-  }
-
-  if (typeof valor === "object") {
-    return "";
-  }
-
-  return String(valor).trim();
+function str(v: unknown): string {
+  if (v === null || v === undefined || typeof v === "object") return "";
+  return String(v).trim();
 }
-
-function obtenerNombre(datos: any): string {
-  const nombreCompleto = texto(datos.nombreCompleto);
-
-  if (nombreCompleto) {
-    return nombreCompleto;
-  }
-
-  const nombres = texto(datos.nombres || datos.nombre);
-
-  const apellidos = texto(
-    datos.apellidos || datos.apellido
-  );
-
-  return [nombres, apellidos]
-    .filter(Boolean)
-    .join(" ");
+function normal(v: unknown): string {
+  return str(v).toLocaleLowerCase("es").normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 }
-
-function mostrarMensaje(titulo: string, mensaje: string) {
-  if (Platform.OS === "web") {
-    window.alert(`${titulo}\n\n${mensaje}`);
-  } else {
-    Alert.alert(titulo, mensaje);
-  }
+function nombre(datos: Record<string, any>): string {
+  return str(datos.nombreCompleto) ||
+    [str(datos.nombres || datos.nombre), str(datos.apellidos || datos.apellido)]
+      .filter(Boolean).join(" ") || "Sin identificar";
 }
-
-function confirmarAccion(
-  titulo: string,
-  mensaje: string,
-  accion: () => void
-) {
-  if (Platform.OS === "web") {
-    if (window.confirm(`${titulo}\n\n${mensaje}`)) {
-      accion();
-    }
-  } else {
-    Alert.alert(titulo, mensaje, [
-      {
-        text: "Cancelar",
-        style: "cancel",
-      },
-      {
-        text: "Validar",
-        onPress: accion,
-      },
-    ]);
-  }
-}
-
-function mensajeError(error: any): string {
-  if (error?.code === "permission-denied") {
-    return "Firestore rechazó la operación por falta de permisos.";
-  }
-
-  return error?.message || "Ocurrió un error inesperado.";
-}
-
-function convertirFecha(valor: any): string {
-  if (!valor) {
-    return "-";
-  }
-
+function fecha(v: unknown): string {
   try {
-    if (typeof valor.toDate === "function") {
-      return valor.toDate().toLocaleString("es-BO");
-    }
-
-    if (valor instanceof Date) {
-      return valor.toLocaleString("es-BO");
-    }
-
-    const fecha = new Date(valor);
-
-    if (isNaN(fecha.getTime())) {
-      return "-";
-    }
-
-    return fecha.toLocaleString("es-BO");
-  } catch {
-    return "-";
-  }
+    if (!v) return "Sin fecha";
+    const x = v as { toDate?: () => Date; seconds?: number };
+    const d = typeof x.toDate === "function" ? x.toDate() :
+      typeof x.seconds === "number" ? new Date(x.seconds * 1000) : new Date(v as string);
+    return Number.isNaN(d.getTime()) ? "Sin fecha" : d.toLocaleString("es-BO");
+  } catch { return "Sin fecha"; }
 }
-
-function obtenerReferencia(valor: any): string {
-  if (valor === null || valor === undefined) {
-    return "";
-  }
-
-  if (
-    typeof valor === "string" ||
-    typeof valor === "number"
-  ) {
-    return String(valor);
-  }
-
-  if (Array.isArray(valor)) {
-    return valor
-      .map((item) => obtenerReferencia(item))
-      .filter(Boolean)
-      .join(" | ");
-  }
-
-  if (typeof valor === "object") {
-    const minimo =
-      valor.min ??
-      valor.minimo ??
-      valor.desde ??
-      valor.valorMinimo;
-
-    const maximo =
-      valor.max ??
-      valor.maximo ??
-      valor.hasta ??
-      valor.valorMaximo;
-
-    if (minimo !== undefined && maximo !== undefined) {
-      return `${minimo} - ${maximo}`;
-    }
-
-    if (minimo !== undefined) {
-      return `Desde ${minimo}`;
-    }
-
-    if (maximo !== undefined) {
-      return `Hasta ${maximo}`;
-    }
-
-    return Object.entries(valor)
-      .map(
-        ([clave, dato]) =>
-          `${clave}: ${obtenerReferencia(dato)}`
-      )
-      .join(" | ");
-  }
-
-  return "";
+function referencia(v: unknown): string {
+  if (v == null) return "";
+  if (typeof v !== "object") return str(v);
+  if (Array.isArray(v)) return v.map(referencia).filter(Boolean).join(" | ");
+  const r = v as Record<string, any>;
+  const min = r.min ?? r.minimo ?? r.desde ?? r.valorMinimo;
+  const max = r.max ?? r.maximo ?? r.hasta ?? r.valorMaximo;
+  if (min != null && max != null) return `${min} - ${max}`;
+  return str(r.texto || r.descripcion || r.valor) ||
+    (min != null ? `Desde ${min}` : max != null ? `Hasta ${max}` : "");
 }
-
-function crearParametro(
-  datos: any,
-  id: string
-): ValorParametro {
+function aviso(titulo: string, mensaje: string) {
+  if (Platform.OS === "web") {
+    if (typeof window !== "undefined") window.alert(`${titulo}\n\n${mensaje}`);
+  } else Alert.alert(titulo, mensaje);
+}
+function confirmar(accion: () => void) {
+  const mensaje = "Se bloqueará la edición de este resultado. ¿Confirmas que todos los valores están correctos?";
+  if (Platform.OS === "web") {
+    if (typeof window !== "undefined" && window.confirm(mensaje)) accion();
+  } else Alert.alert("Confirmar validación", mensaje, [
+    { text: "Cancelar", style: "cancel" }, { text: "Validar resultado", onPress: accion },
+  ]);
+}
+function errorTexto(e: unknown): string {
+  const x = e as { code?: string; message?: string };
+  if (x?.code === "permission-denied" || x?.code === "firestore/permission-denied")
+    return "Permisos insuficientes en Firestore. Revisa las reglas de resultados, análisis y sus subcolecciones.";
+  return x?.message || "Ocurrió un error inesperado.";
+}
+function mapResultado(id: string, d: Record<string, any>): Resultado {
   return {
-    id,
-
-    nombre:
-      texto(datos.nombreParametro) ||
-      texto(datos.nombre) ||
-      texto(datos.parametro) ||
-      texto(datos.descripcion) ||
-      texto(datos.prueba) ||
-      "Parámetro",
-
-    valor:
-      texto(datos.valor) ||
-      texto(datos.valorResultado) ||
-      texto(datos.resultado),
-
-    unidad:
-      texto(datos.unidad) ||
-      texto(datos.unidadMedida) ||
-      texto(datos.unidades),
-
-    referencia: obtenerReferencia(
-      datos.rangoReferencia ??
-      datos.valorReferencia ??
-      datos.referencia ??
-      datos.rango ??
-      datos.valoresReferencia
-    ),
-
-    observacion:
-      texto(datos.observacion) ||
-      texto(datos.observaciones),
-
-    registrado: false,
+    id, laboratorioId: str(d.laboratorioId), muestraId: str(d.muestraId),
+    pacienteId: str(d.pacienteId), ordenId: str(d.ordenId), analisisId: str(d.analisisId),
+    analisisNombre: str(d.analisisNombre || d.nombreAnalisis) || "Análisis clínico",
+    valorResultado: str(d.valorResultado), unidad: str(d.unidad),
+    observaciones: str(d.observaciones), estado: normal(d.estado) || "borrador",
+    validado: d.validado === true || normal(d.estado) === "validado",
+    fechaRegistro: d.fechaRegistro || d.fechaCreacion || null,
+    fechaValidacion: d.fechaValidacion || null, validadoPor: str(d.validadoPor),
+    validadoPorNombre: str(d.validadoPorNombre),
   };
 }
-
-function extraerParametros(
-  datos: any,
-  idBase: string
-): ValorParametro[] {
-  if (!datos || typeof datos !== "object") {
-    return [];
-  }
-
-  const posiblesHijos = [
-    datos.subparametros,
-    datos.subParametros,
-    datos.parametros,
-    datos.pruebas,
-    datos.items,
-    datos.componentes,
-    datos.determinaciones,
-  ];
-
-  const hijos = posiblesHijos.filter(
-    (item) => Array.isArray(item) && item.length > 0
-  );
-
-  if (hijos.length > 0) {
-    const encontrados: ValorParametro[] = [];
-
-    hijos.forEach((arreglo, indiceArreglo) => {
-      arreglo.forEach((item: any, indice: number) => {
-        const id =
-          texto(item?.id) ||
-          texto(item?.parametroId) ||
-          `${idBase}_${indiceArreglo}_${indice}`;
-
-        if (typeof item === "string") {
-          encontrados.push(
-            crearParametro({ nombre: item }, id)
-          );
-        } else {
-          encontrados.push(
-            ...extraerParametros(item, id)
-          );
-        }
-      });
-    });
-
-    return encontrados;
-  }
-
-  return [crearParametro(datos, idBase)];
+function param(id: string, d: Record<string, any>): Parametro {
+  return {
+    id: str(d.parametroId || d.id) || id,
+    nombre: str(d.nombreParametro || d.nombre || d.parametro || d.prueba) || "Parámetro",
+    unidad: str(d.unidad || d.unidadMedida || d.unidades),
+    referencia: referencia(d.rangoReferencia ?? d.valorReferencia ?? d.referencia ?? d.rango),
+    valor: str(d.valor ?? d.valorResultado ?? d.resultado),
+    observacion: str(d.observacion || d.observaciones), registrado: false,
+  };
 }
-
-// =====================================================
-// OBTENER NOMBRE DEL BIOQUÍMICO
-// =====================================================
-
-async function obtenerNombreBioquimico(
-  uid: string,
-  laboratorioId: string
-): Promise<string> {
-  if (!uid) {
-    return "No registrado";
-  }
-
-  const usuarioSnap = await getDoc(
-    doc(db, "usuarios", uid)
-  );
-
-  if (!usuarioSnap.exists()) {
-    return "Usuario no encontrado";
-  }
-
-  const datos = usuarioSnap.data();
-
-  if (
-    texto(datos.laboratorioId) !== laboratorioId
-  ) {
-    return "Usuario de otro laboratorio";
-  }
-
-  return obtenerNombre(datos) || "Nombre no registrado";
+function extraer(d: any, id: string): Parametro[] {
+  if (typeof d === "string") return [param(id, { nombre: d })];
+  if (!d || typeof d !== "object" || d.activo === false) return [];
+  const grupos = [d.subparametros, d.subParametros, d.parametros, d.pruebas, d.items, d.componentes, d.determinaciones]
+    .filter((x) => Array.isArray(x) && x.length > 0);
+  if (grupos.length) return grupos.flatMap((g: any[], gi: number) =>
+    g.flatMap((x: any, i: number) => extraer(x, str(x?.parametroId || x?.id) || `${id}_${gi}_${i}`)));
+  return [param(id, d)];
 }
-
-// =====================================================
-// PANTALLA PRINCIPAL
-// =====================================================
+async function usuarioActivo(): Promise<Usuario> {
+  const u = auth.currentUser;
+  if (!u) throw new Error("Debes iniciar sesión.");
+  const snap = await getDoc(doc(db, "usuarios", u.uid));
+  if (!snap.exists()) throw new Error("No se encontró tu usuario.");
+  const d = snap.data();
+  if (d.activo !== true) throw new Error("Tu cuenta está inactiva.");
+  if (normal(d.rol) !== "bioquimico") throw new Error("Solo el bioquímico puede validar resultados.");
+  const laboratorioId = str(d.laboratorioId);
+  if (!laboratorioId) throw new Error("Tu usuario no tiene laboratorio asignado.");
+  return { uid: u.uid, laboratorioId, nombre: nombre(d) === "Sin identificar" ? "Bioquímico" : nombre(d) };
+}
+async function parametrosConfigurados(analisisId: string, laboratorioId: string): Promise<Parametro[]> {
+  if (!analisisId) return [];
+  const snap = await getDoc(doc(db, "analisis", analisisId));
+  if (!snap.exists()) throw new Error("No existe la configuración del análisis.");
+  const d = snap.data();
+  if (str(d.laboratorioId) !== laboratorioId) throw new Error("El análisis pertenece a otro laboratorio.");
+  const sub = await getDocs(collection(db, "analisis", analisisId, "parametros"));
+  const configurados: Parametro[] = [];
+  for (const campo of ["parametros", "parametrosAnalisis", "valoresParametros", "pruebas", "items"]) {
+    if (Array.isArray(d[campo])) d[campo].forEach((x: any, i: number) =>
+      configurados.push(...extraer(x, str(x?.parametroId || x?.id) || `${campo}_${i}`)));
+  }
+  sub.docs.forEach((x) => configurados.push(...extraer(x.data(), x.id)));
+  const mapa = new Map<string, Parametro>();
+  configurados.forEach((p) => {
+    const k = normal(p.nombre);
+    if (!mapa.has(k)) mapa.set(k, p);
+  });
+  return [...mapa.values()];
+}
+function unir(configurados: Parametro[], guardados: Parametro[]): Parametro[] {
+  const lista = [...configurados];
+  guardados.forEach((g) => {
+    const i = lista.findIndex((p) => p.id === g.id || normal(p.nombre) === normal(g.nombre));
+    if (i >= 0) lista[i] = { ...lista[i], valor: g.valor, observacion: g.observacion,
+      unidad: g.unidad || lista[i].unidad, referencia: g.referencia || lista[i].referencia,
+      registrado: true };
+    else lista.push(g);
+  });
+  return lista;
+}
 
 export default function ValidacionResultados() {
   const router = useRouter();
-
-  const [usuario, setUsuario] =
-    useState<Usuario | null>(null);
-
-  const [resultados, setResultados] =
-    useState<Resultado[]>([]);
-
-  const [pacientes, setPacientes] = useState<
-    Record<string, Paciente>
-  >({});
-
-  const [resultadoSeleccionado, setResultadoSeleccionado] =
-    useState<Resultado | null>(null);
-
-  const [valoresParametros, setValoresParametros] =
-    useState<ValorParametro[]>([]);
-
-  const [nombreBioquimico, setNombreBioquimico] =
-    useState("");
-
-  const [modalVisible, setModalVisible] = useState(false);
-
-  const [cargando, setCargando] = useState(true);
-
-  const [cargandoDetalle, setCargandoDetalle] =
-    useState(false);
-
-  const [validando, setValidando] = useState(false);
-
+  const [usuario, setUsuario] = useState<Usuario | null>(null);
+  const [resultados, setResultados] = useState<Resultado[]>([]);
+  const [pacientes, setPacientes] = useState<Record<string, Paciente>>({});
   const [busqueda, setBusqueda] = useState("");
+  const [filtro, setFiltro] = useState<Filtro>("pendientes");
+  const [cargando, setCargando] = useState(true);
+  const [actualizando, setActualizando] = useState(false);
+  const [cargandoDetalle, setCargandoDetalle] = useState(false);
+  const [validando, setValidando] = useState(false);
+  const [error, setError] = useState("");
+  const [modalVisible, setModalVisible] = useState(false);
+  const [seleccionado, setSeleccionado] = useState<Resultado | null>(null);
+  const [parametros, setParametros] = useState<Parametro[]>([]);
+  const [configurados, setConfigurados] = useState<Parametro[]>([]);
+  const [nombreValidador, setNombreValidador] = useState("");
 
-  // ===================================================
-  // CARGAR RESULTADOS Y PACIENTES
-  // ===================================================
-
-  const cargarDatos = useCallback(async () => {
+  const cargar = useCallback(async (inicial = false) => {
     try {
-      setCargando(true);
-
-      const firebaseUser = auth.currentUser;
-
-      if (!firebaseUser) {
-        throw new Error("Debes iniciar sesión.");
-      }
-
-      const usuarioSnap = await getDoc(
-        doc(db, "usuarios", firebaseUser.uid)
-      );
-
-      if (!usuarioSnap.exists()) {
-        throw new Error("Usuario no encontrado.");
-      }
-
-      const datosUsuario = usuarioSnap.data();
-
-      if (datosUsuario.activo !== true) {
-        throw new Error("Usuario inactivo.");
-      }
-
-      if (datosUsuario.rol !== "bioquimico") {
-        throw new Error(
-          "Esta pantalla corresponde al Bioquímico."
-        );
-      }
-
-      const laboratorioId = texto(
-        datosUsuario.laboratorioId
-      );
-
-      if (!laboratorioId) {
-        throw new Error(
-          "No tienes un laboratorio asignado."
-        );
-      }
-
-      setUsuario({
-        uid: firebaseUser.uid,
-        laboratorioId,
-        nombre:
-          obtenerNombre(datosUsuario) ||
-          texto(firebaseUser.displayName) ||
-          "Bioquímico",
+      if (inicial) setCargando(true);
+      else setActualizando(true);
+      setError("");
+      const u = await usuarioActivo();
+      const [rs, ps] = await Promise.all([
+        getDocs(query(collection(db, "resultados"), where("laboratorioId", "==", u.laboratorioId))),
+        getDocs(query(collection(db, "pacientes"), where("laboratorioId", "==", u.laboratorioId))),
+      ]);
+      const lista = rs.docs.map((x) => mapResultado(x.id, x.data()));
+      lista.sort((a, b) => {
+        if (a.validado !== b.validado) return a.validado ? 1 : -1;
+        return a.analisisNombre.localeCompare(b.analisisNombre, "es");
       });
-
-      const [resultadosSnap, pacientesSnap] =
-        await Promise.all([
-          getDocs(
-            query(
-              collection(db, "resultados"),
-              where("laboratorioId", "==", laboratorioId)
-            )
-          ),
-
-          getDocs(
-            query(
-              collection(db, "pacientes"),
-              where("laboratorioId", "==", laboratorioId)
-            )
-          ),
-        ]);
-
-      const listaResultados: Resultado[] =
-        resultadosSnap.docs.map((documento) => {
-          const datos = documento.data();
-
-          return {
-            id: documento.id,
-
-            muestraId: texto(datos.muestraId),
-
-            pacienteId: texto(datos.pacienteId),
-
-            ordenId: texto(datos.ordenId),
-
-            analisisId: texto(datos.analisisId),
-
-            analisisNombre:
-              texto(datos.analisisNombre) || "Análisis",
-
-            laboratorioId: texto(datos.laboratorioId),
-
-            valorResultado: texto(datos.valorResultado),
-
-            unidad: texto(datos.unidad),
-
-            observaciones: texto(datos.observaciones),
-
-            estado: texto(datos.estado) || "borrador",
-
-            validado: datos.validado === true,
-
-            fechaRegistro: datos.fechaRegistro || null,
-
-            fechaValidacion: datos.fechaValidacion || null,
-
-            validadoPor: texto(datos.validadoPor),
-
-            validadoPorNombre: texto(
-              datos.validadoPorNombre
-            ),
-          };
-        });
-
-      setResultados(listaResultados);
-
-      const mapaPacientes: Record<string, Paciente> = {};
-
-      pacientesSnap.docs.forEach((documento) => {
-        const datos = documento.data();
-
-        mapaPacientes[documento.id] = {
-          nombre:
-            [
-              texto(datos.nombres || datos.nombre),
-              texto(datos.apellidos || datos.apellido),
-            ]
-              .filter(Boolean)
-              .join(" ") || "Paciente",
-
-          ci: texto(datos.ci),
-        };
+      const mapa: Record<string, Paciente> = {};
+      ps.docs.forEach((x) => {
+        const d = x.data();
+        mapa[x.id] = { nombre: nombre(d), ci: str(d.ci || d.carnet || d.carnetIdentidad || d.numeroDocumento) };
       });
-
-      setPacientes(mapaPacientes);
-    } catch (error: any) {
-      console.error(
-        "Error cargando resultados:",
-        error
-      );
-
-      mostrarMensaje(
-        "Error",
-        mensajeError(error)
-      );
-    } finally {
-      setCargando(false);
-    }
+      setUsuario(u);
+      setResultados(lista);
+      setPacientes(mapa);
+    } catch (e) { setError(errorTexto(e)); }
+    finally { setCargando(false); setActualizando(false); }
   }, []);
+  useEffect(() => { void cargar(true); }, [cargar]);
 
-  useEffect(() => {
-    cargarDatos();
-  }, [cargarDatos]);
-
-  // ===================================================
-  // CARGAR PARÁMETROS CONFIGURADOS
-  // ===================================================
-
-  const cargarParametrosConfigurados = async (
-    analisisId: string
-  ): Promise<ValorParametro[]> => {
-    if (!analisisId) {
-      return [];
-    }
-
-    const encontrados: ValorParametro[] = [];
-
-    const analisisSnap = await getDoc(
-      doc(db, "analisis", analisisId)
-    );
-
-    if (!analisisSnap.exists()) {
-      return [];
-    }
-
-    const datosAnalisis = analisisSnap.data();
-
-    if (
-      usuario &&
-      datosAnalisis.laboratorioId !== usuario.laboratorioId
-    ) {
-      throw new Error(
-        "El análisis pertenece a otro laboratorio."
-      );
-    }
-
-    const arreglos = [
-      datosAnalisis.parametros,
-      datosAnalisis.parametrosAnalisis,
-      datosAnalisis.valoresParametros,
-      datosAnalisis.pruebas,
-      datosAnalisis.items,
-    ];
-
-    arreglos.forEach((arreglo, indiceArreglo) => {
-      if (!Array.isArray(arreglo)) {
-        return;
-      }
-
-      arreglo.forEach((item: any, indice: number) => {
-        const id = `array_${indiceArreglo}_${indice}`;
-
-        if (typeof item === "string") {
-          encontrados.push(
-            crearParametro({ nombre: item }, id)
-          );
-        } else {
-          encontrados.push(
-            ...extraerParametros(item, id)
-          );
-        }
-      });
-    });
-
-    const parametrosSnap = await getDocs(
-      collection(
-        db,
-        "analisis",
-        analisisId,
-        "parametros"
-      )
-    );
-
-    parametrosSnap.docs.forEach((documento) => {
-      encontrados.push(
-        ...extraerParametros(
-          documento.data(),
-          documento.id
-        )
-      );
-    });
-
-    const mapa = new Map<string, ValorParametro>();
-
-    encontrados.forEach((parametro) => {
-      const clave = parametro.nombre
-        .toLowerCase()
-        .trim();
-
-      if (!mapa.has(clave)) {
-        mapa.set(clave, parametro);
-      }
-    });
-
-    return Array.from(mapa.values());
-  };
-
-  // ===================================================
-  // CARGAR VALORES GUARDADOS
-  // ===================================================
-
-  const cargarValoresGuardados = async (
-    resultadoId: string
-  ): Promise<ValorParametro[]> => {
-    const valoresSnap = await getDocs(
-      collection(
-        db,
-        "resultados",
-        resultadoId,
-        "valores"
-      )
-    );
-
-    return valoresSnap.docs.map((documento) => {
-      const datos = documento.data();
-
-      return {
-        ...crearParametro(datos, documento.id),
-
-        registrado: true,
-      };
-    });
-  };
-
-  // ===================================================
-  // UNIR PARÁMETROS Y VALORES
-  // ===================================================
-
-  const unirParametros = (
-    configurados: ValorParametro[],
-    guardados: ValorParametro[]
-  ): ValorParametro[] => {
-    const mapa = new Map<string, ValorParametro>();
-
-    configurados.forEach((parametro) => {
-      mapa.set(
-        parametro.nombre.toLowerCase().trim(),
-        parametro
-      );
-    });
-
-    guardados.forEach((guardado) => {
-      const clave = guardado.nombre.toLowerCase().trim();
-
-      const anterior = mapa.get(clave);
-
-      if (anterior) {
-        mapa.set(clave, {
-          ...anterior,
-
-          valor: guardado.valor,
-
-          unidad: guardado.unidad || anterior.unidad,
-
-          referencia:
-            guardado.referencia || anterior.referencia,
-
-          observacion: guardado.observacion,
-
-          registrado: true,
-        });
-      } else {
-        mapa.set(clave, guardado);
-      }
-    });
-
-    return Array.from(mapa.values());
-  };
-
-  // ===================================================
-  // REVISAR Y VALIDAR RESULTADO
-  // ===================================================
-
-  const revisarYValidar = async (resultado: Resultado) => {
+  const abrir = async (r: Resultado) => {
+    if (cargandoDetalle) return;
     try {
-      if (!usuario) {
-        throw new Error("No hay sesión activa.");
-      }
-
       setCargandoDetalle(true);
-
-      const resultadoSnap = await getDoc(
-        doc(db, "resultados", resultado.id)
-      );
-
-      if (!resultadoSnap.exists()) {
-        throw new Error(
-          "El resultado ya no existe."
-        );
-      }
-
-      const datos = resultadoSnap.data();
-
-      if (
-        datos.laboratorioId !== usuario.laboratorioId
-      ) {
-        throw new Error(
-          "El resultado pertenece a otro laboratorio."
-        );
-      }
-
-      const resultadoActualizado: Resultado = {
-        ...resultado,
-
-        valorResultado: texto(datos.valorResultado),
-
-        unidad: texto(datos.unidad),
-
-        observaciones: texto(datos.observaciones),
-
-        estado: texto(datos.estado) || "borrador",
-
-        validado: datos.validado === true,
-
-        fechaValidacion: datos.fechaValidacion || null,
-
-        validadoPor: texto(datos.validadoPor),
-
-        validadoPorNombre: texto(
-          datos.validadoPorNombre
-        ),
-      };
-
-      const configurados =
-        await cargarParametrosConfigurados(
-          resultadoActualizado.analisisId
-        );
-
-      const guardados =
-        await cargarValoresGuardados(
-          resultadoActualizado.id
-        );
-
-      setValoresParametros(
-        unirParametros(configurados, guardados)
-      );
-
-      let nombre =
-        resultadoActualizado.validadoPorNombre;
-
-      if (
-        !nombre &&
-        resultadoActualizado.validadoPor
-      ) {
+      const u = await usuarioActivo();
+      const snap = await getDoc(doc(db, "resultados", r.id));
+      if (!snap.exists()) throw new Error("El resultado ya no existe.");
+      if (str(snap.data().laboratorioId) !== u.laboratorioId) throw new Error("Resultado de otro laboratorio.");
+      const actual = mapResultado(snap.id, snap.data());
+      const [cfg, vs] = await Promise.all([
+        parametrosConfigurados(actual.analisisId, u.laboratorioId),
+        getDocs(collection(db, "resultados", actual.id, "valores")),
+      ]);
+      const guardados = vs.docs.map((x) => ({ ...param(x.id, x.data()), registrado: true }));
+      const unidos = unir(cfg, guardados);
+      let validador = actual.validadoPorNombre;
+      if (!validador && actual.validadoPor) {
         try {
-          nombre = await obtenerNombreBioquimico(
-            resultadoActualizado.validadoPor,
-            usuario.laboratorioId
-          );
-        } catch (error) {
-          // El detalle debe abrirse incluso si el perfil
-          // del bioquímico no se puede consultar.
-          nombre = "Nombre no disponible";
-        }
+          const us = await getDoc(doc(db, "usuarios", actual.validadoPor));
+          if (us.exists() && str(us.data().laboratorioId) === u.laboratorioId)
+            validador = nombre(us.data());
+        } catch { validador = "No disponible"; }
       }
-
-      setNombreBioquimico(
-        nombre || "Nombre no registrado"
-      );
-
-      setResultadoSeleccionado(resultadoActualizado);
-
+      setUsuario(u);
+      setSeleccionado(actual);
+      setConfigurados(cfg);
+      setParametros(unidos);
+      setNombreValidador(validador || "No registrado");
       setModalVisible(true);
-    } catch (error: any) {
-      console.error(
-        "Error revisando resultado:",
-        error
-      );
-
-      mostrarMensaje(
-        "Error",
-        mensajeError(error)
-      );
-    } finally {
-      setCargandoDetalle(false);
-    }
+    } catch (e) { aviso("No se pudo abrir el resultado", errorTexto(e)); }
+    finally { setCargandoDetalle(false); }
   };
 
-  // ===================================================
-  // VALIDAR RESULTADO
-  // ===================================================
+  const cerrar = () => {
+    if (validando) return;
+    setModalVisible(false);
+    setSeleccionado(null);
+    setParametros([]);
+    setConfigurados([]);
+  };
 
-  const validarResultado = async () => {
+  const validar = async () => {
+    if (!seleccionado || !usuario || validando) return;
     try {
-      if (!usuario) {
-        throw new Error("No hay sesión activa.");
-      }
-
-      if (!resultadoSeleccionado) {
-        throw new Error(
-          "Selecciona un resultado."
-        );
-      }
-
-      if (
-        resultadoSeleccionado.validado ||
-        resultadoSeleccionado.estado === "validado"
-      ) {
-        throw new Error(
-          "Este resultado ya fue validado."
-        );
-      }
-
       setValidando(true);
-
-      const resultadoRef = doc(
-        db,
-        "resultados",
-        resultadoSeleccionado.id
-      );
-
-      await runTransaction(db, async (transaction) => {
-        const resultadoSnap = await transaction.get(
-          resultadoRef
-        );
-
-        if (!resultadoSnap.exists()) {
-          throw new Error(
-            "El resultado ya no existe."
-          );
+      const u = await usuarioActivo();
+      if (u.uid !== usuario.uid || u.laboratorioId !== usuario.laboratorioId)
+        throw new Error("La sesión cambió. Actualiza la pantalla.");
+      const ref = doc(db, "resultados", seleccionado.id);
+      const valoresSnap = await getDocs(collection(db, "resultados", seleccionado.id, "valores"));
+      const guardados = valoresSnap.docs.map((x) => ({ ...param(x.id, x.data()), registrado: true }));
+      const unidos = unir(configurados, guardados);
+      const faltantes = configurados.filter((p) => {
+        const g = guardados.find((v) => v.id === p.id || normal(v.nombre) === normal(p.nombre));
+        return !g || !g.valor.trim();
+      });
+      if (faltantes.length) throw new Error(`Faltan ${faltantes.length} parámetros por registrar: ${faltantes.map((x) => x.nombre).join(", ")}.`);
+      if (!configurados.length && !guardados.some((x) => x.valor.trim()) && !seleccionado.valorResultado.trim())
+        throw new Error("No hay ningún valor registrado para validar.");
+      if (guardados.some((x) => !x.valor.trim())) throw new Error("Hay parámetros guardados sin valor.");
+      await runTransaction(db, async (tx) => {
+        const rs = await tx.get(ref);
+        if (!rs.exists()) throw new Error("El resultado ya no existe.");
+        const d = rs.data();
+        if (str(d.laboratorioId) !== u.laboratorioId) throw new Error("Resultado de otro laboratorio.");
+        if (d.validado === true || normal(d.estado) === "validado") throw new Error("Este resultado ya fue validado.");
+        if (normal(d.estado) !== "borrador") throw new Error("Solo se pueden validar resultados en borrador.");
+        if (str(d.analisisId) !== seleccionado.analisisId) throw new Error("El análisis cambió. Actualiza la pantalla.");
+        if (!unidos.length && !str(d.valorResultado)) throw new Error("No existe un valor principal registrado.");
+        const documentos = [];
+        for (const v of valoresSnap.docs) documentos.push(await tx.get(v.ref));
+        for (let i = 0; i < documentos.length; i++) {
+          const documento = documentos[i];
+          if (!documento.exists() || str(documento.data().valor) !== str(valoresSnap.docs[i].data().valor))
+            throw new Error("Los valores cambiaron durante la revisión. Vuelve a abrir el resultado.");
         }
-
-        const datos = resultadoSnap.data();
-
-        if (
-          datos.laboratorioId !== usuario.laboratorioId
-        ) {
-          throw new Error(
-            "El resultado pertenece a otro laboratorio."
-          );
-        }
-
-        if (
-          datos.validado === true ||
-          datos.estado === "validado"
-        ) {
-          throw new Error(
-            "Este resultado ya está validado."
-          );
-        }
-
-        if (!texto(datos.valorResultado)) {
-          throw new Error(
-            "El resultado no tiene un valor registrado."
-          );
-        }
-
-        transaction.update(resultadoRef, {
-          estado: "validado",
-          validado: true,
-          validadoPor: usuario.uid,
-          validadoPorNombre: usuario.nombre,
-          fechaValidacion: serverTimestamp(),
+        tx.update(ref, {
+          estado: "validado", validado: true, validadoPor: u.uid,
+          validadoPorNombre: u.nombre, fechaValidacion: serverTimestamp(),
         });
       });
-
-      mostrarMensaje(
-        "Resultado validado",
-        "El resultado fue validado correctamente."
-      );
-
-      setModalVisible(false);
-      setResultadoSeleccionado(null);
-      setValoresParametros([]);
-
-      await cargarDatos();
-    } catch (error: any) {
-      console.error(
-        "Error validando resultado:",
-        error
-      );
-
-      mostrarMensaje(
-        "No se pudo validar",
-        mensajeError(error)
-      );
-    } finally {
-      setValidando(false);
-    }
+      cerrarTrasValidacion();
+      aviso("Validación completada", "El resultado fue validado y quedó bloqueado para edición.");
+      await cargar(false);
+    } catch (e) { aviso("No se pudo validar", errorTexto(e)); }
+    finally { setValidando(false); }
+  };
+  const cerrarTrasValidacion = () => {
+    setModalVisible(false); setSeleccionado(null); setParametros([]); setConfigurados([]);
   };
 
-  const confirmarValidacion = () => {
-    confirmarAccion(
-      "Confirmar validación",
-      "¿Estás seguro de que deseas validar este resultado?",
-      validarResultado
-    );
-  };
+  const lista = useMemo(() => resultados.filter((r) => {
+    if (filtro === "pendientes" && r.validado) return false;
+    if (filtro === "validados" && !r.validado) return false;
+    const p = pacientes[r.pacienteId];
+    return normal([r.analisisNombre, r.id, r.ordenId, r.muestraId, p?.nombre, p?.ci].join(" "))
+      .includes(normal(busqueda));
+  }), [resultados, pacientes, filtro, busqueda]);
+  const validados = resultados.filter((r) => r.validado).length;
+  const pendientes = resultados.length - validados;
+  const completos = parametros.filter((p) => p.registrado && p.valor.trim()).length;
+  const faltantes = configurados.filter((p) => !parametros.some((v) =>
+    (v.id === p.id || normal(v.nombre) === normal(p.nombre)) && v.registrado && v.valor.trim())).length;
+  const tieneValorPrincipal = !!seleccionado?.valorResultado.trim();
+  const tieneValores = parametros.some((p) => p.registrado && p.valor.trim());
+  const puedeValidar = !!seleccionado && !seleccionado.validado && seleccionado.estado === "borrador" &&
+    faltantes === 0 && (tieneValorPrincipal || tieneValores) &&
+    !parametros.some((p) => p.registrado && !p.valor.trim());
 
-  // ===================================================
-  // FILTRAR RESULTADOS
-  // ===================================================
+  if (cargando) return <View style={s.cargando}>
+    <ActivityIndicator size="large" color={C.azul} />
+    <Text style={s.textoSuave}>Cargando resultados clínicos...</Text>
+  </View>;
 
-  const resultadosFiltrados = resultados.filter(
-    (resultado) => {
-      const paciente = pacientes[resultado.pacienteId];
-
-      const contenido = [
-        resultado.analisisNombre,
-        resultado.id,
-        resultado.muestraId,
-        paciente?.nombre || "",
-        paciente?.ci || "",
-      ]
-        .join(" ")
-        .toLowerCase();
-
-      return contenido.includes(
-        busqueda.trim().toLowerCase()
-      );
-    }
-  );
-
-  const pendientes = resultados.filter(
-    (resultado) =>
-      !resultado.validado &&
-      resultado.estado !== "validado"
-  ).length;
-
-  const validados = resultados.filter(
-    (resultado) =>
-      resultado.validado ||
-      resultado.estado === "validado"
-  ).length;
-
-  // ===================================================
-  // CARGANDO
-  // ===================================================
-
-  if (cargando) {
-    return (
-      <View style={styles.cargando}>
-        <ActivityIndicator
-          size="large"
-          color="#19385F"
-        />
-
-        <Text style={styles.textoCargando}>
-          Cargando validación de resultados...
-        </Text>
+  return <View style={s.pantalla}>
+    <ScrollView contentContainerStyle={s.contenido} keyboardShouldPersistTaps="handled"
+      refreshControl={<RefreshControl refreshing={actualizando} onRefresh={() => void cargar(false)} colors={[C.azul]} />}>
+      <View style={s.cabecera}>
+        <View style={{ flex: 1 }}>
+          <Text style={s.sobretitulo}>LABORATORIO CLÍNICO · HU-28</Text>
+          <Text style={s.titulo}>Validación de resultados</Text>
+          <Text style={s.descripcion}>Revisa los valores clínicos y confirma los resultados antes de su entrega.</Text>
+        </View>
+        <Pressable style={s.volver} onPress={() => router.back()}><Text style={s.volverTexto}>Volver</Text></Pressable>
       </View>
-    );
-  }
-
-  // ===================================================
-  // INTERFAZ
-  // ===================================================
-
-  return (
-    <View style={styles.contenedor}>
-      <ScrollView
-        contentContainerStyle={styles.contenido}
-        keyboardShouldPersistTaps="handled"
-      >
-        <View style={styles.encabezado}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.titulo}>
-              Validación de resultados
+      <View style={s.estadisticas}>
+        {[
+          { n: resultados.length, t: "Total", color: C.azul, fondo: C.azulClaro },
+          { n: pendientes, t: "Pendientes", color: C.ambar, fondo: C.ambarClaro },
+          { n: validados, t: "Validados", color: C.verde, fondo: C.verdeClaro },
+        ].map((x) => <View key={x.t} style={s.estadistica}>
+          <View style={[s.punto, { backgroundColor: x.fondo }]}><View style={[s.puntoInterior, { backgroundColor: x.color }]} /></View>
+          <Text style={s.estadisticaNumero}>{x.n}</Text><Text style={s.estadisticaTitulo}>{x.t}</Text>
+        </View>)}
+      </View>
+      <View style={s.panel}>
+        <Text style={s.seccionTitulo}>Explorar resultados</Text>
+        <Text style={s.textoSuave}>Busca por paciente, CI, análisis, orden o código de muestra.</Text>
+        <TextInput style={s.buscador} placeholder="Buscar resultados..." placeholderTextColor="#94A3B8"
+          value={busqueda} onChangeText={setBusqueda} />
+        <View style={s.filtros}>
+          {(["pendientes", "validados", "todos"] as Filtro[]).map((f) => <Pressable key={f}
+            onPress={() => setFiltro(f)} style={[s.filtro, filtro === f && s.filtroActivo]}>
+            <Text style={[s.filtroTexto, filtro === f && s.filtroTextoActivo]}>
+              {f === "pendientes" ? "Pendientes" : f === "validados" ? "Validados" : "Todos"}
             </Text>
-
-            <Text style={styles.subtitulo}>
-              Revisa y valida los resultados registrados.
-            </Text>
-          </View>
-
-          <Pressable
-            style={styles.botonVolver}
-            onPress={() => router.back()}
-          >
-            <Text style={styles.textoBoton}>
-              Volver
-            </Text>
+          </Pressable>)}
+        </View>
+        <View style={s.filaSeparada}>
+          <Text style={s.conteo}>{lista.length} resultado(s)</Text>
+          <Pressable style={s.actualizar} disabled={actualizando} onPress={() => void cargar(false)}>
+            <Text style={s.actualizarTexto}>{actualizando ? "Actualizando..." : "Actualizar"}</Text>
           </Pressable>
         </View>
-
-        <View style={styles.contadores}>
-          <View style={styles.contador}>
-            <Text style={styles.contadorTitulo}>
-              Total de resultados
-            </Text>
-
-            <Text style={styles.contadorNumero}>
-              {resultados.length}
-            </Text>
+      </View>
+      {!!error && <View style={s.error}><Text style={s.errorTexto}>{error}</Text>
+        <Pressable onPress={() => void cargar(false)}><Text style={s.reintentar}>Reintentar</Text></Pressable>
+      </View>}
+      <View style={s.panel}>
+        <Text style={s.seccionTitulo}>Resultados registrados</Text>
+        {lista.length === 0 ? <View style={s.vacio}>
+          <Text style={s.vacioTitulo}>No hay resultados para mostrar</Text>
+          <Text style={s.textoSuave}>Prueba otro filtro o registra los valores desde el módulo correspondiente.</Text>
+        </View> : lista.map((r) => {
+          const p = pacientes[r.pacienteId];
+          return <View key={r.id} style={s.tarjeta}>
+            <View style={s.tarjetaSuperior}>
+              <View style={s.icono}><Text style={s.iconoTexto}>R</Text></View>
+              <View style={{ flex: 1 }}>
+                <Text style={s.analisis}>{r.analisisNombre}</Text>
+                <Text style={s.codigo}>Resultado · {r.id}</Text>
+              </View>
+              <View style={[s.badge, { backgroundColor: r.validado ? C.verdeClaro : C.ambarClaro }]}>
+                <Text style={[s.badgeTexto, { color: r.validado ? C.verde : C.ambar }]}>
+                  {r.validado ? "Validado" : "Pendiente"}
+                </Text>
+              </View>
+            </View>
+            <View style={s.linea} />
+            <Text style={s.dato}><Text style={s.etiqueta}>Paciente: </Text>{p?.nombre || "Sin identificar"}</Text>
+            <Text style={s.dato}><Text style={s.etiqueta}>CI: </Text>{p?.ci || "—"}</Text>
+            <Text style={s.dato}><Text style={s.etiqueta}>Orden: </Text>{r.ordenId || "—"}</Text>
+            <Text style={s.dato}><Text style={s.etiqueta}>Resultado principal: </Text>{r.valorResultado || "Consultar parámetros"}</Text>
+            <Text style={s.fecha}>Registrado: {fecha(r.fechaRegistro)}</Text>
+            <Pressable style={[s.boton, cargandoDetalle && s.desactivado]} disabled={cargandoDetalle}
+              onPress={() => void abrir(r)}><Text style={s.botonTexto}>
+                {cargandoDetalle ? "Cargando detalle..." : r.validado ? "Consultar resultado" : "Revisar y validar"}
+              </Text></Pressable>
+          </View>;
+        })}
+      </View>
+    </ScrollView>
+    <Modal visible={modalVisible} transparent animationType="slide" onRequestClose={cerrar}>
+      <View style={s.fondoModal}><View style={s.modal}>
+        <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={s.modalContenido}>
+          <View style={s.filaSeparada}>
+            <View style={{ flex: 1 }}><Text style={s.sobretitulo}>REVISIÓN CLÍNICA</Text>
+              <Text style={s.modalTitulo}>Detalle del resultado</Text></View>
+            <Pressable onPress={cerrar} disabled={validando} style={s.cerrar}><Text style={s.cerrarTexto}>Cerrar</Text></Pressable>
           </View>
-
-          <View style={styles.contador}>
-            <Text style={styles.contadorTitulo}>
-              Pendientes
-            </Text>
-
-            <Text style={styles.contadorNumero}>
-              {pendientes}
-            </Text>
-          </View>
-
-          <View style={styles.contador}>
-            <Text style={styles.contadorTitulo}>
-              Validados
-            </Text>
-
-            <Text style={styles.contadorNumero}>
-              {validados}
-            </Text>
-          </View>
-        </View>
-
-        <View style={styles.panel}>
-          <Text style={styles.etiqueta}>
-            Buscar resultado
-          </Text>
-
-          <TextInput
-            style={styles.input}
-            placeholder="Paciente, CI o análisis"
-            value={busqueda}
-            onChangeText={setBusqueda}
-          />
-
-          <Pressable
-            style={styles.botonActualizar}
-            onPress={cargarDatos}
-          >
-            <Text style={styles.textoActualizar}>
-              Actualizar
-            </Text>
-          </Pressable>
-        </View>
-
-        <View style={styles.panel}>
-          <Text style={styles.seccionTitulo}>
-            Resultados registrados
-          </Text>
-
-          {resultadosFiltrados.length === 0 ? (
-            <Text style={styles.textoVacio}>
-              No se encontraron resultados.
-            </Text>
-          ) : (
-            resultadosFiltrados.map((resultado) => {
-              const paciente =
-                pacientes[resultado.pacienteId];
-
-              const estaValidado =
-                resultado.validado ||
-                resultado.estado === "validado";
-
-              return (
-                <View
-                  key={resultado.id}
-                  style={styles.tarjeta}
-                >
-                  <Text style={styles.nombreAnalisis}>
-                    {resultado.analisisNombre}
-                  </Text>
-
-                  <Text style={styles.dato}>
-                    Paciente:{" "}
-                    {paciente?.nombre || "Sin identificar"}
-                  </Text>
-
-                  <Text style={styles.dato}>
-                    CI: {paciente?.ci || "-"}
-                  </Text>
-
-                  <Text style={styles.dato}>
-                    Valor:{" "}
-                    {resultado.valorResultado || "Sin valor"}
-                  </Text>
-
-                  <Text style={styles.dato}>
-                    Fecha:{" "}
-                    {convertirFecha(
-                      resultado.fechaRegistro
-                    )}
-                  </Text>
-
-                  <Text
-                    style={[
-                      styles.estado,
-                      {
-                        color: estaValidado
-                          ? "#059669"
-                          : "#D97706",
-                      },
-                    ]}
-                  >
-                    {estaValidado
-                      ? "Validado"
-                      : "Pendiente de validación"}
-                  </Text>
-
-                  <Pressable
-                    style={[
-                      styles.botonVer,
-                      cargandoDetalle &&
-                        styles.botonDeshabilitado,
-                    ]}
-                    disabled={cargandoDetalle}
-                    onPress={() =>
-                      revisarYValidar(resultado)
-                    }
-                  >
-                    <Text style={styles.textoBoton}>
-                      {cargandoDetalle
-                        ? "Cargando..."
-                        : estaValidado
-                        ? "Ver resultado"
-                        : "Revisar y validar"}
-                    </Text>
-                  </Pressable>
-                </View>
-              );
-            })
-          )}
-        </View>
-      </ScrollView>
-
-      <Modal
-        visible={modalVisible}
-        animationType="slide"
-        transparent
-        onRequestClose={() => {
-          if (!validando) {
-            setModalVisible(false);
-          }
-        }}
-      >
-        <View style={styles.fondoModal}>
-          <View style={styles.modal}>
-            <ScrollView
-              contentContainerStyle={styles.contenidoModal}
-            >
-              <Text style={styles.tituloModal}>
-                Detalle del resultado
-              </Text>
-
-              {resultadoSeleccionado && (
-                <>
-                  <View style={styles.resumen}>
-                    <Text style={styles.dato}>
-                      Análisis:{" "}
-                      {resultadoSeleccionado.analisisNombre}
-                    </Text>
-
-                    <Text style={styles.dato}>
-                      Paciente:{" "}
-                      {pacientes[
-                        resultadoSeleccionado.pacienteId
-                      ]?.nombre || "Sin identificar"}
-                    </Text>
-
-                    <Text style={styles.dato}>
-                      CI:{" "}
-                      {pacientes[
-                        resultadoSeleccionado.pacienteId
-                      ]?.ci || "-"}
-                    </Text>
-
-                    <Text style={styles.dato}>
-                      Estado:{" "}
-                      {resultadoSeleccionado.validado ||
-                      resultadoSeleccionado.estado === "validado"
-                        ? "Validado"
-                        : "Pendiente"}
-                    </Text>
-                  </View>
-
-                  <View style={styles.tarjetaDetalle}>
-                    <Text style={styles.seccionTitulo}>
-                      Resultado principal
-                    </Text>
-
-                    <Text style={styles.dato}>
-                      Valor:{" "}
-                      {resultadoSeleccionado.valorResultado ||
-                        "Sin registrar"}
-                    </Text>
-
-                    <Text style={styles.dato}>
-                      Unidad:{" "}
-                      {resultadoSeleccionado.unidad || "-"}
-                    </Text>
-
-                    <Text style={styles.dato}>
-                      Observaciones:{" "}
-                      {resultadoSeleccionado.observaciones ||
-                        "Sin observaciones"}
-                    </Text>
-
-                    <Text style={styles.dato}>
-                      Fecha de registro:{" "}
-                      {convertirFecha(
-                        resultadoSeleccionado.fechaRegistro
-                      )}
-                    </Text>
-                  </View>
-
-                  <View style={styles.tarjetaDetalle}>
-                    <Text style={styles.seccionTitulo}>
-                      Valores por parámetros
-                    </Text>
-
-                    {valoresParametros.length === 0 ? (
-                      <Text style={styles.textoVacio}>
-                        No existen parámetros configurados
-                        ni valores individuales registrados
-                        para este resultado.
-                      </Text>
-                    ) : (
-                      valoresParametros.map(
-                        (parametro, indice) => (
-                          <View
-                            key={`${parametro.id}_${indice}`}
-                            style={styles.parametro}
-                          >
-                            <Text style={styles.nombreParametro}>
-                              {indice + 1}. {parametro.nombre}
-                            </Text>
-
-                            <Text style={styles.dato}>
-                              Valor:{" "}
-                              {parametro.registrado &&
-                              parametro.valor
-                                ? parametro.valor
-                                : "Sin valor registrado"}
-                            </Text>
-
-                            {parametro.unidad !== "" && (
-                              <Text style={styles.dato}>
-                                Unidad: {parametro.unidad}
-                              </Text>
-                            )}
-
-                            {parametro.referencia !== "" && (
-                              <Text style={styles.dato}>
-                                Referencia:{" "}
-                                {parametro.referencia}
-                              </Text>
-                            )}
-
-                            {parametro.observacion !== "" && (
-                              <Text style={styles.dato}>
-                                Observación:{" "}
-                                {parametro.observacion}
-                              </Text>
-                            )}
-                          </View>
-                        )
-                      )
-                    )}
-                  </View>
-
-                  {(resultadoSeleccionado.validado ||
-                    resultadoSeleccionado.estado === "validado") && (
-                    <View style={styles.tarjetaValidado}>
-                      <Text style={styles.validadoTitulo}>
-                        Resultado validado
-                      </Text>
-
-                      <Text style={styles.dato}>
-                        Fecha:{" "}
-                        {convertirFecha(
-                          resultadoSeleccionado.fechaValidacion
-                        )}
-                      </Text>
-
-                      <Text style={styles.dato}>
-                        Validado por:{" "}
-                        {nombreBioquimico}
+          {seleccionado && <>
+            <View style={s.resumen}>
+              <Text style={s.resumenSubtitulo}>ANÁLISIS</Text>
+              <Text style={s.resumenTitulo}>{seleccionado.analisisNombre}</Text>
+              <Text style={s.resumenDato}>Paciente: {pacientes[seleccionado.pacienteId]?.nombre || "Sin identificar"}</Text>
+              <Text style={s.resumenDato}>CI: {pacientes[seleccionado.pacienteId]?.ci || "—"}</Text>
+              <Text style={s.resumenDato}>Orden: {seleccionado.ordenId || "—"}</Text>
+              <Text style={s.resumenDato}>Fecha: {fecha(seleccionado.fechaRegistro)}</Text>
+            </View>
+            <View style={s.resumenProgreso}>
+              <View style={s.filaSeparada}><Text style={s.seccionTitulo}>Verificación de parámetros</Text>
+                <Text style={s.progresoNumero}>{completos}/{parametros.length}</Text></View>
+              <View style={s.barra}><View style={[s.barraDentro, {
+                width: `${parametros.length ? Math.round(completos * 100 / parametros.length) : 0}%`,
+              }]} /></View>
+              <Text style={s.textoSuave}>{faltantes === 0 ? "No hay parámetros configurados pendientes." :
+                `Faltan ${faltantes} parámetro(s) configurado(s) por registrar.`}</Text>
+            </View>
+            <View style={s.bloque}>
+              <Text style={s.seccionTitulo}>Resultado principal</Text>
+              <Text style={s.dato}><Text style={s.etiqueta}>Valor: </Text>{seleccionado.valorResultado || "Sin valor principal"}</Text>
+              <Text style={s.dato}><Text style={s.etiqueta}>Unidad: </Text>{seleccionado.unidad || "—"}</Text>
+              <Text style={s.dato}><Text style={s.etiqueta}>Observaciones: </Text>{seleccionado.observaciones || "Sin observaciones"}</Text>
+            </View>
+            <View style={s.bloque}>
+              <Text style={s.seccionTitulo}>Valores por parámetros</Text>
+              {parametros.length === 0 ? <Text style={s.textoSuave}>No hay parámetros configurados ni valores individuales.</Text> :
+                parametros.map((p, i) => <View key={`${p.id}-${i}`} style={s.parametro}>
+                  <View style={s.filaSeparada}><Text style={[s.parametroNombre, { flex: 1 }]}>{i + 1}. {p.nombre}</Text>
+                    <View style={[s.badge, { backgroundColor: p.registrado && p.valor ? C.verdeClaro : C.ambarClaro }]}>
+                      <Text style={[s.badgeTexto, { color: p.registrado && p.valor ? C.verde : C.ambar }]}>
+                        {p.registrado && p.valor ? "Registrado" : "Pendiente"}
                       </Text>
                     </View>
-                  )}
-
-                  <View style={styles.accionesModal}>
-                    <Pressable
-                      style={styles.botonCerrar}
-                      disabled={validando}
-                      onPress={() => setModalVisible(false)}
-                    >
-                      <Text style={styles.textoBoton}>
-                        Cerrar
-                      </Text>
-                    </Pressable>
-
-                    {!resultadoSeleccionado.validado &&
-                      resultadoSeleccionado.estado !==
-                        "validado" && (
-                        <Pressable
-                          style={[
-                            styles.botonValidar,
-                            validando &&
-                              styles.botonDeshabilitado,
-                          ]}
-                          disabled={validando}
-                          onPress={confirmarValidacion}
-                        >
-                          {validando ? (
-                            <ActivityIndicator
-                              color="#FFFFFF"
-                            />
-                          ) : (
-                            <Text style={styles.textoBoton}>
-                              Validar resultado
-                            </Text>
-                          )}
-                        </Pressable>
-                      )}
                   </View>
-                </>
-              )}
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
-    </View>
-  );
+                  <Text style={s.parametroValor}>{p.registrado && p.valor ? p.valor : "Sin valor"}
+                    {!!p.unidad && <Text style={s.parametroUnidad}> {p.unidad}</Text>}</Text>
+                  {!!p.referencia && <Text style={s.dato}>Referencia: {p.referencia}</Text>}
+                  {!!p.observacion && <Text style={s.dato}>Observación: {p.observacion}</Text>}
+                </View>)}
+            </View>
+            {seleccionado.validado ? <View style={s.exito}>
+              <Text style={s.exitoTitulo}>Resultado validado</Text>
+              <Text style={s.dato}>Fecha: {fecha(seleccionado.fechaValidacion)}</Text>
+              <Text style={s.dato}>Validado por: {nombreValidador}</Text>
+              <Text style={s.textoSuave}>Este resultado es de solo lectura.</Text>
+            </View> : <View style={[s.advertencia, puedeValidar && s.avisoListo]}>
+              <Text style={s.advertenciaTitulo}>{puedeValidar ? "Listo para validación" : "Validación no disponible"}</Text>
+              <Text style={s.textoSuave}>{puedeValidar ?
+                "Revisa cuidadosamente los valores antes de confirmar. La validación bloqueará su edición." :
+                "El resultado debe estar en borrador y tener todos los parámetros configurados con valores registrados, o un valor principal cuando no hay parámetros."}</Text>
+            </View>}
+            <View style={s.acciones}>
+              <Pressable onPress={cerrar} disabled={validando} style={s.cancelar}><Text style={s.cancelarTexto}>Cerrar</Text></Pressable>
+              {!seleccionado.validado && <Pressable onPress={() => confirmar(() => void validar())}
+                disabled={!puedeValidar || validando} style={[s.validar, (!puedeValidar || validando) && s.desactivado]}>
+                {validando ? <ActivityIndicator color="#FFFFFF" /> : <Text style={s.botonTexto}>Validar resultado</Text>}
+              </Pressable>}
+            </View>
+          </>}
+        </ScrollView>
+      </View></View>
+    </Modal>
+  </View>;
 }
 
-// =====================================================
-// ESTILOS
-// =====================================================
-
-const styles = StyleSheet.create({
-  contenedor: {
-    flex: 1,
-    backgroundColor: "#F4F7FB",
-  },
-
-  contenido: {
-    padding: 20,
-    paddingBottom: 50,
-  },
-
-  cargando: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    backgroundColor: "#F4F7FB",
-  },
-
-  textoCargando: {
-    marginTop: 12,
-    color: "#64748B",
-  },
-
-  encabezado: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 20,
-    gap: 12,
-  },
-
-  titulo: {
-    fontSize: 28,
-    fontWeight: "bold",
-    color: "#19385F",
-  },
-
-  subtitulo: {
-    fontSize: 15,
-    color: "#64748B",
-    marginTop: 6,
-  },
-
-  botonVolver: {
-    backgroundColor: "#334155",
-    paddingHorizontal: 18,
-    paddingVertical: 12,
-    borderRadius: 9,
-  },
-
-  textoBoton: {
-    color: "#FFFFFF",
-    fontWeight: "bold",
-  },
-
-  contadores: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 12,
-    marginBottom: 20,
-  },
-
-  contador: {
-    flexGrow: 1,
-    minWidth: 150,
-    padding: 18,
-    backgroundColor: "#FFFFFF",
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
-  },
-
-  contadorTitulo: {
-    color: "#64748B",
-    fontSize: 13,
-    fontWeight: "600",
-  },
-
-  contadorNumero: {
-    fontSize: 28,
-    fontWeight: "bold",
-    color: "#19385F",
-    marginTop: 8,
-  },
-
-  panel: {
-    backgroundColor: "#FFFFFF",
-    padding: 18,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
-    marginBottom: 18,
-  },
-
-  etiqueta: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#334155",
-    marginBottom: 8,
-  },
-
-  input: {
-    borderWidth: 1,
-    borderColor: "#CBD5E1",
-    borderRadius: 9,
-    padding: 13,
-    fontSize: 15,
-    backgroundColor: "#FFFFFF",
-    color: "#0F172A",
-    marginBottom: 10,
-  },
-
-  botonActualizar: {
-    backgroundColor: "#E2E8F0",
-    paddingHorizontal: 18,
-    paddingVertical: 12,
-    borderRadius: 9,
-    alignSelf: "flex-start",
-  },
-
-  textoActualizar: {
-    color: "#19385F",
-    fontWeight: "600",
-  },
-
-  seccionTitulo: {
-    fontSize: 19,
-    fontWeight: "bold",
-    color: "#19385F",
-    marginBottom: 15,
-  },
-
-  tarjeta: {
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 12,
-  },
-
-  nombreAnalisis: {
-    fontSize: 17,
-    fontWeight: "bold",
-    color: "#19385F",
-    marginBottom: 10,
-  },
-
-  dato: {
-    fontSize: 14,
-    color: "#475569",
-    marginBottom: 7,
-  },
-
-  estado: {
-    fontSize: 14,
-    fontWeight: "bold",
-    marginVertical: 10,
-  },
-
-  botonVer: {
-    backgroundColor: "#2563EB",
-    padding: 13,
-    borderRadius: 9,
-    alignItems: "center",
-    marginTop: 10,
-  },
-
-  botonDeshabilitado: {
-    opacity: 0.5,
-  },
-
-  textoVacio: {
-    color: "#64748B",
-    fontSize: 14,
-    paddingVertical: 15,
-  },
-
-  fondoModal: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.5)",
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 15,
-  },
-
-  modal: {
-    backgroundColor: "#FFFFFF",
-    width: "100%",
-    maxWidth: 700,
-    maxHeight: "90%",
-    borderRadius: 14,
-    overflow: "hidden",
-  },
-
-  contenidoModal: {
-    padding: 20,
-    paddingBottom: 35,
-  },
-
-  tituloModal: {
-    fontSize: 22,
-    fontWeight: "bold",
-    color: "#19385F",
-    marginBottom: 15,
-  },
-
-  resumen: {
-    backgroundColor: "#F1F5F9",
-    padding: 15,
-    borderRadius: 10,
-    marginBottom: 15,
-  },
-
-  tarjetaDetalle: {
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
-    borderRadius: 10,
-    padding: 15,
-    marginBottom: 15,
-  },
-
-  parametro: {
-    borderTopWidth: 1,
-    borderTopColor: "#E2E8F0",
-    paddingVertical: 12,
-  },
-
-  nombreParametro: {
-    fontSize: 15,
-    fontWeight: "bold",
-    color: "#19385F",
-    marginBottom: 8,
-  },
-
-  tarjetaValidado: {
-    backgroundColor: "#ECFDF5",
-    borderRadius: 10,
-    padding: 15,
-    marginBottom: 15,
-  },
-
-  validadoTitulo: {
-    color: "#059669",
-    fontWeight: "bold",
-    fontSize: 16,
-    marginBottom: 10,
-  },
-
-  accionesModal: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    justifyContent: "flex-end",
-    gap: 10,
-    marginTop: 15,
-  },
-
-  botonCerrar: {
-    backgroundColor: "#64748B",
-    paddingHorizontal: 18,
-    paddingVertical: 13,
-    borderRadius: 9,
-  },
-
-  botonValidar: {
-    backgroundColor: "#059669",
-    paddingHorizontal: 18,
-    paddingVertical: 13,
-    borderRadius: 9,
-  },
+const s = StyleSheet.create({
+  pantalla: { flex: 1, backgroundColor: C.fondo },
+  contenido: { padding: 18, paddingBottom: 55 },
+  cargando: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: C.fondo, gap: 14 },
+  textoSuave: { color: C.secundario, fontSize: 13, lineHeight: 20 },
+  cabecera: { flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 20 },
+  sobretitulo: { fontSize: 10, fontWeight: "800", color: C.azul, letterSpacing: 1.2, marginBottom: 7 },
+  titulo: { fontSize: 27, fontWeight: "800", color: C.azulOscuro, marginBottom: 6 },
+  descripcion: { color: C.secundario, fontSize: 13, lineHeight: 20 },
+  volver: { backgroundColor: "#334155", borderRadius: 10, paddingHorizontal: 14, paddingVertical: 12 },
+  volverTexto: { color: C.blanco, fontWeight: "800", fontSize: 12 },
+  estadisticas: { flexDirection: "row", flexWrap: "wrap", gap: 10, marginBottom: 18 },
+  estadistica: { flexGrow: 1, minWidth: 100, backgroundColor: C.blanco, borderRadius: 14,
+    borderWidth: 1, borderColor: C.borde, padding: 15 },
+  punto: { width: 30, height: 30, borderRadius: 9, justifyContent: "center", alignItems: "center", marginBottom: 9 },
+  puntoInterior: { width: 12, height: 12, borderRadius: 6 },
+  estadisticaNumero: { fontSize: 27, fontWeight: "800", color: C.azulOscuro },
+  estadisticaTitulo: { fontSize: 12, color: C.secundario, marginTop: 4 },
+  panel: { backgroundColor: C.blanco, borderRadius: 15, borderWidth: 1, borderColor: C.borde,
+    padding: 17, marginBottom: 16 },
+  seccionTitulo: { fontSize: 17, fontWeight: "800", color: C.azulOscuro, marginBottom: 9 },
+  buscador: { borderRadius: 10, borderWidth: 1, borderColor: "#CBD5E1", backgroundColor: "#F8FAFC",
+    color: C.texto, paddingHorizontal: 14, paddingVertical: 12, marginTop: 13, fontSize: 14 },
+  filtros: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 13 },
+  filtro: { backgroundColor: "#F1F5F9", borderRadius: 20, paddingVertical: 9, paddingHorizontal: 13 },
+  filtroActivo: { backgroundColor: C.azulOscuro },
+  filtroTexto: { fontSize: 12, color: C.secundario, fontWeight: "700" },
+  filtroTextoActivo: { color: C.blanco },
+  filaSeparada: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 10 },
+  conteo: { fontSize: 12, color: C.secundario },
+  actualizar: { backgroundColor: C.azulClaro, borderRadius: 8, paddingVertical: 10, paddingHorizontal: 14 },
+  actualizarTexto: { color: C.azulOscuro, fontSize: 12, fontWeight: "800" },
+  tarjeta: { borderWidth: 1, borderColor: C.borde, borderRadius: 13, padding: 15, marginTop: 12 },
+  tarjetaSuperior: { flexDirection: "row", alignItems: "center", gap: 10 },
+  icono: { width: 43, height: 43, borderRadius: 11, backgroundColor: C.azulClaro,
+    justifyContent: "center", alignItems: "center" },
+  iconoTexto: { fontSize: 19, color: C.azul, fontWeight: "800" },
+  analisis: { fontSize: 15, color: C.azulOscuro, fontWeight: "800", marginBottom: 4 },
+  codigo: { fontSize: 10, color: C.secundario },
+  badge: { borderRadius: 20, paddingHorizontal: 10, paddingVertical: 6, alignSelf: "flex-start" },
+  badgeTexto: { fontSize: 10, fontWeight: "800" },
+  linea: { height: 1, backgroundColor: C.borde, marginVertical: 13 },
+  dato: { fontSize: 13, color: C.texto, marginBottom: 8, lineHeight: 20 },
+  etiqueta: { color: C.secundario, fontWeight: "600" },
+  fecha: { fontSize: 11, color: C.secundario, marginTop: 3 },
+  boton: { backgroundColor: C.azul, borderRadius: 9, padding: 13, alignItems: "center", marginTop: 15 },
+  botonTexto: { color: C.blanco, fontSize: 12, fontWeight: "800", textAlign: "center" },
+  desactivado: { opacity: 0.45 },
+  vacio: { alignItems: "center", padding: 25, gap: 8 },
+  vacioTitulo: { fontSize: 15, fontWeight: "800", color: C.azulOscuro, textAlign: "center" },
+  error: { backgroundColor: C.rojoClaro, borderColor: "#FECACA", borderWidth: 1, borderRadius: 10,
+    padding: 15, marginBottom: 15 },
+  errorTexto: { color: C.rojo, fontSize: 13, lineHeight: 20 },
+  reintentar: { color: C.rojo, fontWeight: "800", marginTop: 9 },
+  fondoModal: { flex: 1, backgroundColor: "rgba(15,23,42,0.65)", padding: 12,
+    justifyContent: "center", alignItems: "center" },
+  modal: { width: "100%", maxWidth: 710, maxHeight: "94%", borderRadius: 17,
+    backgroundColor: C.blanco, overflow: "hidden" },
+  modalContenido: { padding: 19, paddingBottom: 35 },
+  modalTitulo: { fontSize: 22, fontWeight: "800", color: C.azulOscuro, marginBottom: 15 },
+  cerrar: { backgroundColor: "#F1F5F9", paddingHorizontal: 13, paddingVertical: 10, borderRadius: 9 },
+  cerrarTexto: { fontSize: 12, color: C.azulOscuro, fontWeight: "800" },
+  resumen: { backgroundColor: C.azulOscuro, borderRadius: 13, padding: 17, marginBottom: 16 },
+  resumenSubtitulo: { color: "#BFDBFE", fontSize: 10, fontWeight: "800", letterSpacing: 1 },
+  resumenTitulo: { color: C.blanco, fontSize: 19, fontWeight: "800", marginTop: 8, marginBottom: 13 },
+  resumenDato: { color: "#DBEAFE", fontSize: 12, marginBottom: 7 },
+  resumenProgreso: { backgroundColor: C.azulClaro, borderRadius: 12, padding: 15, marginBottom: 16 },
+  progresoNumero: { color: C.azul, fontSize: 17, fontWeight: "800" },
+  barra: { backgroundColor: "#DBEAFE", height: 9, borderRadius: 8, overflow: "hidden", marginBottom: 10 },
+  barraDentro: { backgroundColor: C.azul, height: "100%", borderRadius: 8 },
+  bloque: { borderWidth: 1, borderColor: C.borde, borderRadius: 12, padding: 15, marginBottom: 15 },
+  parametro: { borderTopWidth: 1, borderTopColor: C.borde, paddingTop: 13, marginTop: 12 },
+  parametroNombre: { fontSize: 13, color: C.azulOscuro, fontWeight: "800" },
+  parametroValor: { fontSize: 22, color: C.texto, fontWeight: "800", marginVertical: 8 },
+  parametroUnidad: { fontSize: 12, color: C.secundario, fontWeight: "500" },
+  advertencia: { borderRadius: 10, backgroundColor: C.ambarClaro, borderWidth: 1,
+    borderColor: "#FDE68A", padding: 14, marginBottom: 14 },
+  avisoListo: { backgroundColor: C.verdeClaro, borderColor: "#A7F3D0" },
+  advertenciaTitulo: { fontSize: 13, fontWeight: "800", color: C.azulOscuro, marginBottom: 6 },
+  exito: { backgroundColor: C.verdeClaro, borderRadius: 10, padding: 15, marginBottom: 15 },
+  exitoTitulo: { color: C.verde, fontSize: 16, fontWeight: "800", marginBottom: 10 },
+  acciones: { flexDirection: "row", justifyContent: "flex-end", flexWrap: "wrap", gap: 10 },
+  cancelar: { backgroundColor: "#E2E8F0", borderRadius: 9, paddingHorizontal: 16, paddingVertical: 13 },
+  cancelarTexto: { color: C.azulOscuro, fontWeight: "800", fontSize: 12 },
+  validar: { backgroundColor: C.verde, borderRadius: 9, paddingHorizontal: 17,
+    paddingVertical: 13, minWidth: 145, alignItems: "center" },
 });
