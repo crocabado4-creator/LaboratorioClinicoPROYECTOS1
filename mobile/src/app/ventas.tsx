@@ -806,11 +806,167 @@ export default function VentasScreen() {
         </View>
 
         {/* =========================================== */}
+        {/* REGISTRAR NUEVA VENTA */}
+        {/* =========================================== */}
+
+        {puedeRegistrar && (
+          <View style={styles.tarjeta}>
+            
+
+            <Text style={styles.seccionTitulo}>
+              Registrar venta
+            </Text>
+
+            <Text style={styles.descripcion}>
+              Selecciona una solicitud pendiente para
+              registrar el pago y generar su orden.
+            </Text>
+
+            <Text style={styles.label}>
+              Buscar solicitud pendiente
+            </Text>
+
+            <TextInput
+              style={styles.input}
+              value={busquedaSolicitud}
+              onChangeText={setBusquedaSolicitud}
+              placeholder="Nombre, apellido, CI o código..."
+              placeholderTextColor="#94A3B8"
+            />
+
+            {solicitudesFiltradas.length === 0 ? (
+              <Text style={styles.sinResultadosTexto}>
+                No hay solicitudes pendientes.
+              </Text>
+            ) : (
+              solicitudesFiltradas.map((solicitud) => (
+                <Pressable
+                  key={solicitud.id}
+                  style={[
+                    styles.solicitud,
+                    solicitudSeleccionadaId === solicitud.id &&
+                      styles.solicitudActiva,
+                  ]}
+                  onPress={() =>
+                    setSolicitudSeleccionadaId(solicitud.id)
+                  }
+                >
+                  <Text style={styles.ventaPaciente}>
+                    {nombrePaciente(solicitud.pacienteId)}
+                  </Text>
+
+                  <Text style={styles.dato}>
+                    CI: {ciPaciente(solicitud.pacienteId)}
+                  </Text>
+
+                  <Text style={styles.dato}>
+                    Solicitud: {solicitud.solicitudId}
+                  </Text>
+
+                  <Text style={styles.ventaTotal}>
+                    Bs {dinero(solicitud.total)}
+                  </Text>
+
+                  <Text style={styles.seleccionarTexto}>
+                    {solicitudSeleccionadaId === solicitud.id
+                      ? "✓ Seleccionada"
+                      : "Seleccionar"}
+                  </Text>
+                </Pressable>
+              ))
+            )}
+
+            {solicitudSeleccionada && (
+              <View style={styles.detalleSolicitud}>
+                <Text style={styles.seccionTitulo}>
+                  Detalle de solicitud
+                </Text>
+
+                {solicitudSeleccionada.analisis.map(
+                  (item, index) => (
+                    <View
+                      key={`${item.analisisId || index}`}
+                      style={styles.analisisFila}
+                    >
+                      <Text style={styles.analisisNombre}>
+                        {item.nombre || "Análisis"}
+                      </Text>
+
+                      <Text style={styles.analisisPrecio}>
+                        Bs{" "}
+                        {dinero(
+                          numero(item.precio) *
+                            numero(item.cantidad || 1)
+                        )}
+                      </Text>
+                    </View>
+                  )
+                )}
+
+                <Text style={styles.totalFinal}>
+                  Total: Bs{" "}
+                  {dinero(solicitudSeleccionada.total)}
+                </Text>
+
+                <Text style={styles.label}>
+                  Método de pago
+                </Text>
+
+                <View style={styles.metodos}>
+                  {[
+                    "efectivo",
+                    "qr",
+                    "transferencia",
+                  ].map((metodo) => (
+                    <Pressable
+                      key={metodo}
+                      style={[
+                        styles.metodo,
+                        metodoPago === metodo &&
+                          styles.metodoActivo,
+                      ]}
+                      onPress={() => setMetodoPago(metodo)}
+                    >
+                      <Text
+                        style={[
+                          styles.metodoTexto,
+                          metodoPago === metodo &&
+                            styles.metodoTextoActivo,
+                        ]}
+                      >
+                        {metodo.toUpperCase()}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+
+                <Pressable
+                  style={[
+                    styles.botonRegistrar,
+                    guardando && styles.deshabilitado,
+                  ]}
+                  disabled={guardando}
+                  onPress={registrarVenta}
+                >
+                  {guardando ? (
+                    <ActivityIndicator color="#FFFFFF" />
+                  ) : (
+                    <Text style={styles.botonBlanco}>
+                      Registrar pago y generar orden
+                    </Text>
+                  )}
+                </Pressable>
+              </View>
+            )}
+          </View>
+        )}
+
+        {/* =========================================== */}
         {/* HISTORIAL DE VENTAS */}
         {/* =========================================== */}
 
         <View style={styles.tarjeta}>
-          <Text style={styles.hu}>HU-21</Text>
+          
 
           <Text style={styles.seccionTitulo}>
             Historial de ventas
@@ -991,161 +1147,6 @@ export default function VentasScreen() {
           )}
         </View>
 
-        {/* =========================================== */}
-        {/* REGISTRAR NUEVA VENTA */}
-        {/* =========================================== */}
-
-        {puedeRegistrar && (
-          <View style={styles.tarjeta}>
-            <Text style={styles.hu}>HU-20</Text>
-
-            <Text style={styles.seccionTitulo}>
-              Registrar venta
-            </Text>
-
-            <Text style={styles.descripcion}>
-              Selecciona una solicitud pendiente para
-              registrar el pago y generar su orden.
-            </Text>
-
-            <Text style={styles.label}>
-              Buscar solicitud pendiente
-            </Text>
-
-            <TextInput
-              style={styles.input}
-              value={busquedaSolicitud}
-              onChangeText={setBusquedaSolicitud}
-              placeholder="Nombre, apellido, CI o código..."
-              placeholderTextColor="#94A3B8"
-            />
-
-            {solicitudesFiltradas.length === 0 ? (
-              <Text style={styles.sinResultadosTexto}>
-                No hay solicitudes pendientes.
-              </Text>
-            ) : (
-              solicitudesFiltradas.map((solicitud) => (
-                <Pressable
-                  key={solicitud.id}
-                  style={[
-                    styles.solicitud,
-                    solicitudSeleccionadaId === solicitud.id &&
-                      styles.solicitudActiva,
-                  ]}
-                  onPress={() =>
-                    setSolicitudSeleccionadaId(solicitud.id)
-                  }
-                >
-                  <Text style={styles.ventaPaciente}>
-                    {nombrePaciente(solicitud.pacienteId)}
-                  </Text>
-
-                  <Text style={styles.dato}>
-                    CI: {ciPaciente(solicitud.pacienteId)}
-                  </Text>
-
-                  <Text style={styles.dato}>
-                    Solicitud: {solicitud.solicitudId}
-                  </Text>
-
-                  <Text style={styles.ventaTotal}>
-                    Bs {dinero(solicitud.total)}
-                  </Text>
-
-                  <Text style={styles.seleccionarTexto}>
-                    {solicitudSeleccionadaId === solicitud.id
-                      ? "✓ Seleccionada"
-                      : "Seleccionar"}
-                  </Text>
-                </Pressable>
-              ))
-            )}
-
-            {solicitudSeleccionada && (
-              <View style={styles.detalleSolicitud}>
-                <Text style={styles.seccionTitulo}>
-                  Detalle de solicitud
-                </Text>
-
-                {solicitudSeleccionada.analisis.map(
-                  (item, index) => (
-                    <View
-                      key={`${item.analisisId || index}`}
-                      style={styles.analisisFila}
-                    >
-                      <Text style={styles.analisisNombre}>
-                        {item.nombre || "Análisis"}
-                      </Text>
-
-                      <Text style={styles.analisisPrecio}>
-                        Bs{" "}
-                        {dinero(
-                          numero(item.precio) *
-                            numero(item.cantidad || 1)
-                        )}
-                      </Text>
-                    </View>
-                  )
-                )}
-
-                <Text style={styles.totalFinal}>
-                  Total: Bs{" "}
-                  {dinero(solicitudSeleccionada.total)}
-                </Text>
-
-                <Text style={styles.label}>
-                  Método de pago
-                </Text>
-
-                <View style={styles.metodos}>
-                  {[
-                    "efectivo",
-                    "qr",
-                    "transferencia",
-                  ].map((metodo) => (
-                    <Pressable
-                      key={metodo}
-                      style={[
-                        styles.metodo,
-                        metodoPago === metodo &&
-                          styles.metodoActivo,
-                      ]}
-                      onPress={() => setMetodoPago(metodo)}
-                    >
-                      <Text
-                        style={[
-                          styles.metodoTexto,
-                          metodoPago === metodo &&
-                            styles.metodoTextoActivo,
-                        ]}
-                      >
-                        {metodo.toUpperCase()}
-                      </Text>
-                    </Pressable>
-                  ))}
-                </View>
-
-                <Pressable
-                  style={[
-                    styles.botonRegistrar,
-                    guardando && styles.deshabilitado,
-                  ]}
-                  disabled={guardando}
-                  onPress={registrarVenta}
-                >
-                  {guardando ? (
-                    <ActivityIndicator color="#FFFFFF" />
-                  ) : (
-                    <Text style={styles.botonBlanco}>
-                      Registrar pago y generar orden
-                    </Text>
-                  )}
-                </Pressable>
-              </View>
-            )}
-          </View>
-        )}
       </ScrollView>
 
       {/* =========================================== */}

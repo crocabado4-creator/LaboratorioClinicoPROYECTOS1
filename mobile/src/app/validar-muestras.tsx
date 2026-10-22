@@ -1,4 +1,9 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 
 import {
   ActivityIndicator,
@@ -6,6 +11,7 @@ import {
   Modal,
   Platform,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -14,7 +20,6 @@ import {
 } from "react-native";
 
 import { router } from "expo-router";
-
 import { getAuth } from "firebase/auth";
 
 import {
@@ -30,17 +35,10 @@ import {
 
 import { db } from "../firebase/firebase";
 
-// ======================================================
-// TIPOS
-// ======================================================
-
-type EstadoMuestra =
-  | "tomada"
+type EstadoValidacion =
+  | "pendiente"
   | "aceptada"
-  | "rechazada"
-  | "procesada"
-  | "en_proceso"
-  | string;
+  | "rechazada";
 
 type Muestra = {
   id: string;
@@ -51,10 +49,13 @@ type Muestra = {
   analisisId: string;
   analisis: string;
   tipoMuestra: string;
-  estado: EstadoMuestra;
+  estado: string;
+  estadoValidacion: EstadoValidacion;
+  aceptada: boolean;
   laboratorioId: string;
   fechaToma: string;
   motivoRechazo: string;
+  validadoPor: string;
 };
 
 type Filtro =
@@ -63,71 +64,242 @@ type Filtro =
   | "aceptadas"
   | "rechazadas";
 
-// ======================================================
-// FUNCIONES AUXILIARES
-// ======================================================
+type Sesion = {
+  uid: string;
+  laboratorioId: string;
+};
+
+const OPCIONES_FILTRO: {
+  valor: Filtro;
+  nombre: string;
+}[] = [
+  {
+    valor: "todas",
+    nombre: "Todas las muestras",
+  },
+  {
+    valor: "pendientes",
+    nombre: "Pendientes",
+  },
+  {
+    valor: "aceptadas",
+    nombre: "Aceptadas",
+  },
+  {
+    valor: "rechazadas",
+    nombre: "Rechazadas",
+  },
+];
 
 function texto(valor: unknown): string {
-  if (valor === null || valor === undefined) {
-    return "";
-  }
-
-  return String(valor);
+  return String(valor ?? "").trim();
 }
 
-function obtenerFecha(valor: any): string {
-  if (!valor) return "-";
+function normalizarEstado(valor: unknown): string {
+  return texto(valor)
+    .toLowerCase()
+    .replace(/\s+/g, "_");
+}
+
+function obtenerFecha(valor: unknown): string {
+  if (!valor) {
+    return "-";
+  }
 
   try {
-    if (typeof valor.toDate === "function") {
-      return valor.toDate().toLocaleString("es-BO");
+    if (
+      typeof valor === "object" &&
+      valor !== null &&
+      "toDate" in valor &&
+      typeof valor.toDate === "function"
+    ) {
+      const fecha = valor.toDate();
+
+      if (fecha instanceof Date) {
+        return fecha.toLocaleString("es-BO");
+      }
     }
 
     if (valor instanceof Date) {
       return valor.toLocaleString("es-BO");
     }
 
-    if (typeof valor === "string") {
+    if (
+      typeof valor === "string" ||
+      typeof valor === "number"
+    ) {
       const fecha = new Date(valor);
 
-      if (!isNaN(fecha.getTime())) {
+      if (!Number.isNaN(fecha.getTime())) {
         return fecha.toLocaleString("es-BO");
       }
-
-      return valor;
     }
-
-    return "-";
   } catch {
     return "-";
   }
+
+  return "-";
 }
 
-function normalizarEstado(estado: string): string {
-  return estado
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, "_");
-}
-
-function mostrarAviso(titulo: string, mensaje: string) {
+function mostrarAviso(
+  titulo: string,
+  mensaje: string
+): void {
   if (Platform.OS === "web") {
     if (typeof window !== "undefined") {
       window.alert(`${titulo}\n\n${mensaje}`);
     }
-  } else {
-    Alert.alert(titulo, mensaje);
+
+    return;
   }
+
+  Alert.alert(titulo, mensaje);
 }
 
-// ======================================================
-// PANTALLA
-// ======================================================
+function obtenerMensajeError(error: unknown): string {
+  const codigo = (
+    error as {
+      code?: string;
+    }
+  )?.code;
+
+  if (
+    codigo === "permission-denied" ||
+    codigo === "firestore/permission-denied"
+  ) {
+    return "No tienes permisos suficientes para realizar esta operación.";
+  }
+
+  if (
+    codigo === "unavailable" ||
+    codigo === "firestore/unavailable"
+  ) {
+    return "No se pudo conectar con Firebase. Comprueba tu conexión a Internet.";
+  }
+
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return "Ocurrió un error inesperado.";
+}
+
+async function obtenerSesionBioquimico(): Promise<Sesion> {
+  const usuario = getAuth().currentUser;
+
+  if (!usuario) {
+    throw new Error(
+      "Debes iniciar sesión para gestionar las muestras."
+    );
+  }
+
+  const usuarioSnap = await getDoc(
+    doc(db, "usuarios", usuario.uid)
+  );
+
+  if (!usuarioSnap.exists()) {
+    throw new Error(
+      "No se encontró tu usuario en Firestore."
+    );
+  }
+
+  const datos = usuarioSnap.data();
+
+  if (datos.activo !== true) {
+    throw new Error(
+      "Tu cuenta está inactiva."
+    );
+  }
+
+  const rol = texto(datos.rol).toLowerCase();
+
+  if (
+    rol !== "bioquimico" &&
+    rol !== "bioquímico"
+  ) {
+    throw new Error(
+      "Solo el Bioquímico puede validar muestras."
+    );
+  }
+
+  const laboratorioId = texto(
+    datos.laboratorioId
+  );
+
+  if (!laboratorioId) {
+    throw new Error(
+      "Tu usuario no tiene un laboratorio asignado."
+    );
+  }
+
+  return {
+    uid: usuario.uid,
+    laboratorioId,
+  };
+}
+
+function puedeValidarMuestra(
+  muestra: Muestra
+): boolean {
+  return (
+    normalizarEstado(muestra.estado) === "tomada" &&
+    muestra.estadoValidacion === "pendiente"
+  );
+}
+
+function obtenerEstiloEstado(estado: string) {
+  const valor = normalizarEstado(estado);
+
+  if (valor === "rechazada") {
+    return {
+      fondo: "#FEE2E2",
+      texto: "#991B1B",
+    };
+  }
+
+  if (
+    valor === "aceptada" ||
+    valor === "procesada"
+  ) {
+    return {
+      fondo: "#DCFCE7",
+      texto: "#166534",
+    };
+  }
+
+  if (valor === "en_proceso") {
+    return {
+      fondo: "#DBEAFE",
+      texto: "#1D4ED8",
+    };
+  }
+
+  return {
+    fondo: "#FEF3C7",
+    texto: "#92400E",
+  };
+}
+
+function nombreEstado(estado: string): string {
+  const valor = normalizarEstado(estado);
+
+  const nombres: Record<string, string> = {
+    tomada: "Tomada",
+    pendiente: "Pendiente",
+    aceptada: "Aceptada",
+    rechazada: "Rechazada",
+    en_proceso: "En proceso",
+    procesada: "Procesada",
+  };
+
+  return nombres[valor] || estado || "Sin estado";
+}
 
 export default function ValidarMuestrasScreen() {
   const [muestras, setMuestras] = useState<Muestra[]>([]);
 
   const [cargando, setCargando] = useState(true);
+  const [actualizando, setActualizando] = useState(false);
   const [guardando, setGuardando] = useState(false);
 
   const [error, setError] = useState("");
@@ -135,301 +307,325 @@ export default function ValidarMuestrasScreen() {
   const [busqueda, setBusqueda] = useState("");
   const [filtro, setFiltro] = useState<Filtro>("todas");
 
-  const [muestraSeleccionada, setMuestraSeleccionada] =
-    useState<Muestra | null>(null);
+  const [
+    muestraSeleccionada,
+    setMuestraSeleccionada,
+  ] = useState<Muestra | null>(null);
 
   const [mostrarRechazo, setMostrarRechazo] =
+    useState(false);
+
+  const [mostrarFiltros, setMostrarFiltros] =
     useState(false);
 
   const [motivoRechazo, setMotivoRechazo] =
     useState("");
 
-  const [mostrarFiltros, setMostrarFiltros] =
-    useState(false);
-
-  // ====================================================
-  // CARGAR MUESTRAS DEL LABORATORIO
-  // ====================================================
-
-  const cargarMuestras = useCallback(async () => {
-    try {
-      setCargando(true);
-      setError("");
-
-      const usuario = getAuth().currentUser;
-
-      if (!usuario) {
-        throw new Error(
-          "Debes iniciar sesión para consultar las muestras."
-        );
-      }
-
-      // OBTENER LABORATORIO DEL USUARIO
-
-      const usuarioRef = doc(
-        db,
-        "usuarios",
-        usuario.uid
-      );
-
-      const usuarioSnap = await getDoc(usuarioRef);
-
-      if (!usuarioSnap.exists()) {
-        throw new Error(
-          "No se encontró tu usuario en Firestore."
-        );
-      }
-
-      const datosUsuario = usuarioSnap.data();
-
-      if (datosUsuario.activo === false) {
-        throw new Error(
-          "Tu cuenta está desactivada."
-        );
-      }
-
-      const laboratorioId = texto(
-        datosUsuario.laboratorioId
-      );
-
-      if (!laboratorioId) {
-        throw new Error(
-          "Tu usuario no tiene un laboratorio asignado."
-        );
-      }
-
-      // CONSULTAR SOLAMENTE LAS MUESTRAS
-      // DEL LABORATORIO DEL USUARIO
-
-      const muestrasConsulta = query(
-        collection(db, "muestras"),
-        where(
-          "laboratorioId",
-          "==",
-          laboratorioId
-        )
-      );
-
-      const muestrasSnap = await getDocs(
-        muestrasConsulta
-      );
-
-      // CACHÉ PARA EVITAR CONSULTAS REPETIDAS
-
-      const pacientesCache: Record<string, string> = {};
-      const analisisCache: Record<string, string> = {};
-
-      // OBTENER NOMBRE DEL PACIENTE
-
-      const obtenerPaciente = async (
-        pacienteId: string
-      ): Promise<string> => {
-        if (!pacienteId) {
-          return "Sin paciente";
+  const cargarMuestras = useCallback(
+    async (mostrarCarga = true) => {
+      try {
+        if (mostrarCarga) {
+          setCargando(true);
         }
 
-        if (pacientesCache[pacienteId]) {
-          return pacientesCache[pacienteId];
-        }
+        setError("");
 
-        try {
-          const pacienteSnap = await getDoc(
-            doc(db, "pacientes", pacienteId)
-          );
+        const sesion =
+          await obtenerSesionBioquimico();
 
-          if (!pacienteSnap.exists()) {
+        const muestrasConsulta = query(
+          collection(db, "muestras"),
+          where(
+            "laboratorioId",
+            "==",
+            sesion.laboratorioId
+          )
+        );
+
+        const muestrasSnap = await getDocs(
+          muestrasConsulta
+        );
+
+        const pacientesCache = new Map<
+          string,
+          string
+        >();
+
+        const analisisCache = new Map<
+          string,
+          string
+        >();
+
+        const obtenerPaciente = async (
+          pacienteId: string
+        ): Promise<string> => {
+          if (!pacienteId) {
+            return "Sin paciente";
+          }
+
+          const cache =
+            pacientesCache.get(pacienteId);
+
+          if (cache) {
+            return cache;
+          }
+
+          try {
+            const pacienteSnap = await getDoc(
+              doc(db, "pacientes", pacienteId)
+            );
+
+            if (!pacienteSnap.exists()) {
+              return pacienteId;
+            }
+
+            const datos = pacienteSnap.data();
+
+            if (
+              texto(datos.laboratorioId) !==
+              sesion.laboratorioId
+            ) {
+              return "Paciente no disponible";
+            }
+
+            const nombre = texto(
+              datos.nombre || datos.nombres
+            );
+
+            const apellido = texto(
+              datos.apellido || datos.apellidos
+            );
+
+            const nombreCompleto =
+              `${nombre} ${apellido}`.trim() ||
+              pacienteId;
+
+            pacientesCache.set(
+              pacienteId,
+              nombreCompleto
+            );
+
+            return nombreCompleto;
+          } catch {
             return pacienteId;
           }
+        };
 
-          const datos = pacienteSnap.data();
-
-          const nombre = texto(
-            datos.nombre || datos.nombres
-          );
-
-          const apellido = texto(
-            datos.apellido || datos.apellidos
-          );
-
-          const nombreCompleto =
-            `${nombre} ${apellido}`.trim() ||
-            pacienteId;
-
-          pacientesCache[pacienteId] = nombreCompleto;
-
-          return nombreCompleto;
-        } catch {
-          return pacienteId;
-        }
-      };
-
-      // OBTENER NOMBRE DEL ANÁLISIS
-
-      const obtenerAnalisis = async (
-        analisisId: string
-      ): Promise<string> => {
-        if (!analisisId) {
-          return "Sin análisis";
-        }
-
-        if (analisisCache[analisisId]) {
-          return analisisCache[analisisId];
-        }
-
-        try {
-          const analisisSnap = await getDoc(
-            doc(db, "analisis", analisisId)
-          );
-
-          if (!analisisSnap.exists()) {
-            return analisisId;
+        const obtenerAnalisis = async (
+          analisisId: string
+        ): Promise<string> => {
+          if (!analisisId) {
+            return "Sin análisis";
           }
 
-          const datos = analisisSnap.data();
+          const cache =
+            analisisCache.get(analisisId);
 
-          const nombre = texto(
-            datos.nombre ||
-              datos.nombreAnalisis ||
-              datos.descripcion ||
-              analisisId
+          if (cache) {
+            return cache;
+          }
+
+          try {
+            const analisisSnap = await getDoc(
+              doc(db, "analisis", analisisId)
+            );
+
+            if (!analisisSnap.exists()) {
+              return analisisId;
+            }
+
+            const datos = analisisSnap.data();
+
+            if (
+              texto(datos.laboratorioId) !==
+              sesion.laboratorioId
+            ) {
+              return "Análisis no disponible";
+            }
+
+            const nombre =
+              texto(
+                datos.nombre ||
+                  datos.nombreAnalisis ||
+                  datos.descripcion
+              ) || analisisId;
+
+            analisisCache.set(
+              analisisId,
+              nombre
+            );
+
+            return nombre;
+          } catch {
+            return analisisId;
+          }
+        };
+
+        const lista: Muestra[] =
+          await Promise.all(
+            muestrasSnap.docs.map(
+              async (documento) => {
+                const datos = documento.data();
+
+                const pacienteId = texto(
+                  datos.pacienteId
+                );
+
+                const analisisId = texto(
+                  datos.analisisId
+                );
+
+                const paciente =
+                  texto(
+                    datos.pacienteNombre ||
+                      datos.nombrePaciente
+                  ) ||
+                  (await obtenerPaciente(
+                    pacienteId
+                  ));
+
+                const analisis =
+                  texto(
+                    datos.analisisNombre ||
+                      datos.nombreAnalisis
+                  ) ||
+                  (await obtenerAnalisis(
+                    analisisId
+                  ));
+
+                const estado = normalizarEstado(
+                  datos.estado || "tomada"
+                );
+
+                const estadoValidacion =
+                  normalizarEstado(
+                    datos.estadoValidacion ||
+                      "pendiente"
+                  );
+
+                const validacion:
+                  EstadoValidacion =
+                  estadoValidacion === "aceptada" ||
+                  estadoValidacion === "rechazada"
+                    ? estadoValidacion
+                    : "pendiente";
+
+                return {
+                  id: documento.id,
+
+                  codigo:
+                    texto(
+                      datos.codigo ||
+                        datos.codigoMuestra
+                    ) || documento.id,
+
+                  pacienteId,
+                  paciente,
+
+                  ordenId: texto(
+                    datos.ordenId
+                  ),
+
+                  analisisId,
+                  analisis,
+
+                  tipoMuestra:
+                    texto(
+                      datos.tipoMuestra ||
+                        datos.tipo
+                    ) || "-",
+
+                  estado,
+
+                  estadoValidacion: validacion,
+
+                  aceptada:
+                    datos.aceptada === true,
+
+                  laboratorioId:
+                    sesion.laboratorioId,
+
+                  fechaToma: obtenerFecha(
+                    datos.fechaToma ||
+                      datos.fechaRegistro
+                  ),
+
+                  motivoRechazo: texto(
+                    datos.motivoRechazo
+                  ),
+
+                  validadoPor: texto(
+                    datos.validadoPor
+                  ),
+                };
+              }
+            )
           );
 
-          analisisCache[analisisId] = nombre;
+        lista.sort((a, b) =>
+          b.codigo.localeCompare(a.codigo)
+        );
 
-          return nombre;
-        } catch {
-          return analisisId;
-        }
-      };
+        setMuestras(lista);
+      } catch (e: unknown) {
+        setError(
+          obtenerMensajeError(e)
+        );
 
-      // CONSTRUIR LISTA DE MUESTRAS
-
-      const lista: Muestra[] = await Promise.all(
-        muestrasSnap.docs.map(async (documento) => {
-          const datos = documento.data();
-
-          const pacienteId = texto(
-            datos.pacienteId
-          );
-
-          const analisisId = texto(
-            datos.analisisId
-          );
-
-          const nombrePaciente =
-            texto(
-              datos.pacienteNombre ||
-                datos.nombrePaciente ||
-                datos.paciente
-            ) ||
-            (await obtenerPaciente(pacienteId));
-
-          const nombreAnalisis =
-            texto(
-              datos.analisisNombre ||
-                datos.nombreAnalisis
-            ) ||
-            (await obtenerAnalisis(analisisId));
-
-          return {
-            id: documento.id,
-
-            codigo: texto(
-              datos.codigo ||
-                datos.codigoMuestra ||
-                documento.id
-            ),
-
-            pacienteId,
-
-            paciente: nombrePaciente,
-
-            ordenId: texto(
-              datos.ordenId
-            ),
-
-            analisisId,
-
-            analisis: nombreAnalisis,
-
-            tipoMuestra: texto(
-              datos.tipoMuestra ||
-                datos.tipo ||
-                "-"
-            ),
-
-            estado: texto(
-              datos.estado || "tomada"
-            ),
-
-            laboratorioId,
-
-            fechaToma: obtenerFecha(
-              datos.fechaToma ||
-                datos.fechaRegistro
-            ),
-
-            motivoRechazo: texto(
-              datos.motivoRechazo
-            ),
-          };
-        })
-      );
-
-      // ORDENAR POR CÓDIGO
-
-      lista.sort((a, b) =>
-        b.codigo.localeCompare(a.codigo)
-      );
-
-      setMuestras(lista);
-    } catch (e: unknown) {
-      const mensaje =
-        e instanceof Error
-          ? e.message
-          : "No se pudieron cargar las muestras.";
-
-      setError(mensaje);
-      setMuestras([]);
-    } finally {
-      setCargando(false);
-    }
-  }, []);
+        setMuestras([]);
+      } finally {
+        setCargando(false);
+        setActualizando(false);
+      }
+    },
+    []
+  );
 
   useEffect(() => {
-    cargarMuestras();
+    void cargarMuestras();
   }, [cargarMuestras]);
 
-  // ====================================================
-  // CONTADORES
-  // ====================================================
+  const actualizar = useCallback(async () => {
+    setActualizando(true);
+    await cargarMuestras(false);
+  }, [cargarMuestras]);
 
   const total = muestras.length;
 
-  const pendientes = muestras.filter(
-    (muestra) =>
-      normalizarEstado(muestra.estado) ===
-      "tomada"
-  ).length;
+  const pendientes = useMemo(
+    () =>
+      muestras.filter(
+        puedeValidarMuestra
+      ).length,
+    [muestras]
+  );
 
-  const aceptadas = muestras.filter(
-    (muestra) =>
-      normalizarEstado(muestra.estado) ===
-      "aceptada"
-  ).length;
+  const aceptadas = useMemo(
+    () =>
+      muestras.filter(
+        (muestra) =>
+          muestra.estadoValidacion ===
+          "aceptada"
+      ).length,
+    [muestras]
+  );
 
-  const rechazadas = muestras.filter(
-    (muestra) =>
-      normalizarEstado(muestra.estado) ===
-      "rechazada"
-  ).length;
+  const rechazadas = useMemo(
+    () =>
+      muestras.filter(
+        (muestra) =>
+          muestra.estadoValidacion ===
+          "rechazada"
+      ).length,
+    [muestras]
+  );
 
-  // ====================================================
-  // BUSCADOR Y FILTROS
-  // ====================================================
+  const muestrasFiltradas = useMemo(() => {
+    const termino = busqueda
+      .trim()
+      .toLowerCase();
 
-  const muestrasFiltradas = muestras.filter(
-    (muestra) => {
+    return muestras.filter((muestra) => {
       const contenido = [
         muestra.codigo,
         muestra.paciente,
@@ -438,55 +634,72 @@ export default function ValidarMuestrasScreen() {
         muestra.analisis,
         muestra.analisisId,
         muestra.tipoMuestra,
+        muestra.estado,
+        muestra.estadoValidacion,
       ]
         .join(" ")
         .toLowerCase();
 
-      const coincideBusqueda = contenido.includes(
-        busqueda.trim().toLowerCase()
-      );
-
-      const estado = normalizarEstado(
-        muestra.estado
-      );
-
-      let coincideFiltro = true;
-
-      if (filtro === "pendientes") {
-        coincideFiltro = estado === "tomada";
+      if (
+        termino &&
+        !contenido.includes(termino)
+      ) {
+        return false;
       }
 
-      if (filtro === "aceptadas") {
-        coincideFiltro = estado === "aceptada";
+      if (
+        filtro === "pendientes" &&
+        !puedeValidarMuestra(muestra)
+      ) {
+        return false;
       }
 
-      if (filtro === "rechazadas") {
-        coincideFiltro = estado === "rechazada";
+      if (
+        filtro === "aceptadas" &&
+        muestra.estadoValidacion !==
+          "aceptada"
+      ) {
+        return false;
       }
 
-      return coincideBusqueda && coincideFiltro;
+      if (
+        filtro === "rechazadas" &&
+        muestra.estadoValidacion !==
+          "rechazada"
+      ) {
+        return false;
+      }
+
+      return true;
+    });
+  }, [muestras, busqueda, filtro]);
+
+  const ejecutarValidacion = async (
+    muestra: Muestra,
+    accion: "aceptar" | "rechazar",
+    motivo = ""
+  ): Promise<void> => {
+    if (guardando) {
+      return;
     }
-  );
 
-  // ====================================================
-  // ACEPTAR MUESTRA
-  // ====================================================
+    if (
+      accion === "rechazar" &&
+      !motivo.trim()
+    ) {
+      mostrarAviso(
+        "Motivo obligatorio",
+        "Debes indicar el motivo del rechazo."
+      );
 
-  const aceptarMuestra = async (
-    muestra: Muestra
-  ) => {
-    if (guardando) return;
+      return;
+    }
 
     try {
       setGuardando(true);
 
-      const usuario = getAuth().currentUser;
-
-      if (!usuario) {
-        throw new Error(
-          "Debes iniciar sesión."
-        );
-      }
+      const sesion =
+        await obtenerSesionBioquimico();
 
       const muestraRef = doc(
         db,
@@ -496,9 +709,9 @@ export default function ValidarMuestrasScreen() {
 
       await runTransaction(
         db,
-        async (transaction) => {
+        async (transaccion) => {
           const muestraSnap =
-            await transaction.get(muestraRef);
+            await transaccion.get(muestraRef);
 
           if (!muestraSnap.exists()) {
             throw new Error(
@@ -508,122 +721,60 @@ export default function ValidarMuestrasScreen() {
 
           const datos = muestraSnap.data();
 
-          const estadoActual =
-            normalizarEstado(
-              texto(datos.estado)
-            );
-
-          if (estadoActual !== "tomada") {
+          if (
+            texto(datos.laboratorioId) !==
+            sesion.laboratorioId
+          ) {
             throw new Error(
-              "Solo puedes aceptar muestras en estado tomada."
+              "Esta muestra pertenece a otro laboratorio."
             );
           }
-
-          transaction.update(muestraRef, {
-            estado: "aceptada",
-            estadoValidacion: "aceptada",
-            validadoPor: usuario.uid,
-            fechaValidacion: serverTimestamp(),
-            fechaActualizacion: serverTimestamp(),
-            motivoRechazo: "",
-          });
-        }
-      );
-
-      await cargarMuestras();
-
-      mostrarAviso(
-        "Correcto",
-        "La muestra fue aceptada correctamente."
-      );
-    } catch (e: unknown) {
-      mostrarAviso(
-        "Error",
-        e instanceof Error
-          ? e.message
-          : "No se pudo aceptar la muestra."
-      );
-    } finally {
-      setGuardando(false);
-    }
-  };
-
-  // ====================================================
-  // ABRIR RECHAZO
-  // ====================================================
-
-  const abrirRechazo = (muestra: Muestra) => {
-    setMuestraSeleccionada(muestra);
-    setMotivoRechazo("");
-    setMostrarRechazo(true);
-  };
-
-  // ====================================================
-  // RECHAZAR MUESTRA
-  // ====================================================
-
-  const rechazarMuestra = async () => {
-    if (!muestraSeleccionada || guardando) {
-      return;
-    }
-
-    if (!motivoRechazo.trim()) {
-      mostrarAviso(
-        "Motivo obligatorio",
-        "Debes indicar el motivo del rechazo."
-      );
-      return;
-    }
-
-    try {
-      setGuardando(true);
-
-      const usuario = getAuth().currentUser;
-
-      if (!usuario) {
-        throw new Error(
-          "Debes iniciar sesión."
-        );
-      }
-
-      const muestraRef = doc(
-        db,
-        "muestras",
-        muestraSeleccionada.id
-      );
-
-      await runTransaction(
-        db,
-        async (transaction) => {
-          const muestraSnap =
-            await transaction.get(muestraRef);
-
-          if (!muestraSnap.exists()) {
-            throw new Error(
-              "La muestra ya no existe."
-            );
-          }
-
-          const datos = muestraSnap.data();
 
           const estadoActual =
             normalizarEstado(
-              texto(datos.estado)
+              datos.estado || "tomada"
             );
 
-          if (estadoActual !== "tomada") {
+          const validacionActual =
+            normalizarEstado(
+              datos.estadoValidacion ||
+                "pendiente"
+            );
+
+          if (
+            estadoActual !== "tomada" ||
+            validacionActual !== "pendiente"
+          ) {
             throw new Error(
-              "Solo puedes rechazar muestras en estado tomada."
+              "Esta muestra ya fue validada o cambió de estado."
             );
           }
 
-          transaction.update(muestraRef, {
-            estado: "rechazada",
-            estadoValidacion: "rechazada",
-            motivoRechazo: motivoRechazo.trim(),
-            validadoPor: usuario.uid,
-            fechaValidacion: serverTimestamp(),
-            fechaActualizacion: serverTimestamp(),
+          const aceptada =
+            accion === "aceptar";
+
+          transaccion.update(muestraRef, {
+            estado: aceptada
+              ? "aceptada"
+              : "rechazada",
+
+            estadoValidacion: aceptada
+              ? "aceptada"
+              : "rechazada",
+
+            aceptada,
+
+            motivoRechazo: aceptada
+              ? ""
+              : motivo.trim(),
+
+            validadoPor: sesion.uid,
+
+            fechaValidacion:
+              serverTimestamp(),
+
+            fechaActualizacion:
+              serverTimestamp(),
           });
         }
       );
@@ -632,153 +783,201 @@ export default function ValidarMuestrasScreen() {
       setMuestraSeleccionada(null);
       setMotivoRechazo("");
 
-      await cargarMuestras();
+      await cargarMuestras(false);
 
       mostrarAviso(
-        "Correcto",
-        "La muestra fue rechazada correctamente."
+        "Operación exitosa",
+        accion === "aceptar"
+          ? "La muestra fue aceptada correctamente."
+          : "La muestra fue rechazada correctamente."
       );
     } catch (e: unknown) {
       mostrarAviso(
         "Error",
-        e instanceof Error
-          ? e.message
-          : "No se pudo rechazar la muestra."
+        obtenerMensajeError(e)
       );
     } finally {
       setGuardando(false);
     }
   };
 
-  // ====================================================
-  // MOSTRAR ESTADO
-  // ====================================================
+  const abrirRechazo = (
+    muestra: Muestra
+  ) => {
+    setMuestraSeleccionada(muestra);
+    setMotivoRechazo("");
+    setMostrarRechazo(true);
+  };
 
-  const mostrarEstado = (estado: string) => {
-    const valor = normalizarEstado(estado);
-
-    if (valor === "tomada") {
-      return (
-        <View style={styles.estadoTomada}>
-          <Text style={styles.textoTomada}>
-            tomada
-          </Text>
-        </View>
-      );
+  const confirmarRechazo = async () => {
+    if (!muestraSeleccionada) {
+      return;
     }
 
-    if (valor === "aceptada") {
-      return (
-        <View style={styles.estadoAceptada}>
-          <Text style={styles.textoAceptada}>
-            aceptada
-          </Text>
-        </View>
-      );
-    }
+    await ejecutarValidacion(
+      muestraSeleccionada,
+      "rechazar",
+      motivoRechazo
+    );
+  };
 
-    if (valor === "rechazada") {
-      return (
-        <View style={styles.estadoRechazada}>
-          <Text style={styles.textoRechazada}>
-            rechazada
-          </Text>
-        </View>
-      );
-    }
+  const mostrarEstado = (
+    estado: string
+  ) => {
+    const colores =
+      obtenerEstiloEstado(estado);
 
     return (
-      <View style={styles.estadoProcesada}>
-        <Text style={styles.textoProcesada}>
-          {estado}
+      <View
+        style={[
+          styles.estadoBadge,
+          {
+            backgroundColor:
+              colores.fondo,
+          },
+        ]}
+      >
+        <Text
+          style={[
+            styles.estadoTexto,
+            {
+              color: colores.texto,
+            },
+          ]}
+        >
+          {nombreEstado(estado)}
         </Text>
       </View>
     );
   };
 
-  // ====================================================
-  // INTERFAZ
-  // ====================================================
-
   return (
     <View style={styles.contenedor}>
       <ScrollView
-        contentContainerStyle={styles.contenido}
+        contentContainerStyle={
+          styles.contenido
+        }
+        keyboardShouldPersistTaps="handled"
+        refreshControl={
+          <RefreshControl
+            refreshing={actualizando}
+            onRefresh={actualizar}
+            tintColor="#2563EB"
+            colors={["#2563EB"]}
+          />
+        }
       >
-        {/* ENCABEZADO SIN SPRINT NI HU */}
-
         <View style={styles.encabezado}>
-          <View style={styles.encabezadoTexto}>
+          <View
+            style={styles.encabezadoTexto}
+          >
             <Text style={styles.titulo}>
               Recepción y validación de muestras
             </Text>
 
-            <Text style={styles.subtitulo}>
-              Verifica que las muestras recibidas sean
-              aptas antes de realizar el análisis.
+            <Text
+              style={styles.subtitulo}
+            >
+              Verifica que las muestras
+              recibidas sean aptas antes
+              de realizar el análisis.
             </Text>
           </View>
 
           <Pressable
             style={styles.botonVolver}
-            onPress={() => router.replace("/muestras")}
+            onPress={() =>
+              router.replace("/muestras")
+            }
           >
-            <Text style={styles.textoVolver}>
+            <Text
+              style={styles.textoVolver}
+            >
               Volver
             </Text>
           </Pressable>
         </View>
 
-        {/* CONTADORES */}
-
         <View style={styles.contadores}>
           <View style={styles.contador}>
-            <Text style={styles.contadorTitulo}>
+            <Text
+              style={
+                styles.contadorTitulo
+              }
+            >
               Total de muestras
             </Text>
 
-            <Text style={styles.contadorNumero}>
+            <Text
+              style={
+                styles.contadorNumero
+              }
+            >
               {total}
             </Text>
           </View>
 
           <View style={styles.contador}>
-            <Text style={styles.contadorTitulo}>
+            <Text
+              style={
+                styles.contadorTitulo
+              }
+            >
               Pendientes
             </Text>
 
-            <Text style={styles.contadorNumero}>
+            <Text
+              style={
+                styles.contadorNumero
+              }
+            >
               {pendientes}
             </Text>
           </View>
 
           <View style={styles.contador}>
-            <Text style={styles.contadorTitulo}>
+            <Text
+              style={
+                styles.contadorTitulo
+              }
+            >
               Aceptadas
             </Text>
 
-            <Text style={styles.contadorNumero}>
+            <Text
+              style={
+                styles.contadorNumero
+              }
+            >
               {aceptadas}
             </Text>
           </View>
 
           <View style={styles.contador}>
-            <Text style={styles.contadorTitulo}>
+            <Text
+              style={
+                styles.contadorTitulo
+              }
+            >
               Rechazadas
             </Text>
 
-            <Text style={styles.contadorNumero}>
+            <Text
+              style={
+                styles.contadorNumero
+              }
+            >
               {rechazadas}
             </Text>
           </View>
         </View>
 
-        {/* PANEL PRINCIPAL */}
-
         <View style={styles.panel}>
-          {/* BUSCADOR Y FILTROS */}
-
-          <View style={styles.barraHerramientas}>
+          <View
+            style={
+              styles.barraHerramientas
+            }
+          >
             <TextInput
               style={styles.buscador}
               placeholder="Buscar por código, paciente, orden o análisis..."
@@ -788,63 +987,89 @@ export default function ValidarMuestrasScreen() {
             />
 
             <Pressable
-              style={styles.selectorFiltro}
+              style={
+                styles.selectorFiltro
+              }
               onPress={() =>
                 setMostrarFiltros(true)
               }
             >
-              <Text style={styles.textoFiltro}>
-                {filtro === "todas"
-                  ? "Todas las muestras"
-                  : filtro === "pendientes"
-                  ? "Pendientes"
-                  : filtro === "aceptadas"
-                  ? "Aceptadas"
-                  : "Rechazadas"}
+              <Text
+                style={
+                  styles.textoFiltro
+                }
+              >
+                {OPCIONES_FILTRO.find(
+                  (item) =>
+                    item.valor === filtro
+                )?.nombre ||
+                  "Todas las muestras"}
               </Text>
 
-              <Text style={styles.flechaFiltro}>
+              <Text
+                style={
+                  styles.flechaFiltro
+                }
+              >
                 ⌄
               </Text>
             </Pressable>
 
             <Pressable
-              style={styles.botonActualizar}
-              onPress={cargarMuestras}
-              disabled={cargando}
+              style={
+                styles.botonActualizar
+              }
+              onPress={actualizar}
+              disabled={
+                cargando || guardando
+              }
             >
-              <Text style={styles.textoBlanco}>
+              <Text
+                style={styles.textoBlanco}
+              >
                 Actualizar
               </Text>
             </Pressable>
           </View>
 
-          {/* ERRORES */}
-
           {error !== "" && (
-            <View style={styles.errorCaja}>
-              <Text style={styles.errorTexto}>
+            <View
+              style={styles.errorCaja}
+            >
+              <Text
+                style={
+                  styles.errorTexto
+                }
+              >
                 {error}
               </Text>
 
               <Pressable
-                style={styles.botonReintentar}
-                onPress={cargarMuestras}
+                style={
+                  styles.botonReintentar
+                }
+                onPress={() =>
+                  cargarMuestras()
+                }
               >
-                <Text style={styles.textoBlanco}>
+                <Text
+                  style={
+                    styles.textoBlanco
+                  }
+                >
                   Reintentar
                 </Text>
               </Pressable>
             </View>
           )}
 
-          {/* TABLA */}
-
           {cargando ? (
             <ActivityIndicator
               size="large"
               color="#2563EB"
-              style={{ marginVertical: 30 }}
+              style={{
+                marginVertical: 30,
+              }}
             />
           ) : (
             <ScrollView
@@ -852,9 +1077,11 @@ export default function ValidarMuestrasScreen() {
               showsHorizontalScrollIndicator
             >
               <View style={styles.tabla}>
-                {/* CABECERA */}
-
-                <View style={styles.cabeceraTabla}>
+                <View
+                  style={
+                    styles.cabeceraTabla
+                  }
+                >
                   <Text
                     style={[
                       styles.cabeceraTexto,
@@ -915,7 +1142,7 @@ export default function ValidarMuestrasScreen() {
                       styles.colEstado,
                     ]}
                   >
-                    Estado
+                    Validación
                   </Text>
 
                   <Text
@@ -937,22 +1164,19 @@ export default function ValidarMuestrasScreen() {
                   </Text>
                 </View>
 
-                {/* FILAS */}
-
                 {muestrasFiltradas.map(
                   (muestra) => {
-                    const estado =
-                      normalizarEstado(
-                        muestra.estado
-                      );
-
                     const puedeValidar =
-                      estado === "tomada";
+                      puedeValidarMuestra(
+                        muestra
+                      );
 
                     return (
                       <View
                         key={muestra.id}
-                        style={styles.fila}
+                        style={
+                          styles.fila
+                        }
                       >
                         <Text
                           style={[
@@ -997,7 +1221,9 @@ export default function ValidarMuestrasScreen() {
                             styles.colTipo,
                           ]}
                         >
-                          {muestra.tipoMuestra}
+                          {
+                            muestra.tipoMuestra
+                          }
                         </Text>
 
                         <Text
@@ -1009,21 +1235,25 @@ export default function ValidarMuestrasScreen() {
                           {muestra.fechaToma}
                         </Text>
 
-                        <View style={styles.colEstado}>
+                        <View
+                          style={
+                            styles.colEstado
+                          }
+                        >
+                          {mostrarEstado(
+                            muestra.estadoValidacion
+                          )}
+                        </View>
+
+                        <View
+                          style={
+                            styles.colProcesamiento
+                          }
+                        >
                           {mostrarEstado(
                             muestra.estado
                           )}
                         </View>
-
-                        <Text
-                          style={[
-                            styles.celda,
-                            styles.procesamiento,
-                            styles.colProcesamiento,
-                          ]}
-                        >
-                          No habilitada
-                        </Text>
 
                         <View
                           style={[
@@ -1034,13 +1264,18 @@ export default function ValidarMuestrasScreen() {
                           {puedeValidar ? (
                             <>
                               <Pressable
-                                style={
-                                  styles.botonAceptar
+                                style={[
+                                  styles.botonAceptar,
+                                  guardando &&
+                                    styles.botonDeshabilitado,
+                                ]}
+                                disabled={
+                                  guardando
                                 }
-                                disabled={guardando}
                                 onPress={() =>
-                                  aceptarMuestra(
-                                    muestra
+                                  ejecutarValidacion(
+                                    muestra,
+                                    "aceptar"
                                   )
                                 }
                               >
@@ -1054,10 +1289,14 @@ export default function ValidarMuestrasScreen() {
                               </Pressable>
 
                               <Pressable
-                                style={
-                                  styles.botonRechazar
+                                style={[
+                                  styles.botonRechazar,
+                                  guardando &&
+                                    styles.botonDeshabilitado,
+                                ]}
+                                disabled={
+                                  guardando
                                 }
-                                disabled={guardando}
                                 onPress={() =>
                                   abrirRechazo(
                                     muestra
@@ -1073,7 +1312,7 @@ export default function ValidarMuestrasScreen() {
                                 </Text>
                               </Pressable>
                             </>
-                          ) : estado ===
+                          ) : muestra.estadoValidacion ===
                             "rechazada" ? (
                             <Text
                               style={
@@ -1089,7 +1328,7 @@ export default function ValidarMuestrasScreen() {
                                 styles.sinAcciones
                               }
                             >
-                              Sin acciones
+                              Ya validada
                             </Text>
                           )}
                         </View>
@@ -1098,18 +1337,41 @@ export default function ValidarMuestrasScreen() {
                   }
                 )}
 
-                {muestrasFiltradas.length === 0 && (
-                  <Text style={styles.sinDatos}>
-                    No se encontraron muestras.
+                {muestrasFiltradas.length ===
+                  0 && (
+                  <Text
+                    style={
+                      styles.sinDatos
+                    }
+                  >
+                    No se encontraron
+                    muestras.
                   </Text>
                 )}
               </View>
             </ScrollView>
           )}
         </View>
-      </ScrollView>
 
-      {/* MODAL DE FILTROS */}
+        <Pressable
+          style={
+            styles.botonSeguimiento
+          }
+          onPress={() =>
+            router.push(
+              "/seguimiento-muestras"
+            )
+          }
+        >
+          <Text
+            style={
+              styles.textoSeguimiento
+            }
+          >
+            Ir a seguimiento de muestras
+          </Text>
+        </Pressable>
+      </ScrollView>
 
       <Modal
         visible={mostrarFiltros}
@@ -1119,41 +1381,58 @@ export default function ValidarMuestrasScreen() {
           setMostrarFiltros(false)
         }
       >
-        <View style={styles.fondoModal}>
+        <View
+          style={styles.fondoModal}
+        >
           <View style={styles.modal}>
-            <Text style={styles.modalTitulo}>
+            <Text
+              style={
+                styles.modalTitulo
+              }
+            >
               Filtrar muestras
             </Text>
 
-            {(
-              [
-                ["todas", "Todas las muestras"],
-                ["pendientes", "Pendientes"],
-                ["aceptadas", "Aceptadas"],
-                ["rechazadas", "Rechazadas"],
-              ] as [Filtro, string][]
-            ).map(([valor, nombre]) => (
-              <Pressable
-                key={valor}
-                style={styles.opcionFiltro}
-                onPress={() => {
-                  setFiltro(valor);
-                  setMostrarFiltros(false);
-                }}
-              >
-                <Text style={styles.opcionTexto}>
-                  {nombre}
-                </Text>
-              </Pressable>
-            ))}
+            {OPCIONES_FILTRO.map(
+              (opcion) => (
+                <Pressable
+                  key={opcion.valor}
+                  style={
+                    styles.opcionFiltro
+                  }
+                  onPress={() => {
+                    setFiltro(
+                      opcion.valor
+                    );
+                    setMostrarFiltros(
+                      false
+                    );
+                  }}
+                >
+                  <Text
+                    style={
+                      styles.opcionTexto
+                    }
+                  >
+                    {opcion.nombre}
+                  </Text>
+                </Pressable>
+              )
+            )}
 
             <Pressable
-              style={styles.botonCerrar}
+              style={
+                styles.botonCerrar
+              }
               onPress={() =>
                 setMostrarFiltros(false)
               }
             >
-              <Text style={styles.textoBlanco}>
+              <Text
+                style={
+                  styles.textoBlanco
+                }
+              >
                 Cerrar
               </Text>
             </Pressable>
@@ -1161,69 +1440,122 @@ export default function ValidarMuestrasScreen() {
         </View>
       </Modal>
 
-      {/* MODAL RECHAZAR */}
-
       <Modal
         visible={mostrarRechazo}
         transparent
         animationType="fade"
-        onRequestClose={() =>
-          setMostrarRechazo(false)
-        }
+        onRequestClose={() => {
+          if (!guardando) {
+            setMostrarRechazo(false);
+          }
+        }}
       >
-        <View style={styles.fondoModal}>
+        <View
+          style={styles.fondoModal}
+        >
           <View style={styles.modal}>
-            <Text style={styles.modalTitulo}>
+            <Text
+              style={
+                styles.modalTitulo
+              }
+            >
               Rechazar muestra
             </Text>
 
-            <Text style={styles.modalDescripcion}>
+            <Text
+              style={
+                styles.modalDescripcion
+              }
+            >
               Código:{" "}
-              {muestraSeleccionada?.codigo}
+              {
+                muestraSeleccionada?.codigo
+              }
             </Text>
 
-            <Text style={styles.modalDescripcion}>
+            <Text
+              style={
+                styles.modalDescripcion
+              }
+            >
               Paciente:{" "}
-              {muestraSeleccionada?.paciente}
+              {
+                muestraSeleccionada?.paciente
+              }
             </Text>
 
-            <Text style={styles.label}>
-              Motivo del rechazo
+            <Text
+              style={styles.label}
+            >
+              Motivo del rechazo *
             </Text>
 
             <TextInput
-              style={styles.inputMotivo}
+              style={
+                styles.inputMotivo
+              }
               placeholder="Escribe el motivo del rechazo..."
               placeholderTextColor="#94A3B8"
               multiline
               value={motivoRechazo}
-              onChangeText={setMotivoRechazo}
+              onChangeText={
+                setMotivoRechazo
+              }
+              editable={!guardando}
             />
 
-            <View style={styles.botonesModal}>
+            <View
+              style={
+                styles.botonesModal
+              }
+            >
               <Pressable
-                style={styles.botonCancelar}
-                disabled={guardando}
-                onPress={() =>
-                  setMostrarRechazo(false)
+                style={
+                  styles.botonCancelar
                 }
+                disabled={guardando}
+                onPress={() => {
+                  setMostrarRechazo(
+                    false
+                  );
+                  setMuestraSeleccionada(
+                    null
+                  );
+                  setMotivoRechazo(
+                    ""
+                  );
+                }}
               >
-                <Text style={styles.textoCancelar}>
+                <Text
+                  style={
+                    styles.textoCancelar
+                  }
+                >
                   Cancelar
                 </Text>
               </Pressable>
 
               <Pressable
-                style={styles.botonRechazar}
+                style={[
+                  styles.botonRechazar,
+                  guardando &&
+                    styles.botonDeshabilitado,
+                ]}
                 disabled={guardando}
-                onPress={rechazarMuestra}
+                onPress={
+                  confirmarRechazo
+                }
               >
                 {guardando ? (
                   <ActivityIndicator
                     color="#FFFFFF"
                   />
                 ) : (
-                  <Text style={styles.textoBlanco}>
+                  <Text
+                    style={
+                      styles.textoBlanco
+                    }
+                  >
                     Confirmar rechazo
                   </Text>
                 )}
@@ -1235,10 +1567,6 @@ export default function ValidarMuestrasScreen() {
     </View>
   );
 }
-
-// ======================================================
-// ESTILOS
-// ======================================================
 
 const styles = StyleSheet.create({
   contenedor: {
@@ -1273,6 +1601,7 @@ const styles = StyleSheet.create({
   subtitulo: {
     fontSize: 14,
     color: "#64748B",
+    lineHeight: 21,
   },
 
   botonVolver: {
@@ -1341,10 +1670,12 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     color: "#0F172A",
     backgroundColor: "#FFFFFF",
+    fontSize: 12,
   },
 
   selectorFiltro: {
     minWidth: 160,
+    minHeight: 44,
     borderWidth: 1,
     borderColor: "#CBD5E1",
     borderRadius: 8,
@@ -1405,7 +1736,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     borderBottomWidth: 1,
     borderBottomColor: "#E2E8F0",
-    minHeight: 62,
+    minHeight: 65,
   },
 
   celda: {
@@ -1459,65 +1790,16 @@ const styles = StyleSheet.create({
     gap: 8,
   },
 
-  estadoTomada: {
+  estadoBadge: {
     alignSelf: "flex-start",
-    backgroundColor: "#FEF3C7",
     borderRadius: 20,
     paddingHorizontal: 12,
     paddingVertical: 8,
   },
 
-  textoTomada: {
-    color: "#92400E",
-    fontWeight: "800",
+  estadoTexto: {
     fontSize: 11,
-  },
-
-  estadoAceptada: {
-    alignSelf: "flex-start",
-    backgroundColor: "#DCFCE7",
-    borderRadius: 20,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-
-  textoAceptada: {
-    color: "#166534",
     fontWeight: "800",
-    fontSize: 11,
-  },
-
-  estadoRechazada: {
-    alignSelf: "flex-start",
-    backgroundColor: "#FEE2E2",
-    borderRadius: 20,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-
-  textoRechazada: {
-    color: "#991B1B",
-    fontWeight: "800",
-    fontSize: 11,
-  },
-
-  estadoProcesada: {
-    alignSelf: "flex-start",
-    backgroundColor: "#E2E8F0",
-    borderRadius: 20,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-
-  textoProcesada: {
-    color: "#334155",
-    fontWeight: "800",
-    fontSize: 11,
-  },
-
-  procesamiento: {
-    color: "#DC2626",
-    fontWeight: "700",
   },
 
   botonAceptar: {
@@ -1532,6 +1814,10 @@ const styles = StyleSheet.create({
     borderRadius: 7,
     paddingHorizontal: 14,
     paddingVertical: 11,
+  },
+
+  botonDeshabilitado: {
+    opacity: 0.6,
   },
 
   motivoTexto: {
@@ -1571,6 +1857,20 @@ const styles = StyleSheet.create({
     padding: 11,
     borderRadius: 7,
     alignItems: "center",
+  },
+
+  botonSeguimiento: {
+    backgroundColor: "#17365D",
+    borderRadius: 9,
+    padding: 15,
+    alignItems: "center",
+    marginTop: 15,
+  },
+
+  textoSeguimiento: {
+    color: "#FFFFFF",
+    fontWeight: "800",
+    fontSize: 13,
   },
 
   fondoModal: {
