@@ -2,6 +2,7 @@
 import React, {
   useCallback,
   useEffect,
+  useMemo,
   useState,
 } from "react";
 
@@ -36,30 +37,128 @@ type Pestana =
   | "notificaciones"
   | "auditoria";
 
-const pestanas: { id: Pestana; nombre: string }[] = [
+const pestanas: {
+  id: Pestana;
+  nombre: string;
+}[] = [
   { id: "dashboard", nombre: "Dashboard" },
   { id: "reportes", nombre: "Reportes" },
   { id: "notificaciones", nombre: "Notificaciones" },
   { id: "auditoria", nombre: "Auditoría" },
 ];
 
-const tipos: TipoReporte[] = [
-  "pacientes",
-  "analisis",
-  "ventas",
-  "ordenes",
-  "resultados",
+const tipos: {
+  id: TipoReporte;
+  nombre: string;
+}[] = [
+  { id: "pacientes", nombre: "Pacientes" },
+  { id: "analisis", nombre: "Análisis" },
+  { id: "ventas", nombre: "Ventas" },
+  { id: "ordenes", nombre: "Órdenes" },
+  { id: "resultados", nombre: "Resultados" },
 ];
+
+function normalizarEstado(valor: unknown): string {
+  return texto(valor).trim().toLowerCase();
+}
+
+function presentarEstado(valor: string): string {
+  const limpio = valor
+    .replace(/_/g, " ")
+    .replace(/-/g, " ");
+
+  if (!limpio) {
+    return "";
+  }
+
+  return limpio
+    .charAt(0)
+    .toUpperCase() + limpio.slice(1);
+}
+
+function nombrePaciente(registro: Registro): string {
+  const nombreCompleto = texto(
+    registro.nombreCompleto
+  );
+
+  if (nombreCompleto) {
+    return nombreCompleto;
+  }
+
+  const nombres = texto(
+    registro.nombres ?? registro.nombre
+  );
+
+  const apellidos = texto(
+    registro.apellidos ?? registro.apellido
+  );
+
+  const completo = [nombres, apellidos]
+    .filter(Boolean)
+    .join(" ");
+
+  return completo || "Paciente sin nombre";
+}
+
+function tituloReporte(
+  registro: Registro,
+  tipo: TipoReporte
+): string {
+  if (tipo === "pacientes") {
+    return nombrePaciente(registro);
+  }
+
+  if (tipo === "analisis") {
+    return (
+      texto(registro.nombreAnalisis) ||
+      texto(registro.nombre) ||
+      texto(registro.codigo) ||
+      "Análisis sin nombre"
+    );
+  }
+
+  if (tipo === "resultados") {
+    return (
+      texto(registro.analisisNombre) ||
+      texto(registro.nombreAnalisis) ||
+      texto(registro.pacienteNombre) ||
+      "Resultado clínico"
+    );
+  }
+
+  if (tipo === "ventas") {
+    return (
+      texto(registro.pacienteNombre) ||
+      texto(registro.codigo) ||
+      texto(registro.numeroVenta) ||
+      "Venta registrada"
+    );
+  }
+
+  if (tipo === "ordenes") {
+    return (
+      texto(registro.pacienteNombre) ||
+      texto(registro.codigo) ||
+      texto(registro.numeroOrden) ||
+      "Orden de análisis"
+    );
+  }
+
+  return "Registro";
+}
 
 export default function Sprint3Admin() {
   const [pestana, setPestana] =
     useState<Pestana>("dashboard");
 
   const [tipo, setTipo] =
-    useState<TipoReporte>("ordenes");
+    useState<TipoReporte>("pacientes");
 
-  const [busqueda, setBusqueda] = useState("");
-  const [estado, setEstado] = useState("");
+  const [busqueda, setBusqueda] =
+    useState("");
+
+  const [estado, setEstado] =
+    useState("");
 
   const [resumen, setResumen] =
     useState<ResumenLaboratorio | null>(null);
@@ -67,31 +166,46 @@ export default function Sprint3Admin() {
   const [registros, setRegistros] =
     useState<Registro[]>([]);
 
-  const [cargando, setCargando] = useState(true);
-  const [error, setError] = useState("");
-  const [marcando, setMarcando] = useState("");
+  const [cargando, setCargando] =
+    useState(true);
 
+  const [error, setError] =
+    useState("");
+
+  const [marcando, setMarcando] =
+    useState("");
+
+  // Cargar información según la pestaña seleccionada.
   const cargar = useCallback(async () => {
     try {
       setCargando(true);
       setError("");
 
       if (pestana === "dashboard") {
-        const datos = await cargarResumenLaboratorio();
+        const datos =
+          await cargarResumenLaboratorio();
+
         setResumen(datos);
       } else if (pestana === "reportes") {
-        const datos = await cargarReporte(tipo);
+        const datos =
+          await cargarReporte(tipo);
+
         setRegistros(datos);
       } else if (pestana === "notificaciones") {
-        const datos = await cargarNotificaciones();
+        const datos =
+          await cargarNotificaciones();
+
         setRegistros(datos);
       } else {
-        const datos = await cargarAuditoria();
+        const datos =
+          await cargarAuditoria();
+
         setRegistros(datos);
       }
     } catch (e: any) {
       setError(
-        e?.message || "No se pudo cargar la información."
+        e?.message ||
+        "No se pudo cargar la información."
       );
     } finally {
       setCargando(false);
@@ -102,6 +216,7 @@ export default function Sprint3Admin() {
     cargar();
   }, [cargar]);
 
+  // Marcar notificaciones como leídas.
   const marcarLeida = async (id: string) => {
     try {
       setMarcando(id);
@@ -111,39 +226,72 @@ export default function Sprint3Admin() {
       await cargar();
     } catch (e: any) {
       setError(
-        e?.message || "No se pudo actualizar la notificación."
+        e?.message ||
+        "No se pudo actualizar la notificación."
       );
     } finally {
       setMarcando("");
     }
   };
 
-  const filtrados = registros.filter((registro) => {
-    const contenido = Object.values(registro)
-      .map((valor) =>
-        typeof valor === "string" ||
-        typeof valor === "number"
-          ? String(valor)
-          : ""
+  // Obtener los estados reales disponibles
+  // para el reporte actual.
+  const estadosDisponibles = useMemo(() => {
+    if (pestana !== "reportes") {
+      return [];
+    }
+
+    const estados = registros
+      .map((registro) =>
+        normalizarEstado(registro.estado)
       )
-      .join(" ")
-      .toLowerCase();
+      .filter(Boolean);
 
-    const coincideBusqueda = contenido.includes(
-      busqueda.trim().toLowerCase()
+    return Array.from(new Set(estados)).sort(
+      (a, b) => a.localeCompare(b, "es")
     );
+  }, [registros, pestana]);
 
-    const coincideEstado =
-      !estado.trim() ||
-      texto(registro.estado).toLowerCase().includes(
-        estado.trim().toLowerCase()
-      );
+  // Filtrar registros por búsqueda y estado.
+  const filtrados = useMemo(() => {
+    const busquedaNormalizada =
+      busqueda.trim().toLowerCase();
 
-    return coincideBusqueda && coincideEstado;
-  });
+    return registros.filter((registro) => {
+      const contenido = Object.values(registro)
+        .map((valor) => {
+          if (
+            typeof valor === "string" ||
+            typeof valor === "number"
+          ) {
+            return String(valor);
+          }
 
-  const metrica = (titulo: string, valor: string | number) => (
-    <View style={styles.metrica} key={titulo}>
+          return "";
+        })
+        .join(" ")
+        .toLowerCase();
+
+      const coincideBusqueda =
+        !busquedaNormalizada ||
+        contenido.includes(busquedaNormalizada);
+
+      const coincideEstado =
+        estado === "" ||
+        normalizarEstado(registro.estado) === estado;
+
+      return coincideBusqueda && coincideEstado;
+    });
+  }, [registros, busqueda, estado]);
+
+  const metrica = (
+    titulo: string,
+    valor: string | number
+  ) => (
+    <View
+      style={styles.metrica}
+      key={titulo}
+    >
       <Text style={styles.metricaTitulo}>
         {titulo}
       </Text>
@@ -156,7 +304,12 @@ export default function Sprint3Admin() {
 
   return (
     <View style={styles.fondo}>
-      <ScrollView contentContainerStyle={styles.contenido}>
+      <ScrollView
+        contentContainerStyle={styles.contenido}
+        keyboardShouldPersistTaps="handled"
+      >
+        {/* ENCABEZADO */}
+
         <View style={styles.encabezado}>
           <View style={{ flex: 1 }}>
             <Text style={styles.titulo}>
@@ -164,7 +317,8 @@ export default function Sprint3Admin() {
             </Text>
 
             <Text style={styles.subtitulo}>
-              Sprint 3 — Dashboard, reportes y auditoría
+              Consulta los indicadores, reportes
+              y actividades de tu laboratorio.
             </Text>
           </View>
 
@@ -178,17 +332,21 @@ export default function Sprint3Admin() {
           </Pressable>
         </View>
 
+        {/* PESTAÑAS PRINCIPALES */}
+
         <View style={styles.pestanas}>
           {pestanas.map((opcion) => (
             <Pressable
               key={opcion.id}
               style={[
                 styles.pestana,
-                pestana === opcion.id && styles.pestanaActiva,
+                pestana === opcion.id &&
+                  styles.pestanaActiva,
               ]}
               onPress={() => {
                 setBusqueda("");
                 setEstado("");
+                setRegistros([]);
                 setPestana(opcion.id);
               }}
             >
@@ -205,15 +363,21 @@ export default function Sprint3Admin() {
           ))}
         </View>
 
+        {/* ACTUALIZAR DATOS */}
+
         <Pressable
           style={styles.botonGris}
           onPress={cargar}
           disabled={cargando}
         >
           <Text style={styles.textoGris}>
-            Actualizar datos
+            {cargando
+              ? "Cargando..."
+              : "Actualizar datos"}
           </Text>
         </Pressable>
+
+        {/* MENSAJES DE ERROR */}
 
         {error ? (
           <View style={styles.error}>
@@ -221,53 +385,81 @@ export default function Sprint3Admin() {
               {error}
             </Text>
 
-            {error.includes("permission") && (
+            {error
+              .toLowerCase()
+              .includes("permission") && (
               <Text style={styles.dato}>
-                Firebase está rechazando esta consulta.
-                Toto debe revisar los permisos de Firestore.
+                Firebase rechazó esta operación.
+                Verifica los permisos del usuario
+                y las reglas de Firestore.
               </Text>
             )}
           </View>
         ) : null}
 
-        {cargando ? (
+        {cargando && (
           <ActivityIndicator
             size="large"
             color="#2563EB"
           />
-        ) : null}
-
-        {!cargando && !error &&
-          pestana === "dashboard" && resumen && (
-          <>
-            <Text style={styles.seccionTitulo}>
-              {resumen.laboratorio}
-            </Text>
-
-            <View style={styles.metricas}>
-              {metrica("Pacientes", resumen.pacientes)}
-              {metrica("Análisis", resumen.analisis)}
-              {metrica("Ventas", resumen.ventas)}
-              {metrica(
-                "Total vendido",
-                `Bs. ${resumen.totalVendido.toFixed(2)}`
-              )}
-              {metrica("Órdenes", resumen.ordenes)}
-              {metrica(
-                "Resultados finalizados",
-                resumen.resultadosFinalizados
-              )}
-              {metrica(
-                "Resultados pendientes",
-                resumen.resultadosPendientes
-              )}
-              {metrica(
-                "Muestras pendientes",
-                resumen.muestrasPendientes
-              )}
-            </View>
-          </>
         )}
+
+        {/* DASHBOARD */}
+
+        {!cargando &&
+          !error &&
+          pestana === "dashboard" &&
+          resumen && (
+            <>
+              <Text style={styles.seccionTitulo}>
+                {resumen.laboratorio}
+              </Text>
+
+              <View style={styles.metricas}>
+                {metrica(
+                  "Pacientes",
+                  resumen.pacientes
+                )}
+
+                {metrica(
+                  "Análisis",
+                  resumen.analisis
+                )}
+
+                {metrica(
+                  "Ventas",
+                  resumen.ventas
+                )}
+
+                {metrica(
+                  "Total vendido",
+                  `Bs. ${resumen.totalVendido.toFixed(2)}`
+                )}
+
+                {metrica(
+                  "Órdenes",
+                  resumen.ordenes
+                )}
+
+                {metrica(
+                  "Resultados finalizados",
+                  resumen.resultadosFinalizados
+                )}
+
+                {metrica(
+                  "Resultados pendientes",
+                  resumen.resultadosPendientes
+                )}
+
+                {metrica(
+                  "Muestras pendientes",
+                  resumen.muestrasPendientes
+                )}
+              </View>
+            </>
+          )}
+
+        {/* PANEL DE REPORTES */}
 
         {pestana === "reportes" && (
           <View style={styles.panel}>
@@ -279,198 +471,339 @@ export default function Sprint3Admin() {
               Seleccionar tipo de reporte
             </Text>
 
+            {/* TIPOS DE REPORTE */}
+
             <View style={styles.pestanas}>
               {tipos.map((opcion) => (
                 <Pressable
-                  key={opcion}
+                  key={opcion.id}
                   style={[
                     styles.pestana,
-                    tipo === opcion && styles.pestanaActiva,
+                    tipo === opcion.id &&
+                      styles.pestanaActiva,
                   ]}
                   onPress={() => {
-                    setTipo(opcion);
+                    setTipo(opcion.id);
+                    setBusqueda("");
                     setEstado("");
+                    setRegistros([]);
                   }}
                 >
                   <Text
                     style={[
                       styles.pestanaTexto,
-                      tipo === opcion &&
+                      tipo === opcion.id &&
                         styles.pestanaTextoActivo,
                     ]}
                   >
-                    {opcion}
+                    {opcion.nombre}
                   </Text>
                 </Pressable>
               ))}
             </View>
 
+            {/* BUSCADOR GENERAL */}
+
             <TextInput
               style={styles.input}
-              placeholder="Buscar registros"
+              placeholder="Buscar por nombre, CI o datos del registro"
               placeholderTextColor="#94A3B8"
               value={busqueda}
               onChangeText={setBusqueda}
             />
 
-            <TextInput
-              style={styles.input}
-              placeholder="Filtrar por estado (opcional)"
-              placeholderTextColor="#94A3B8"
-              value={estado}
-              onChangeText={setEstado}
-            />
+            {/* FILTRO DINÁMICO DE ESTADOS */}
+
+            {!cargando &&
+              !error &&
+              estadosDisponibles.length > 0 && (
+                <View style={styles.filtroEstados}>
+                  <Text style={styles.filtroTitulo}>
+                    Filtrar por estado
+                  </Text>
+
+                  <View style={styles.pestanas}>
+                    {/* BOTÓN TODOS */}
+
+                    <Pressable
+                      style={[
+                        styles.pestana,
+                        estado === "" &&
+                          styles.pestanaActiva,
+                      ]}
+                      onPress={() => setEstado("")}
+                    >
+                      <Text
+                        style={[
+                          styles.pestanaTexto,
+                          estado === "" &&
+                            styles.pestanaTextoActivo,
+                        ]}
+                      >
+                        Todos
+                      </Text>
+                    </Pressable>
+
+                    {/* BOTONES DE ESTADOS REALES */}
+
+                    {estadosDisponibles.map(
+                      (opcion) => (
+                        <Pressable
+                          key={opcion}
+                          style={[
+                            styles.pestana,
+                            estado === opcion &&
+                              styles.pestanaActiva,
+                          ]}
+                          onPress={() =>
+                            setEstado(opcion)
+                          }
+                        >
+                          <Text
+                            style={[
+                              styles.pestanaTexto,
+                              estado === opcion &&
+                                styles.pestanaTextoActivo,
+                            ]}
+                          >
+                            {presentarEstado(opcion)}
+                          </Text>
+                        </Pressable>
+                      )
+                    )}
+                  </View>
+
+                  {estado !== "" && (
+                    <Text style={styles.dato}>
+                      Estado seleccionado: {
+                        presentarEstado(estado)
+                      }
+                    </Text>
+                  )}
+                </View>
+              )}
           </View>
         )}
 
-        {!cargando && !error &&
+        {/* LISTADO DE REPORTES */}
+
+        {!cargando &&
+          !error &&
           pestana === "reportes" && (
-          <>
-            <Text style={styles.seccionTitulo}>
-              {filtrados.length} registro(s)
-            </Text>
+            <>
+              <Text style={styles.seccionTitulo}>
+                {filtrados.length} registro(s)
+              </Text>
 
-            {filtrados.map((registro) => (
-              <View key={registro.id} style={styles.tarjeta}>
-                <Text style={styles.tarjetaTitulo}>
-                  {texto(registro.nombreCompleto) ||
-                    texto(registro.nombre) ||
-                    texto(registro.analisisNombre) ||
-                    texto(registro.codigo) ||
-                    registro.id}
+              {filtrados.length === 0 && (
+                <Text style={styles.subtitulo}>
+                  {registros.length === 0
+                    ? "No hay registros disponibles."
+                    : "No se encontraron registros con los filtros seleccionados."}
                 </Text>
+              )}
 
-                <Text style={styles.dato}>
-                  ID: {registro.id}
-                </Text>
-
-                {registro.pacienteId && (
-                  <Text style={styles.dato}>
-                    Paciente ID: {texto(registro.pacienteId)}
+              {filtrados.map((registro) => (
+                <View
+                  key={registro.id}
+                  style={styles.tarjeta}
+                >
+                  <Text style={styles.tarjetaTitulo}>
+                    {tituloReporte(registro, tipo)}
                   </Text>
-                )}
 
-                {registro.estado && (
-                  <Text style={styles.dato}>
-                    Estado: {texto(registro.estado)}
-                  </Text>
-                )}
+                  {/* NOMBRE DEL PACIENTE */}
 
-                {registro.total !== undefined && (
-                  <Text style={styles.dato}>
-                    Total: Bs. {texto(registro.total)}
-                  </Text>
-                )}
+                  {registro.pacienteId &&
+                    tipo !== "pacientes" && (
+                      <Text style={styles.dato}>
+                        Paciente: {
+                          texto(registro.pacienteNombre) ||
+                          "Paciente no encontrado"
+                        }
+                      </Text>
+                    )}
 
-                {registro.ci && (
-                  <Text style={styles.dato}>
-                    CI: {texto(registro.ci)}
-                  </Text>
-                )}
+                  {/* ESTADO */}
 
-                <Text style={styles.dato}>
-                  Fecha: {fecha(
-                    registro.fecha ??
-                    registro.fechaRegistro ??
-                    registro.fechaCreacion
-                  )}
-                </Text>
-              </View>
-            ))}
-          </>
-        )}
-
-        {!cargando && !error &&
-          pestana === "notificaciones" && (
-          <>
-            <Text style={styles.seccionTitulo}>
-              Notificaciones ({registros.length})
-            </Text>
-
-            {registros.map((notificacion) => (
-              <View
-                key={notificacion.id}
-                style={styles.tarjeta}
-              >
-                <Text style={styles.tarjetaTitulo}>
-                  {texto(notificacion.titulo) || "Notificación"}
-                </Text>
-
-                <Text style={styles.dato}>
-                  {texto(notificacion.mensaje)}
-                </Text>
-
-                <Text style={styles.dato}>
-                  Fecha: {fecha(notificacion.fecha)}
-                </Text>
-
-                <Text style={styles.dato}>
-                  {notificacion.leida ? "Leída" : "No leída"}
-                </Text>
-
-                {!notificacion.leida && (
-                  <Pressable
-                    style={styles.botonAzul}
-                    disabled={marcando === notificacion.id}
-                    onPress={() =>
-                      marcarLeida(notificacion.id)
-                    }
-                  >
-                    <Text style={styles.textoBlanco}>
-                      {marcando === notificacion.id
-                        ? "Actualizando..."
-                        : "Marcar como leída"}
+                  {registro.estado && (
+                    <Text style={styles.dato}>
+                      Estado: {
+                        presentarEstado(
+                          texto(registro.estado)
+                        )
+                      }
                     </Text>
-                  </Pressable>
-                )}
-              </View>
-            ))}
-          </>
-        )}
+                  )}
 
-        {!cargando && !error &&
+                  {/* TOTAL DE VENTA */}
+
+                  {registro.total !== undefined &&
+                    registro.total !== null && (
+                      <Text style={styles.dato}>
+                        Total: Bs. {
+                          texto(registro.total)
+                        }
+                      </Text>
+                    )}
+
+                  {/* CI */}
+
+                  {registro.ci && (
+                    <Text style={styles.dato}>
+                      CI: {texto(registro.ci)}
+                    </Text>
+                  )}
+
+                  {/* FECHA DE NACIMIENTO */}
+
+                  {tipo === "pacientes" &&
+                    registro.fechaNacimiento && (
+                      <Text style={styles.dato}>
+                        Fecha de nacimiento: {
+                          fecha(registro.fechaNacimiento)
+                        }
+                      </Text>
+                    )}
+
+                  {/* FECHA DEL REGISTRO */}
+
+                  <Text style={styles.dato}>
+                    Fecha: {
+                      fecha(
+                        registro.fecha ??
+                        registro.fechaRegistro ??
+                        registro.fechaCreacion
+                      )
+                    }
+                  </Text>
+                </View>
+              ))}
+            </>
+          )}
+
+        {/* NOTIFICACIONES */}
+
+        {!cargando &&
+          !error &&
+          pestana === "notificaciones" && (
+            <>
+              <Text style={styles.seccionTitulo}>
+                Notificaciones ({registros.length})
+              </Text>
+
+              {registros.length === 0 && (
+                <Text style={styles.subtitulo}>
+                  No hay notificaciones disponibles.
+                </Text>
+              )}
+
+              {registros.map((notificacion) => (
+                <View
+                  key={notificacion.id}
+                  style={styles.tarjeta}
+                >
+                  <Text style={styles.tarjetaTitulo}>
+                    {texto(notificacion.titulo) ||
+                      "Notificación"}
+                  </Text>
+
+                  <Text style={styles.dato}>
+                    {texto(notificacion.mensaje)}
+                  </Text>
+
+                  <Text style={styles.dato}>
+                    Fecha: {
+                      fecha(notificacion.fecha)
+                    }
+                  </Text>
+
+                  <Text style={styles.dato}>
+                    {notificacion.leida
+                      ? "Leída"
+                      : "No leída"}
+                  </Text>
+
+                  {!notificacion.leida && (
+                    <Pressable
+                      style={styles.botonAzul}
+                      disabled={
+                        marcando === notificacion.id
+                      }
+                      onPress={() =>
+                        marcarLeida(notificacion.id)
+                      }
+                    >
+                      <Text style={styles.textoBlanco}>
+                        {marcando === notificacion.id
+                          ? "Actualizando..."
+                          : "Marcar como leída"}
+                      </Text>
+                    </Pressable>
+                  )}
+                </View>
+              ))}
+            </>
+          )}
+
+        {/* AUDITORÍA */}
+
+        {!cargando &&
+          !error &&
           pestana === "auditoria" && (
-          <>
-            <Text style={styles.seccionTitulo}>
-              Auditoría ({registros.length})
-            </Text>
+            <>
+              <Text style={styles.seccionTitulo}>
+                Auditoría ({registros.length})
+              </Text>
 
-            {registros.map((evento) => (
-              <View
-                key={evento.id}
-                style={styles.tarjeta}
-              >
-                <Text style={styles.tarjetaTitulo}>
-                  {texto(evento.accion) || "Evento"}
+              {registros.length === 0 && (
+                <Text style={styles.subtitulo}>
+                  No hay eventos de auditoría disponibles.
                 </Text>
+              )}
 
-                <Text style={styles.dato}>
-                  Usuario: {texto(evento.usuarioNombre) ||
-                    texto(evento.usuarioId)}
-                </Text>
+              {registros.map((evento) => (
+                <View
+                  key={evento.id}
+                  style={styles.tarjeta}
+                >
+                  <Text style={styles.tarjetaTitulo}>
+                    {texto(evento.accion) ||
+                      "Evento"}
+                  </Text>
 
-                <Text style={styles.dato}>
-                  Entidad: {texto(evento.entidad)}
-                </Text>
+                  <Text style={styles.dato}>
+                    Usuario: {
+                      texto(evento.usuarioNombre) ||
+                      texto(evento.usuarioId) ||
+                      "No identificado"
+                    }
+                  </Text>
 
-                <Text style={styles.dato}>
-                  Detalle: {texto(evento.detalle)}
-                </Text>
+                  {evento.entidad && (
+                    <Text style={styles.dato}>
+                      Entidad: {
+                        texto(evento.entidad)
+                      }
+                    </Text>
+                  )}
 
-                <Text style={styles.dato}>
-                  Fecha: {fecha(evento.fecha)}
-                </Text>
-              </View>
-            ))}
-          </>
-        )}
+                  {evento.detalle && (
+                    <Text style={styles.dato}>
+                      Detalle: {
+                        texto(evento.detalle)
+                      }
+                    </Text>
+                  )}
 
-        {!cargando && !error &&
-          pestana !== "dashboard" &&
-          registros.length === 0 && (
-            <Text style={styles.subtitulo}>
-              No hay registros disponibles.
-            </Text>
+                  <Text style={styles.dato}>
+                    Fecha: {
+                      fecha(evento.fecha)
+                    }
+                  </Text>
+                </View>
+              ))}
+            </>
           )}
       </ScrollView>
     </View>
@@ -482,67 +815,81 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#F1F5F9",
   },
+
   contenido: {
     padding: 18,
     paddingBottom: 45,
     gap: 13,
   },
+
   encabezado: {
     flexDirection: "row",
     alignItems: "flex-start",
     gap: 10,
   },
+
   titulo: {
     fontSize: 25,
     fontWeight: "bold",
     color: "#19385F",
   },
+
   subtitulo: {
     color: "#64748B",
     marginTop: 6,
   },
+
   seccionTitulo: {
     fontSize: 19,
     fontWeight: "bold",
     color: "#19385F",
     marginTop: 10,
   },
+
   pestanas: {
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 8,
   },
+
   pestana: {
     backgroundColor: "#E2E8F0",
     borderRadius: 9,
     paddingHorizontal: 12,
     paddingVertical: 12,
   },
+
   pestanaActiva: {
     backgroundColor: "#19385F",
   },
+
   pestanaTexto: {
     color: "#334155",
     fontWeight: "600",
   },
+
   pestanaTextoActivo: {
     color: "#FFFFFF",
   },
+
   botonGris: {
     alignSelf: "flex-start",
     backgroundColor: "#E2E8F0",
     padding: 12,
     borderRadius: 9,
   },
+
   textoGris: {
     color: "#19385F",
     fontWeight: "bold",
   },
+
   metricas: {
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 10,
   },
+
   metrica: {
     flexGrow: 1,
     minWidth: 140,
@@ -550,22 +897,26 @@ const styles = StyleSheet.create({
     backgroundColor: "#FFFFFF",
     padding: 17,
   },
+
   metricaTitulo: {
     fontSize: 13,
     color: "#64748B",
   },
+
   metricaValor: {
     fontSize: 25,
     fontWeight: "bold",
     color: "#19385F",
     marginTop: 7,
   },
+
   panel: {
     backgroundColor: "#FFFFFF",
     padding: 17,
     borderRadius: 12,
     gap: 10,
   },
+
   input: {
     borderWidth: 1,
     borderColor: "#CBD5E1",
@@ -573,37 +924,55 @@ const styles = StyleSheet.create({
     padding: 12,
     color: "#0F172A",
   },
+
+  filtroEstados: {
+    gap: 10,
+    marginTop: 5,
+  },
+
+  filtroTitulo: {
+    fontWeight: "bold",
+    fontSize: 14,
+    color: "#19385F",
+  },
+
   tarjeta: {
     backgroundColor: "#FFFFFF",
     padding: 17,
     borderRadius: 12,
     gap: 9,
   },
+
   tarjetaTitulo: {
     color: "#19385F",
     fontWeight: "bold",
     fontSize: 17,
   },
+
   dato: {
     color: "#475569",
     lineHeight: 21,
   },
+
   botonAzul: {
     alignSelf: "flex-start",
     backgroundColor: "#2563EB",
     borderRadius: 9,
     padding: 12,
   },
+
   textoBlanco: {
     color: "#FFFFFF",
     fontWeight: "bold",
   },
+
   error: {
     padding: 15,
     backgroundColor: "#FEE2E2",
     borderRadius: 10,
     gap: 7,
   },
+
   errorTexto: {
     color: "#B91C1C",
     fontWeight: "bold",

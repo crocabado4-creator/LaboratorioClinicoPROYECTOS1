@@ -215,13 +215,16 @@ function obtenerEstadoHistorial(registro) {
 // ======================================================
 
 const styles = {
-  container: {
-    padding: "24px",
-    background: "#F4F7FB",
-    minHeight: "100%",
-    fontFamily: "Arial, sans-serif",
-    boxSizing: "border-box",
-  },
+
+container: {
+  padding: "24px",
+  background: "#F1F5F9",
+  minHeight: "100%",
+  fontFamily:
+    'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+  boxSizing: "border-box",
+},
+
 
   header: {
     display: "flex",
@@ -232,18 +235,29 @@ const styles = {
     flexWrap: "wrap",
   },
 
-  title: {
-    fontSize: "28px",
-    fontWeight: "bold",
-    color: "#19385F",
-    margin: 0,
-  },
 
-  subtitle: {
-    color: "#64748B",
-    fontSize: "14px",
-    marginTop: "10px",
-  },
+title: {
+  fontFamily:
+    'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+  fontSize: "36px",
+  fontWeight: 800,
+  lineHeight: 1.2,
+  letterSpacing: "-0.5px",
+  color: "#19385F",
+  margin: 0,
+},
+
+
+
+subtitle: {
+  fontFamily:
+    'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+  color: "#64748B",
+  fontSize: "16px",
+  fontWeight: 400,
+  lineHeight: 1.5,
+  marginTop: "12px",
+},
 
   stats: {
     display: "grid",

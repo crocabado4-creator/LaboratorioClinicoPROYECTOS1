@@ -1,4 +1,6 @@
+
 import {
+  useCallback,
   useEffect,
   useMemo,
   useState,
@@ -13,495 +15,611 @@ import {
   generarPDFResultados,
 } from "../services/pdfResultadosService";
 
-import "./Sprint3.css";
+import "./InformesResultados.css";
 
 function texto(valor) {
   return String(valor ?? "").trim();
 }
 
 function nombrePaciente(paciente) {
+  if (!paciente) {
+    return "Paciente no identificado";
+  }
+
+  const completo = texto(
+    paciente.nombreCompleto
+  );
+
+  if (completo) {
+    return completo;
+  }
+
+  const nombres = texto(
+    paciente.nombres ?? paciente.nombre
+  );
+
+  const apellidos = texto(
+    paciente.apellidos ?? paciente.apellido
+  );
+
   return (
-    texto(
-      paciente?.nombreCompleto
-    ) ||
-    `${texto(
-      paciente?.nombres ??
-        paciente?.nombre
-    )} ${texto(
-      paciente?.apellidos ??
-        paciente?.apellido
-    )}`.trim() ||
+    [nombres, apellidos]
+      .filter(Boolean)
+      .join(" ") ||
     "Paciente no identificado"
   );
 }
 
 function ciPaciente(paciente) {
   return (
-    texto(
-      paciente?.ci ??
-        paciente?.carnet
-    ) || "-"
+    texto(paciente?.ci ?? paciente?.carnet) ||
+    "No registrado"
   );
 }
 
 function fechaVisible(valor) {
   if (!valor) {
-    return "-";
+    return "Sin fecha";
   }
 
   const fecha =
-    typeof valor?.toDate ===
-    "function"
+    typeof valor.toDate === "function"
       ? valor.toDate()
-      : typeof valor ===
-          "number"
-        ? new Date(valor)
-        : new Date(valor);
+      : typeof valor.seconds === "number"
+      ? new Date(valor.seconds * 1000)
+      : new Date(valor);
 
-  return Number.isNaN(
-    fecha.getTime()
-  )
-    ? "-"
-    : fecha.toLocaleString(
-        "es-BO"
-      );
+  if (Number.isNaN(fecha.getTime())) {
+    return "Sin fecha";
+  }
+
+  return fecha.toLocaleString("es-BO");
+}
+
+function mensajeError(error) {
+  if (error?.code === "permission-denied") {
+    return (
+      "Firebase rechazó una lectura necesaria. " +
+      "Verifica los permisos de Firestore " +
+      "para este laboratorio y tu rol."
+    );
+  }
+
+  return (
+    error?.message ||
+    "No se pudo cargar el historial de resultados."
+  );
 }
 
 export default function HistorialResultados({
   usuario,
   onVolver,
 }) {
-  const laboratorioId =
-    usuario?.laboratorioId || "";
+  const laboratorioId = texto(
+    usuario?.laboratorioId
+  );
+
+  const [informes, setInformes] = useState([]);
+  const [laboratorio, setLaboratorio] = useState(null);
+
+  const [pacienteId, setPacienteId] = useState("");
 
   const [
-    informes,
-    setInformes,
-  ] = useState([]);
-
-  const [
-    laboratorio,
-    setLaboratorio,
-  ] = useState(null);
-
-  const [
-    pacienteId,
-    setPacienteId,
+    ordenSeleccionada,
+    setOrdenSeleccionada,
   ] = useState("");
 
-  const [
-    seleccionado,
-    setSeleccionado,
-  ] = useState(null);
+  const [busqueda, setBusqueda] = useState("");
+  const [cargando, setCargando] = useState(true);
+  const [generandoPDF, setGenerandoPDF] = useState(false);
+  const [error, setError] = useState("");
 
-  const [
-    busqueda,
-    setBusqueda,
-  ] = useState("");
+  const cargar = useCallback(async () => {
+    if (!laboratorioId) {
+      setError(
+        "No se identificó el laboratorio del usuario."
+      );
 
-  const [
-    error,
-    setError,
-  ] = useState("");
+      setInformes([]);
+      setCargando(false);
+      return;
+    }
 
-  const [
-    cargando,
-    setCargando,
-  ] = useState(true);
+    setCargando(true);
+    setError("");
 
-  const cargar = async () => {
     try {
-      setCargando(true);
-      setError("");
-
-      const [
-        lista,
-        datosLaboratorio,
-      ] = await Promise.all([
-        listarInformesFinalizados(
-          laboratorioId
-        ),
-        obtenerLaboratorioInforme(
-          laboratorioId
-        ),
-      ]);
+      const [lista, datosLaboratorio] =
+        await Promise.all([
+          listarInformesFinalizados(laboratorioId),
+          obtenerLaboratorioInforme(laboratorioId),
+        ]);
 
       setInformes(lista);
-      setLaboratorio(
-        datosLaboratorio
+      setLaboratorio(datosLaboratorio);
+
+      setPacienteId((actual) =>
+        lista.some(
+          (informe) => informe.pacienteId === actual
+        )
+          ? actual
+          : ""
+      );
+
+      setOrdenSeleccionada((actual) =>
+        lista.some(
+          (informe) => informe.ordenId === actual
+        )
+          ? actual
+          : ""
       );
     } catch (e) {
-      console.error(e);
-
-      setError(
-        e?.message ||
-          "No se pudo cargar el historial."
+      console.error(
+        "Error al cargar historial:",
+        e
       );
+
+      setError(mensajeError(e));
+      setInformes([]);
     } finally {
       setCargando(false);
     }
-  };
-
-  useEffect(() => {
-    if (laboratorioId) {
-      cargar();
-    }
   }, [laboratorioId]);
 
-  const pacientes =
-    useMemo(() => {
-      const mapa =
-        new Map();
+  useEffect(() => {
+    cargar();
+  }, [cargar]);
 
-      informes.forEach(
-        (informe) => {
-          if (
-            informe.pacienteId &&
-            informe.paciente
-          ) {
-            mapa.set(
-              informe.pacienteId,
-              informe.paciente
-            );
-          }
-        }
-      );
+  // PACIENTES CON INFORMES
 
-      return Array.from(
-        mapa.entries()
-      )
-        .map(
-          ([
-            id,
-            paciente,
-          ]) => ({
-            id,
-            paciente,
-          })
-        )
-        .sort(
-          (a, b) =>
-            nombrePaciente(
-              a.paciente
-            ).localeCompare(
-              nombrePaciente(
-                b.paciente
-              ),
-              "es"
-            )
+  const pacientes = useMemo(() => {
+    const mapa = new Map();
+
+    informes.forEach((informe) => {
+      if (
+        informe.pacienteId &&
+        informe.paciente
+      ) {
+        mapa.set(
+          informe.pacienteId,
+          informe.paciente
         );
-    }, [informes]);
+      }
+    });
 
-  const historial =
-    useMemo(() => {
-      if (!pacienteId) {
-        return [];
+    return Array.from(
+      mapa,
+      ([id, paciente]) => ({
+        id,
+        paciente,
+      })
+    ).sort((a, b) =>
+      nombrePaciente(a.paciente).localeCompare(
+        nombrePaciente(b.paciente),
+        "es"
+      )
+    );
+  }, [informes]);
+
+  // HISTORIAL FILTRADO
+
+  const historial = useMemo(() => {
+    if (!pacienteId) {
+      return [];
+    }
+
+    const termino = texto(busqueda)
+      .toLocaleLowerCase("es");
+
+    return informes.filter((informe) => {
+      if (informe.pacienteId !== pacienteId) {
+        return false;
       }
 
-      const termino =
-        texto(
-          busqueda
-        ).toLowerCase();
+      if (!termino) {
+        return true;
+      }
 
-      return informes.filter(
-        (informe) => {
-          if (
-            informe.pacienteId !==
-            pacienteId
-          ) {
-            return false;
-          }
+      const contenido = [
+        texto(informe.ordenId),
+        ...(informe.resultados ?? []).map(
+          (resultado) =>
+            texto(resultado.analisisNombre)
+        ),
+      ]
+        .join(" ")
+        .toLocaleLowerCase("es");
 
-          if (!termino) {
-            return true;
-          }
+      return contenido.includes(termino);
+    });
+  }, [
+    informes,
+    pacienteId,
+    busqueda,
+  ]);
 
-          return [
-            informe.ordenId,
-            ...informe.resultados.map(
-              (resultado) =>
-                resultado.analisisNombre
-            ),
-          ]
-            .join(" ")
-            .toLowerCase()
-            .includes(termino);
-        }
+  const seleccionado =
+    historial.find(
+      (informe) =>
+        informe.ordenId === ordenSeleccionada
+    ) ?? null;
+
+  // GENERACIÓN DE PDF
+
+  const descargarPDF = async () => {
+    if (!seleccionado || generandoPDF) {
+      return;
+    }
+
+    setError("");
+    setGenerandoPDF(true);
+
+    try {
+      await generarPDFResultados({
+        laboratorio,
+        informe: seleccionado,
+      });
+    } catch (e) {
+      console.error(
+        "Error al generar PDF histórico:",
+        e
       );
-    }, [
-      informes,
-      pacienteId,
-      busqueda,
-    ]);
+
+      setError(
+        e?.message ||
+        "No se pudo generar el PDF del historial."
+      );
+    } finally {
+      setGenerandoPDF(false);
+    }
+  };
 
   return (
-    <div className="s3-page">
-      <div className="s3-header">
+    <main className="ir-page">
+      {/* ENCABEZADO */}
+
+      <header className="ir-page-header">
         <div>
-          <h1>
-            Historial de resultados
-          </h1>
+          <div className="ir-eyebrow">
+            RESULTADOS CLÍNICOS
+          </div>
+
+          <h1>Historial de resultados</h1>
 
           <p>
-            HU-32: resultados
-            finalizados anteriores
-            del paciente.
+            Consulta los análisis finalizados
+            anteriormente y recupera sus informes.
           </p>
         </div>
 
-        <button
-          className="s3-button secondary"
-          type="button"
-          onClick={onVolver}
-        >
-          Volver
-        </button>
-      </div>
+        <div className="ir-actions">
+          <button
+            type="button"
+            className="ir-btn ir-btn-secondary"
+            onClick={cargar}
+            disabled={cargando}
+          >
+            {cargando
+              ? "Actualizando..."
+              : "Actualizar"}
+          </button>
+
+          <button
+            type="button"
+            className="ir-btn ir-btn-secondary"
+            onClick={onVolver}
+          >
+            Volver
+          </button>
+        </div>
+      </header>
+
+      {/* MENSAJE DE ERROR */}
 
       {error && (
-        <div className="s3-error">
+        <div className="ir-alert" role="alert">
           {error}
         </div>
       )}
 
-      <div className="s3-toolbar">
-        <select
-          value={pacienteId}
-          onChange={(e) => {
-            setPacienteId(
-              e.target.value
-            );
-            setSeleccionado(
-              null
-            );
-          }}
-        >
-          <option value="">
-            Selecciona un paciente
-          </option>
+      {/* BUSCADORES */}
 
-          {pacientes.map(
-            ({
-              id,
-              paciente,
-            }) => (
-              <option
-                key={id}
-                value={id}
-              >
-                {nombrePaciente(
-                  paciente
-                )}{" "}
-                - CI{" "}
-                {ciPaciente(
-                  paciente
-                )}
-              </option>
-            )
-          )}
-        </select>
+      <section className="ir-panel ir-filters ir-history-filters">
+        <div className="ir-filter-field">
+          <label htmlFor="ir-paciente-historial">
+            Paciente
+          </label>
 
-        <input
-          value={busqueda}
-          onChange={(e) =>
-            setBusqueda(
-              e.target.value
-            )
-          }
-          placeholder="Filtrar por orden o análisis"
-        />
-      </div>
+          <select
+            id="ir-paciente-historial"
+            value={pacienteId}
+            onChange={(e) => {
+              setPacienteId(e.target.value);
+              setOrdenSeleccionada("");
+              setBusqueda("");
+            }}
+          >
+            <option value="">
+              Selecciona un paciente
+            </option>
+
+            {pacientes.map(
+              ({ id, paciente }) => (
+                <option
+                  key={id}
+                  value={id}
+                >
+                  {nombrePaciente(paciente)}
+                  {" · CI "}
+                  {ciPaciente(paciente)}
+                </option>
+              )
+            )}
+          </select>
+        </div>
+
+        <div className="ir-filter-field">
+          <label htmlFor="ir-buscar-historial">
+            Buscar en el historial
+          </label>
+
+          <input
+            id="ir-buscar-historial"
+            type="search"
+            value={busqueda}
+            onChange={(e) =>
+              setBusqueda(e.target.value)
+            }
+            placeholder="Orden o nombre del análisis"
+            disabled={!pacienteId}
+          />
+        </div>
+      </section>
+
+      {/* HISTORIAL */}
 
       {cargando ? (
-        <div className="s3-empty">
-          Cargando historial...
+        <div
+          className="ir-panel ir-empty"
+          role="status"
+        >
+          Cargando historial de resultados...
         </div>
-      ) : !pacienteId ? (
-        <div className="s3-empty">
-          Selecciona un paciente.
+      ) : error ? null : !pacienteId ? (
+        <div className="ir-panel ir-empty">
+          {pacientes.length === 0
+            ? "No hay pacientes con resultados finalizados disponibles."
+            : "Selecciona un paciente para consultar sus resultados anteriores."}
         </div>
-      ) : historial.length ===
-        0 ? (
-        <div className="s3-empty">
-          El paciente no tiene
-          resultados finalizados.
+      ) : historial.length === 0 ? (
+        <div className="ir-panel ir-empty">
+          {busqueda.trim()
+            ? "No se encontraron resultados para esa búsqueda."
+            : "Este paciente no tiene resultados finalizados disponibles."}
         </div>
       ) : (
-        <div className="s3-layout">
-          <div className="s3-list">
-            {historial.map(
-              (informe) => (
-                <div
-                  className="s3-card"
-                  key={
+        <section className="ir-layout">
+          {/* LISTA DE ÓRDENES */}
+
+          <div
+            className="ir-list"
+            aria-label="Resultados anteriores"
+          >
+            <div className="ir-list-heading">
+              {historial.length} orden(es) encontradas
+            </div>
+
+            {historial.map((informe) => (
+              <article
+                className={
+                  "ir-panel ir-list-card " +
+                  (ordenSeleccionada ===
+                  informe.ordenId
+                    ? "ir-selected"
+                    : "")
+                }
+                key={informe.ordenId}
+              >
+                <div className="ir-card-top">
+                  <h2>
+                    Orden {informe.ordenId}
+                  </h2>
+
+                  <span className="ir-status">
+                    Finalizado
+                  </span>
+                </div>
+
+                <p>
+                  {(informe.resultados ?? [])
+                    .map(
+                      (resultado) =>
+                        resultado.analisisNombre
+                    )
+                    .join(", ") ||
+                    "Análisis clínico"}
+                </p>
+
+                <p className="ir-muted">
+                  {fechaVisible(
+                    informe.fechaValidacion
+                  )}
+                </p>
+
+                <button
+                  type="button"
+                  className="ir-btn ir-btn-primary"
+                  onClick={() =>
+                    setOrdenSeleccionada(
+                      informe.ordenId
+                    )
+                  }
+                  aria-pressed={
+                    ordenSeleccionada ===
                     informe.ordenId
                   }
                 >
-                  <h3>
-                    Orden{" "}
-                    {informe.ordenId}
-                  </h3>
-
-                  <p>
-                    {informe.resultados
-                      .map(
-                        (resultado) =>
-                          resultado
-                            .analisisNombre
-                      )
-                      .join(", ")}
-                  </p>
-
-                  <p className="s3-muted">
-                    {fechaVisible(
-                      informe.fechaValidacion
-                    )}
-                  </p>
-
-                  <button
-                    className="s3-button"
-                    type="button"
-                    onClick={() =>
-                      setSeleccionado(
-                        informe
-                      )
-                    }
-                  >
-                    Consultar informe
-                  </button>
-                </div>
-              )
-            )}
+                  Consultar informe
+                </button>
+              </article>
+            ))}
           </div>
 
-          <div className="s3-detail">
+          {/* DETALLE DEL HISTORIAL */}
+
+          <div className="ir-panel ir-detail">
             {!seleccionado ? (
-              <div className="s3-empty">
-                Selecciona un
-                registro del historial.
+              <div className="ir-empty">
+                Selecciona una orden del historial
+                para ver el detalle.
               </div>
             ) : (
               <>
-                <div className="s3-header">
+                <div className="ir-detail-header">
                   <div>
+                    <div className="ir-eyebrow">
+                      HISTORIAL CLÍNICO
+                    </div>
+
                     <h2>
                       {nombrePaciente(
-                        seleccionado
-                          .paciente
+                        seleccionado.paciente
                       )}
                     </h2>
 
-                    <p>
-                      Orden{" "}
-                      {
-                        seleccionado
-                          .ordenId
-                      }
+                    <p className="ir-muted">
+                      Orden: {seleccionado.ordenId}
                     </p>
                   </div>
 
                   <button
-                    className="s3-button"
                     type="button"
-                    onClick={() =>
-                      generarPDFResultados(
-                        {
-                          laboratorio,
-                          informe:
-                            seleccionado,
-                        }
-                      )
-                    }
+                    className="ir-btn ir-btn-primary"
+                    onClick={descargarPDF}
+                    disabled={generandoPDF}
                   >
-                    PDF
+                    {generandoPDF
+                      ? "Generando..."
+                      : "Generar PDF"}
                   </button>
                 </div>
 
-                {seleccionado.resultados.map(
-                  (resultado) => (
-                    <div
-                      className="s3-card"
-                      key={
-                        resultado.id
-                      }
-                    >
-                      <h3>
-                        {
-                          resultado
-                            .analisisNombre
-                        }
-                      </h3>
+                {/* INFORMACIÓN DEL PACIENTE */}
 
-                      <div className="s3-table-wrap">
-                        <table className="s3-table">
+                <div className="ir-patient-grid">
+                  <div>
+                    <span>Paciente</span>
+
+                    <strong>
+                      {nombrePaciente(
+                        seleccionado.paciente
+                      )}
+                    </strong>
+                  </div>
+
+                  <div>
+                    <span>CI</span>
+
+                    <strong>
+                      {ciPaciente(
+                        seleccionado.paciente
+                      )}
+                    </strong>
+                  </div>
+
+                  <div>
+                    <span>
+                      Fecha de validación
+                    </span>
+
+                    <strong>
+                      {fechaVisible(
+                        seleccionado.fechaValidacion
+                      )}
+                    </strong>
+                  </div>
+                </div>
+
+                {/* RESULTADOS ANTERIORES */}
+
+                {(seleccionado.resultados ?? []).map(
+                  (resultado) => (
+                    <section
+                      className="ir-result"
+                      key={resultado.id}
+                    >
+                      <div className="ir-result-header">
+                        <h3>
+                          {texto(
+                            resultado.analisisNombre
+                          ) || "Análisis clínico"}
+                        </h3>
+
+                        <span className="ir-status">
+                          Validado
+                        </span>
+                      </div>
+
+                      <div className="ir-table-scroll">
+                        <table className="ir-table">
                           <thead>
                             <tr>
-                              <th>
-                                Parámetro
-                              </th>
-                              <th>
-                                Resultado
-                              </th>
-                              <th>
-                                Unidad
-                              </th>
-                              <th>
-                                Rango
-                              </th>
+                              <th>Parámetro</th>
+                              <th>Resultado</th>
+                              <th>Unidad</th>
+                              <th>Referencia</th>
+                              <th>Observación</th>
                             </tr>
                           </thead>
 
                           <tbody>
-                            {resultado.parametros.map(
-                              (
-                                parametro,
-                                indice
-                              ) => (
-                                <tr
-                                  key={
-                                    parametro
-                                      .parametroId ||
-                                    indice
-                                  }
-                                >
-                                  <td>
-                                    {
-                                      parametro
-                                        .nombreParametro
+                            {(resultado.parametros ?? [])
+                              .map(
+                                (parametro, indice) => (
+                                  <tr
+                                    key={
+                                      resultado.id +
+                                      "-" +
+                                      (parametro.parametroId ??
+                                      indice)
                                     }
-                                  </td>
-                                  <td>
-                                    {
-                                      parametro
-                                        .valor
-                                    }
-                                  </td>
-                                  <td>
-                                    {
-                                      parametro
-                                        .unidad
-                                    }
-                                  </td>
-                                  <td>
-                                    {
-                                      parametro
-                                        .rangoReferencia
-                                    }
-                                  </td>
-                                </tr>
-                              )
-                            )}
+                                  >
+                                    <td>
+                                      {parametro.nombreParametro}
+                                    </td>
+
+                                    <td>
+                                      <strong>
+                                        {parametro.valor}
+                                      </strong>
+                                    </td>
+
+                                    <td>
+                                      {parametro.unidad}
+                                    </td>
+
+                                    <td>
+                                      {parametro.rangoReferencia}
+                                    </td>
+
+                                    <td>
+                                      {parametro.observacion ||
+                                        "-"}
+                                    </td>
+                                  </tr>
+                                )
+                              )}
                           </tbody>
                         </table>
                       </div>
-                    </div>
+                    </section>
                   )
                 )}
               </>
             )}
           </div>
-        </div>
+        </section>
       )}
-    </div>
+    </main>
   );
 }

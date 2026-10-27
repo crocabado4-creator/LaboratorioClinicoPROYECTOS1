@@ -923,7 +923,7 @@ export default function ValidarMuestrasScreen() {
                 styles.contadorTitulo
               }
             >
-              Pendientes
+              Pendientes de recepción
             </Text>
 
             <Text
@@ -1170,6 +1170,9 @@ export default function ValidarMuestrasScreen() {
                       puedeValidarMuestra(
                         muestra
                       );
+                    const requiereRevision =
+                      normalizarEstado(muestra.estado) === "procesada" &&
+                      muestra.estadoValidacion === "pendiente";
 
                     return (
                       <View
@@ -1240,8 +1243,24 @@ export default function ValidarMuestrasScreen() {
                             styles.colEstado
                           }
                         >
-                          {mostrarEstado(
-                            muestra.estadoValidacion
+                          {requiereRevision ? (
+                            <View
+                              style={[
+                                styles.estadoBadge,
+                                { backgroundColor: "#FEF3C7" },
+                              ]}
+                            >
+                              <Text
+                                style={[
+                                  styles.estadoTexto,
+                                  { color: "#92400E" },
+                                ]}
+                              >
+                                Pendiente (revisar)
+                              </Text>
+                            </View>
+                          ) : (
+                            mostrarEstado(muestra.estadoValidacion)
                           )}
                         </View>
 
@@ -1324,11 +1343,14 @@ export default function ValidarMuestrasScreen() {
                             </Text>
                           ) : (
                             <Text
-                              style={
-                                styles.sinAcciones
-                              }
+                              style={[
+                                styles.sinAcciones,
+                                requiereRevision && { color: "#B45309" },
+                              ]}
                             >
-                              Ya validada
+                              {requiereRevision
+                                ? "Requiere revisión"
+                                : "Ya validada"}
                             </Text>
                           )}
                         </View>

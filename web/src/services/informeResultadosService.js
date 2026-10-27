@@ -1,3 +1,4 @@
+
 import {
   collection,
   doc,
@@ -14,23 +15,46 @@ function limpiarTexto(valor) {
 }
 
 function estaFinalizado(resultado) {
+  const estado = limpiarTexto(
+    resultado?.estado
+  ).toLowerCase();
+
   return (
     resultado?.validado === true ||
-    resultado?.estado === "validado" ||
-    resultado?.estado === "finalizado"
+    ["validado", "finalizado"].includes(estado)
   );
 }
 
 function normalizarRango(valor) {
-  if (valor === null || valor === undefined || valor === "") {
+  if (
+    valor === null ||
+    valor === undefined ||
+    valor === ""
+  ) {
     return "-";
   }
 
-  if (typeof valor === "string" || typeof valor === "number") {
+  if (
+    typeof valor === "string" ||
+    typeof valor === "number"
+  ) {
     return String(valor);
   }
 
   if (typeof valor === "object") {
+    const texto =
+      valor.texto ??
+      valor.descripcion ??
+      valor.referencia;
+
+    if (
+      texto !== undefined &&
+      texto !== null &&
+      texto !== ""
+    ) {
+      return String(texto);
+    }
+
     const minimo =
       valor.min ??
       valor.minimo ??
@@ -43,37 +67,29 @@ function normalizarRango(valor) {
       valor.hasta ??
       valor.valorMaximo;
 
-    const texto =
-      valor.texto ??
-      valor.descripcion ??
-      valor.referencia;
-
-    if (texto) {
-      return String(texto);
-    }
-
-    if (minimo !== undefined || maximo !== undefined) {
+    if (
+      minimo !== undefined ||
+      maximo !== undefined
+    ) {
       return `${minimo ?? "-"} - ${maximo ?? "-"}`;
     }
   }
 
-  return String(valor);
+  return "-";
 }
 
 function fechaMilisegundos(valor) {
-  if (!valor) {
-    return 0;
-  }
+  if (!valor) return 0;
 
-  if (typeof valor?.toMillis === "function") {
+  if (typeof valor.toMillis === "function") {
     return valor.toMillis();
   }
 
-  if (typeof valor?.toDate === "function") {
+  if (typeof valor.toDate === "function") {
     return valor.toDate().getTime();
   }
 
-  if (typeof valor?.seconds === "number") {
+  if (typeof valor.seconds === "number") {
     return valor.seconds * 1000;
   }
 
@@ -83,6 +99,40 @@ function fechaMilisegundos(valor) {
     ? 0
     : fecha.getTime();
 }
+
+// Registra información de diagnóstico
+// únicamente durante el desarrollo.
+
+async function leerConDiagnostico(
+  descripcion,
+  operacion
+) {
+  try {
+    const resultado = await operacion();
+
+    if (import.meta.env.DEV) {
+      console.info(
+        `[FIRESTORE OK] ${descripcion}`
+      );
+    }
+
+    return resultado;
+  } catch (error) {
+    if (import.meta.env.DEV) {
+      console.error(
+        `[FIRESTORE ERROR] ${descripcion}`,
+        error?.code,
+        error?.message
+      );
+    }
+
+    throw error;
+  }
+}
+
+// Consulta un documento relacionado.
+// La verificación de laboratorio complementa
+// las reglas de seguridad de Firestore.
 
 async function obtenerDocumento(
   coleccionNombre,
@@ -95,8 +145,16 @@ async function obtenerDocumento(
     return null;
   }
 
-  const snapshot = await getDoc(
-    doc(db, coleccionNombre, idLimpio)
+  const snapshot = await leerConDiagnostico(
+    `${coleccionNombre}/${idLimpio}`,
+    () =>
+      getDoc(
+        doc(
+          db,
+          coleccionNombre,
+          idLimpio
+        )
+      )
   );
 
   if (!snapshot.exists()) {
@@ -119,20 +177,26 @@ async function obtenerDocumento(
   };
 }
 
-async function obtenerValores(resultadoId) {
-  const idResultado = limpiarTexto(resultadoId);
+// Obtiene los parámetros del resultado.
 
-  if (!idResultado) {
+async function obtenerValores(resultadoId) {
+  const idLimpio = limpiarTexto(resultadoId);
+
+  if (!idLimpio) {
     return [];
   }
 
-  const snapshot = await getDocs(
-    collection(
-      db,
-      "resultados",
-      idResultado,
-      "valores"
-    )
+  const snapshot = await leerConDiagnostico(
+    `resultados/${idLimpio}/valores`,
+    () =>
+      getDocs(
+        collection(
+          db,
+          "resultados",
+          idLimpio,
+          "valores"
+        )
+      )
   );
 
   return snapshot.docs.map((documento) => {
@@ -140,28 +204,34 @@ async function obtenerValores(resultadoId) {
 
     return {
       id: documento.id,
+
       parametroId:
         limpiarTexto(datos.parametroId) ||
         documento.id,
+
       nombreParametro:
         limpiarTexto(datos.nombreParametro) ||
         limpiarTexto(datos.nombre) ||
         limpiarTexto(datos.parametro) ||
         "Parámetro",
+
       valor:
         limpiarTexto(
           datos.valor ??
-            datos.resultado ??
-            datos.valorObtenido
+          datos.resultado ??
+          datos.valorObtenido
         ) || "-",
+
       unidad:
         limpiarTexto(datos.unidad) || "-",
+
       rangoReferencia:
         normalizarRango(
           datos.rangoReferencia ??
-            datos.rango ??
-            datos.valoresReferencia
+          datos.rango ??
+          datos.valoresReferencia
         ),
+
       observacion:
         limpiarTexto(datos.observacion) ||
         limpiarTexto(datos.observaciones),
@@ -172,19 +242,27 @@ async function obtenerValores(resultadoId) {
 function parametroGeneral(resultado) {
   return {
     parametroId: "resultado-general",
+
     nombreParametro:
       limpiarTexto(resultado.analisisNombre) ||
       "Resultado general",
+
     valor:
       limpiarTexto(resultado.valorResultado) ||
       "-",
+
     unidad:
-      limpiarTexto(resultado.unidad) || "-",
+      limpiarTexto(resultado.unidad) ||
+      "-",
+
     rangoReferencia: "-",
+
     observacion:
       limpiarTexto(resultado.observaciones),
   };
 }
+
+// Información institucional para el informe.
 
 export async function obtenerLaboratorioInforme(
   laboratorioId
@@ -196,19 +274,28 @@ export async function obtenerLaboratorioInforme(
     return null;
   }
 
-  const snapshot = await getDoc(
-    doc(db, "laboratorios", idLaboratorio)
+  const snapshot = await leerConDiagnostico(
+    `laboratorios/${idLaboratorio}`,
+    () =>
+      getDoc(
+        doc(
+          db,
+          "laboratorios",
+          idLaboratorio
+        )
+      )
   );
 
-  if (!snapshot.exists()) {
-    return null;
-  }
-
-  return {
-    id: snapshot.id,
-    ...snapshot.data(),
-  };
+  return snapshot.exists()
+    ? {
+        id: snapshot.id,
+        ...snapshot.data(),
+      }
+    : null;
 }
+
+// Lista los informes correspondientes
+// a resultados clínicos finalizados.
 
 export async function listarInformesFinalizados(
   laboratorioId
@@ -222,16 +309,24 @@ export async function listarInformesFinalizados(
     );
   }
 
-  const snapshot = await getDocs(
-    query(
-      collection(db, "resultados"),
-      where(
-        "laboratorioId",
-        "==",
-        idLaboratorio
+  // 1. Consultar resultados del laboratorio.
+
+  const snapshot = await leerConDiagnostico(
+    "resultados (por laboratorio)",
+    () =>
+      getDocs(
+        query(
+          collection(db, "resultados"),
+          where(
+            "laboratorioId",
+            "==",
+            idLaboratorio
+          )
+        )
       )
-    )
   );
+
+  // 2. Filtrar únicamente los finalizados.
 
   const resultados = snapshot.docs
     .map((documento) => ({
@@ -240,29 +335,52 @@ export async function listarInformesFinalizados(
     }))
     .filter(estaFinalizado);
 
+  // 3. Cargar parámetros y obtener nombre del análisis.
+
   const completos = await Promise.all(
     resultados.map(async (resultado) => {
-      const [valores, analisis] =
-        await Promise.all([
-          obtenerValores(resultado.id),
-          obtenerDocumento(
-            "analisis",
-            resultado.analisisId,
-            idLaboratorio
-          ),
-        ]);
+      const valores = await obtenerValores(
+        resultado.id
+      );
 
-      return {
-        ...resultado,
-        analisisNombre:
-          limpiarTexto(
-            resultado.analisisNombre
-          ) ||
+      // Si el resultado ya tiene el nombre,
+      // no es necesario consultar nuevamente
+      // el documento de la colección analisis.
+
+      let analisisNombre =
+        limpiarTexto(resultado.analisisNombre) ||
+        limpiarTexto(resultado.nombreAnalisis) ||
+        limpiarTexto(
+          resultado.analisis?.nombre
+        );
+
+      // Consultar el análisis solamente cuando
+      // su nombre no está guardado en el resultado.
+
+      if (
+        !analisisNombre &&
+        limpiarTexto(resultado.analisisId)
+      ) {
+        const analisis = await obtenerDocumento(
+          "analisis",
+          resultado.analisisId,
+          idLaboratorio
+        );
+
+        analisisNombre =
           limpiarTexto(analisis?.nombre) ||
           limpiarTexto(
             analisis?.nombreAnalisis
-          ) ||
-          "Análisis clínico",
+          );
+      }
+
+      return {
+        ...resultado,
+
+        analisisNombre:
+          analisisNombre ||
+          "Análisis no identificado",
+
         parametros:
           valores.length > 0
             ? valores
@@ -270,6 +388,8 @@ export async function listarInformesFinalizados(
       };
     })
   );
+
+  // 4. Agrupar los resultados por orden.
 
   const grupos = new Map();
 
@@ -288,6 +408,8 @@ export async function listarInformesFinalizados(
     grupos.get(ordenId).push(resultado);
   });
 
+  // 5. Obtener información de pacientes y órdenes.
+
   const informes = await Promise.all(
     Array.from(grupos.entries()).map(
       async ([ordenId, listaResultados]) => {
@@ -300,6 +422,7 @@ export async function listarInformesFinalizados(
               primero.pacienteId,
               idLaboratorio
             ),
+
             obtenerDocumento(
               "ordenes",
               ordenId,
@@ -319,10 +442,12 @@ export async function listarInformesFinalizados(
 
         return {
           ordenId,
+
           pacienteId:
             limpiarTexto(
               primero.pacienteId
             ),
+
           paciente,
           orden,
           resultados: listaResultados,
@@ -331,6 +456,8 @@ export async function listarInformesFinalizados(
       }
     )
   );
+
+  // 6. Ordenar informes por fecha de validación.
 
   informes.sort(
     (a, b) =>
