@@ -99,22 +99,6 @@ const PANTALLAS = [
     nombre: "Seguimiento de muestras",
     ruta: "/seguimiento-muestras",
   },
-  {
-    nombre: "Registro de resultados",
-    ruta: "/registro-resultados",
-  },
-  {
-    nombre: "Valores por parámetros",
-    ruta: "/valores-parametros",
-  },
-  {
-    nombre: "Estado de análisis",
-    ruta: "/estado-analisis",
-  },
-  {
-    nombre: "Validación de resultados",
-    ruta: "/validacion-resultados",
-  },
 ] as const;
 
 const FILTROS: {

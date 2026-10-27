@@ -1,107 +1,306 @@
+
+/* ==========================================
+   LABORATORIO CLÍNICO
+   RECEPCIÓN Y VALIDACIÓN DE MUESTRAS
+   Diseño unificado con Informe de resultados
+   ========================================== */
+
+/* CONFIGURACIÓN GENERAL */
+
 .vm-contenedor {
-  padding: 25px;
-  background: #f4f7fb;
+  --vm-navy: #19385f;
+  --vm-navy-deep: #122b4b;
+  --vm-ink: #20334d;
+  --vm-muted: #64748b;
+  --vm-border: #dfe6ef;
+  --vm-bg: #f1f5f9;
+  --vm-white: #ffffff;
+  --vm-blue: #2563eb;
+
+  width: 100%;
+  min-width: 0;
   min-height: 100%;
-  font-family: Arial, sans-serif;
+
+  padding: clamp(16px, 2.2vw, 28px);
+  margin: 0 auto;
+
+  box-sizing: border-box;
+  background: var(--vm-bg);
+  color: var(--vm-ink);
+
+  font-family:
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+
+  font-size: 14px;
+  line-height: 1.5;
 }
+
+.vm-contenedor *,
+.vm-contenedor *::before,
+.vm-contenedor *::after,
+.vm-modal-fondo *,
+.vm-modal-fondo *::before,
+.vm-modal-fondo *::after {
+  box-sizing: border-box;
+}
+
+.vm-contenedor button,
+.vm-contenedor input,
+.vm-contenedor select,
+.vm-modal-fondo textarea,
+.vm-modal-fondo button {
+  font-family:
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+}
+
+/* ==========================================
+   ENCABEZADO
+   ========================================== */
 
 .vm-encabezado {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
+
   gap: 20px;
   margin-bottom: 25px;
 }
 
 .vm-subtitulo {
-  color: #2563eb;
+  display: block;
+  margin-bottom: 8px;
+
   font-size: 12px;
-  font-weight: bold;
-  letter-spacing: 1px;
+  font-weight: 700;
+  letter-spacing: 0.11em;
+
+  text-transform: uppercase;
+  color: #607895;
 }
 
-.vm-encabezado h1 {
-  color: #17365d;
-  font-size: 28px;
-  margin: 10px 0;
+/* MISMA TIPOGRAFÍA DE INFORME DE RESULTADOS */
+
+.vm-contenedor .vm-encabezado h1 {
+  margin: 0 0 12px;
+  padding: 0;
+
+  font-family:
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif !important;
+
+  font-size: clamp(30px, 3vw, 36px) !important;
+  font-weight: 800 !important;
+
+  line-height: 1.2 !important;
+  letter-spacing: -0.5px !important;
+
+  color: #19385f !important;
 }
 
 .vm-encabezado p {
-  color: #64748b;
   margin: 0;
+
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 1.5;
+
+  color: #64748b;
 }
 
+/* BOTÓN VOLVER */
+
 .vm-volver {
-  padding: 11px 18px;
-  border: none;
-  border-radius: 8px;
-  background: #334155;
-  color: white;
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+
+  min-height: 45px;
+  padding: 11px 17px;
+
+  background: #e2e8f0;
+  color: #19385f;
+
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+
+  font-size: 14px;
+  font-weight: 600;
+
   cursor: pointer;
+  white-space: nowrap;
+
+  transition:
+    background 0.16s ease,
+    color 0.16s ease;
 }
+
+.vm-volver:hover {
+  background: #d4dce7;
+}
+
+/* ==========================================
+   TARJETAS ESTADÍSTICAS
+   ========================================== */
 
 .vm-resumen {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+
+  grid-template-columns:
+    repeat(4, minmax(0, 1fr));
+
   gap: 16px;
   margin-bottom: 25px;
 }
 
 .vm-tarjeta {
-  background: white;
+  min-width: 0;
+
   padding: 22px;
-  border-radius: 12px;
-  border: 1px solid #e2e8f0;
-  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.04);
+
+  background: #ffffff;
+
+  border: 1px solid #dfe6ef;
+  border-radius: 14px;
+
+  box-shadow:
+    0 2px 12px rgba(25, 56, 95, 0.035);
 }
 
 .vm-tarjeta span {
   display: block;
-  color: #64748b;
-  font-size: 14px;
+
   margin-bottom: 10px;
+
+  font-size: 14px;
+  font-weight: 400;
+
+  color: #64748b;
 }
 
 .vm-tarjeta strong {
+  display: block;
+
   font-size: 32px;
-  color: #17365d;
+  font-weight: 800;
+  line-height: 1.2;
+
+  color: #19385f;
 }
 
+/* ==========================================
+   PANEL PRINCIPAL
+   ========================================== */
+
 .vm-panel {
-  background: white;
-  border-radius: 12px;
+  min-width: 0;
+
   padding: 20px;
-  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
+
+  background: #ffffff;
+
+  border: 1px solid #dfe6ef;
+  border-radius: 16px;
+
+  box-shadow:
+    0 2px 12px rgba(25, 56, 95, 0.035);
 }
+
+/* ==========================================
+   FILTROS Y BUSCADORES
+   ========================================== */
 
 .vm-filtros {
   display: flex;
-  gap: 12px;
   flex-wrap: wrap;
+  align-items: center;
+
+  gap: 12px;
   margin-bottom: 20px;
 }
 
 .vm-filtros input,
 .vm-filtros select {
-  padding: 12px;
+  min-width: 0;
+  min-height: 45px;
+
+  padding: 11px 13px;
+
+  background: #ffffff;
+  color: #20334d;
+
   border: 1px solid #cbd5e1;
-  border-radius: 8px;
+  border-radius: 10px;
+
   font-size: 14px;
+  font-weight: 400;
 }
 
 .vm-filtros input {
-  flex: 1;
-  min-width: 230px;
+  flex: 1 1 260px;
 }
 
-.vm-actualizar {
-  padding: 11px 18px;
-  border: none;
-  border-radius: 8px;
-  background: #2563eb;
-  color: white;
-  cursor: pointer;
+.vm-filtros select {
+  flex: 0 1 230px;
 }
+
+.vm-filtros input::placeholder {
+  color: #94a3b8;
+  opacity: 1;
+}
+
+.vm-filtros input:focus-visible,
+.vm-filtros select:focus-visible {
+  outline: 3px solid #9fc3ee;
+  outline-offset: 2px;
+}
+
+/* BOTÓN ACTUALIZAR */
+
+.vm-actualizar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  min-height: 45px;
+  padding: 11px 17px;
+
+  background: #2563eb;
+  color: #ffffff;
+
+  border: 1px solid #2563eb;
+  border-radius: 10px;
+
+  font-size: 14px;
+  font-weight: 600;
+
+  cursor: pointer;
+
+  transition: background 0.16s ease;
+}
+
+.vm-actualizar:hover {
+  background: #1d4ed8;
+}
+
+.vm-actualizar:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* ==========================================
+   TABLAS
+   ========================================== */
 
 .vm-tabla-contenedor {
   width: 100%;
@@ -110,37 +309,62 @@
 
 .vm-tabla {
   width: 100%;
-  border-collapse: collapse;
   min-width: 1050px;
+
+  border-collapse: collapse;
+
+  font-size: 13px;
+  text-align: left;
 }
 
 .vm-tabla th {
   padding: 14px;
-  background: #17365d;
-  color: white;
-  text-align: left;
+
+  background: #19385f;
+  color: #ffffff;
+
   font-size: 13px;
+  font-weight: 700;
+
+  text-align: left;
+  white-space: nowrap;
 }
 
 .vm-tabla td {
   padding: 14px;
+
   border-bottom: 1px solid #e2e8f0;
+
   font-size: 13px;
+  color: #33475f;
+
+  vertical-align: middle;
 }
 
 .vm-tabla tbody tr:hover {
   background: #f8fafc;
 }
 
+/* ==========================================
+   ESTADOS DE MUESTRAS
+   ========================================== */
+
 .vm-estado {
   display: inline-block;
+
   padding: 6px 12px;
-  border-radius: 20px;
-  font-size: 12px;
-  font-weight: bold;
+
   background: #e2e8f0;
   color: #334155;
+
+  border-radius: 999px;
+
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
 }
+
+/* PENDIENTES */
 
 .vm-tomada,
 .vm-pendiente,
@@ -149,39 +373,61 @@
   color: #92400e;
 }
 
+/* ACEPTADAS */
+
 .vm-aceptada {
   background: #dcfce7;
   color: #166534;
 }
+
+/* RECHAZADAS */
 
 .vm-rechazada {
   background: #fee2e2;
   color: #991b1b;
 }
 
+/* ==========================================
+   INDICADORES DE ACCESO
+   ========================================== */
+
 .vm-permitido {
   color: #15803d;
-  font-weight: bold;
+  font-weight: 700;
 }
 
 .vm-bloqueado {
   color: #b91c1c;
-  font-weight: bold;
+  font-weight: 700;
 }
+
+/* ==========================================
+   BOTONES DE ACCIONES
+   ========================================== */
 
 .vm-acciones {
   display: flex;
+  flex-wrap: wrap;
+
   gap: 8px;
 }
 
 .vm-aceptar,
 .vm-rechazar {
+  min-height: 39px;
   padding: 9px 13px;
+
   border: none;
-  border-radius: 7px;
-  color: white;
-  font-weight: bold;
+  border-radius: 9px;
+
+  color: #ffffff;
+
+  font-size: 13px;
+  font-weight: 700;
+
   cursor: pointer;
+
+  transition: background 0.16s ease;
 }
 
 .vm-aceptar {
@@ -206,9 +452,14 @@
   cursor: not-allowed;
 }
 
+/* ==========================================
+   INFORMACIÓN COMPLEMENTARIA
+   ========================================== */
+
 .vm-motivo {
   color: #991b1b;
   font-size: 12px;
+  line-height: 1.5;
 }
 
 .vm-sin-acciones {
@@ -216,18 +467,28 @@
 }
 
 .vm-vacio {
-  text-align: center;
   padding: 35px;
+
   color: #64748b;
+  text-align: center;
+
+  font-size: 14px;
 }
+
+/* ==========================================
+   MENSAJES
+   ========================================== */
 
 .vm-exito,
 .vm-error,
 .vm-aviso {
-  padding: 14px;
-  border-radius: 8px;
   margin-bottom: 20px;
+  padding: 14px 16px;
+
+  border-radius: 10px;
+
   font-size: 14px;
+  line-height: 1.5;
 }
 
 .vm-exito {
@@ -245,76 +506,135 @@
   color: #1e40af;
 }
 
+/* ==========================================
+   VENTANA MODAL
+   ========================================== */
+
 .vm-modal-fondo {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.55);
+
   display: flex;
   justify-content: center;
   align-items: center;
-  z-index: 1000;
+
   padding: 15px;
+
+  background: rgba(0, 0, 0, 0.55);
+
+  z-index: 1000;
 }
 
 .vm-modal {
   width: 100%;
   max-width: 480px;
-  background: white;
+  max-height: 90vh;
+
   padding: 28px;
+
+  overflow-y: auto;
+
+  background: #ffffff;
   border-radius: 14px;
-  box-sizing: border-box;
+
+  color: #20334d;
+
+  font-family:
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
 }
 
 .vm-modal h2 {
-  color: #17365d;
   margin: 0 0 15px;
+
+  font-size: 23px;
+  font-weight: 800;
+
+  color: #19385f;
 }
 
 .vm-modal p {
   color: #475569;
+  line-height: 1.5;
 }
 
 .vm-modal label {
   display: block;
+
   margin: 20px 0 8px;
-  font-weight: bold;
+
+  font-weight: 700;
   color: #334155;
 }
 
 .vm-modal textarea {
   width: 100%;
+  min-height: 100px;
+
   padding: 12px;
+
   border: 1px solid #cbd5e1;
-  border-radius: 8px;
+  border-radius: 10px;
+
   resize: vertical;
-  box-sizing: border-box;
+
+  background: #ffffff;
+  color: #20334d;
+
+  font-size: 14px;
+}
+
+.vm-modal textarea:focus-visible {
+  outline: 3px solid #9fc3ee;
+  outline-offset: 2px;
 }
 
 .vm-modal-acciones {
   display: flex;
   justify-content: flex-end;
+  flex-wrap: wrap;
+
   gap: 10px;
   margin-top: 20px;
 }
 
 .vm-cancelar {
+  min-height: 40px;
   padding: 10px 15px;
-  border: none;
-  border-radius: 7px;
+
   background: #e2e8f0;
   color: #334155;
+
+  border: none;
+  border-radius: 9px;
+
+  font-size: 14px;
+  font-weight: 600;
+
   cursor: pointer;
 }
 
-@media (max-width: 900px) {
+.vm-cancelar:hover {
+  background: #d4dce7;
+}
+
+/* ==========================================
+   DISEÑO ADAPTABLE
+   ========================================== */
+
+@media (max-width: 1100px) {
   .vm-resumen {
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns:
+      repeat(2, minmax(0, 1fr));
   }
 }
 
 @media (max-width: 600px) {
   .vm-contenedor {
-    padding: 12px;
+    padding: 14px;
   }
 
   .vm-encabezado {
@@ -322,11 +642,34 @@
     align-items: flex-start;
   }
 
+  .vm-contenedor .vm-encabezado h1 {
+    font-size: 30px !important;
+  }
+
   .vm-resumen {
     grid-template-columns: 1fr;
   }
 
   .vm-panel {
-    padding: 12px;
+    padding: 15px;
+  }
+
+  .vm-filtros {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .vm-filtros input,
+  .vm-filtros select,
+  .vm-actualizar {
+    width: 100%;
+  }
+
+  .vm-volver {
+    width: 100%;
+  }
+
+  .vm-modal {
+    padding: 20px;
   }
 }
