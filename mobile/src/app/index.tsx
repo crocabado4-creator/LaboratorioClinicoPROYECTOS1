@@ -1032,7 +1032,7 @@ export default function Index() {
               color="#475569"
               fondo="#E2E8F0"
               onPress={() =>
-                moduloNoDisponible("Auditoría global")
+                abrirModulo("/auditoria-global")
               }
             />
           )}

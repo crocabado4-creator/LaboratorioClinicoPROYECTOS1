@@ -176,58 +176,14 @@ export async function cargarResumenLaboratorio():
   };
 }
 
-
 export async function cargarReporte(
   tipo: TipoReporte
 ): Promise<Registro[]> {
   const { laboratorioId } =
     await contextoAdministrador();
 
-  const [registros, pacientes] = await Promise.all([
-    listar(tipo, laboratorioId),
-    listar("pacientes", laboratorioId),
-  ]);
-
-  const nombresPacientes = new Map<string, string>();
-
-  for (const paciente of pacientes) {
-    const nombreCompleto =
-      texto(paciente.nombreCompleto) ||
-      [
-        texto(paciente.nombres || paciente.nombre),
-        texto(paciente.apellidos || paciente.apellido),
-      ]
-        .filter(Boolean)
-        .join(" ");
-
-    nombresPacientes.set(
-      paciente.id,
-      nombreCompleto || "Paciente sin nombre"
-    );
-  }
-
-  return registros.map((registro) => {
-    if (tipo === "pacientes") {
-      return {
-        ...registro,
-        nombreCompleto:
-          nombresPacientes.get(registro.id) ||
-          "Paciente sin nombre",
-      };
-    }
-
-    const pacienteId = texto(registro.pacienteId);
-
-    return {
-      ...registro,
-      pacienteNombre: pacienteId
-        ? nombresPacientes.get(pacienteId) ||
-          "Paciente no encontrado"
-        : "",
-    };
-  });
+  return listar(tipo, laboratorioId);
 }
-
 
 export async function cargarNotificaciones():
   Promise<Registro[]> {

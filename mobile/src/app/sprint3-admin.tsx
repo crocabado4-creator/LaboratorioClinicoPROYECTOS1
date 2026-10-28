@@ -2,7 +2,6 @@
 import React, {
   useCallback,
   useEffect,
-  useMemo,
   useState,
 } from "react";
 
@@ -184,7 +183,7 @@ export default function Sprint3Admin() {
     useState<Pestana>("dashboard");
 
   const [tipo, setTipo] =
-    useState<TipoReporte>("pacientes");
+    useState<TipoReporte>("ordenes");
 
   const [busqueda, setBusqueda] = useState("");
   const [estado, setEstado] = useState("");
@@ -266,8 +265,7 @@ export default function Sprint3Admin() {
       }
     } catch (e: any) {
       setError(
-        e?.message ||
-        "No se pudo cargar la información."
+        e?.message || "No se pudo cargar la información."
       );
     } finally {
       setCargando(false);
@@ -291,8 +289,7 @@ export default function Sprint3Admin() {
       await cargar();
     } catch (e: any) {
       setError(
-        e?.message ||
-        "No se pudo actualizar la notificación."
+        e?.message || "No se pudo actualizar la notificación."
       );
     } finally {
       setMarcando("");
@@ -310,10 +307,9 @@ export default function Sprint3Admin() {
       .map((registro) => normalizarEstado(registro.estado))
       .filter(Boolean);
 
-    return Array.from(new Set(estados)).sort(
-      (a, b) => a.localeCompare(b, "es")
+    const coincideBusqueda = contenido.includes(
+      busqueda.trim().toLowerCase()
     );
-  }, [registros, pestana]);
 
   // ===================================================
   // FILTRAR REPORTES
@@ -323,15 +319,8 @@ export default function Sprint3Admin() {
     const busquedaNormalizada =
       busqueda.trim().toLowerCase();
 
-    return registros.filter((registro) => {
-      const contenido = Object.values(registro)
-        .map((valor) => {
-          if (
-            typeof valor === "string" ||
-            typeof valor === "number"
-          ) {
-            return String(valor);
-          }
+    return coincideBusqueda && coincideEstado;
+  });
 
           return "";
         })
@@ -375,12 +364,7 @@ export default function Sprint3Admin() {
 
   return (
     <View style={styles.fondo}>
-      <ScrollView
-        contentContainerStyle={styles.contenido}
-        keyboardShouldPersistTaps="handled"
-      >
-        {/* ENCABEZADO */}
-
+      <ScrollView contentContainerStyle={styles.contenido}>
         <View style={styles.encabezado}>
           <View style={{ flex: 1 }}>
             <Text style={styles.titulo}>
@@ -388,8 +372,7 @@ export default function Sprint3Admin() {
             </Text>
 
             <Text style={styles.subtitulo}>
-              Consulta los indicadores, reportes
-              y actividades de tu laboratorio.
+              Sprint 3 — Dashboard, reportes y auditoría
             </Text>
           </View>
 
@@ -411,13 +394,11 @@ export default function Sprint3Admin() {
               key={opcion.id}
               style={[
                 styles.pestana,
-                pestana === opcion.id &&
-                  styles.pestanaActiva,
+                pestana === opcion.id && styles.pestanaActiva,
               ]}
               onPress={() => {
                 setBusqueda("");
                 setEstado("");
-                setRegistros([]);
                 setPestana(opcion.id);
               }}
             >
@@ -434,17 +415,13 @@ export default function Sprint3Admin() {
           ))}
         </View>
 
-        {/* ACTUALIZAR DATOS */}
-
         <Pressable
           style={styles.botonGris}
           onPress={cargar}
           disabled={cargando}
         >
           <Text style={styles.textoGris}>
-            {cargando
-              ? "Cargando..."
-              : "Actualizar datos"}
+            Actualizar datos
           </Text>
         </Pressable>
 
@@ -458,9 +435,8 @@ export default function Sprint3Admin() {
 
             {error.toLowerCase().includes("permission") && (
               <Text style={styles.dato}>
-                Firebase rechazó esta operación.
-                Verifica los permisos del usuario
-                y las reglas de Firestore.
+                Firebase está rechazando esta consulta.
+                Toto debe revisar los permisos de Firestore.
               </Text>
             )}
           </View>
@@ -473,64 +449,39 @@ export default function Sprint3Admin() {
             size="large"
             color="#2563EB"
           />
+        ) : null}
+
+        {!cargando && !error &&
+          pestana === "dashboard" && resumen && (
+          <>
+            <Text style={styles.seccionTitulo}>
+              {resumen.laboratorio}
+            </Text>
+
+            <View style={styles.metricas}>
+              {metrica("Pacientes", resumen.pacientes)}
+              {metrica("Análisis", resumen.analisis)}
+              {metrica("Ventas", resumen.ventas)}
+              {metrica(
+                "Total vendido",
+                `Bs. ${resumen.totalVendido.toFixed(2)}`
+              )}
+              {metrica("Órdenes", resumen.ordenes)}
+              {metrica(
+                "Resultados finalizados",
+                resumen.resultadosFinalizados
+              )}
+              {metrica(
+                "Resultados pendientes",
+                resumen.resultadosPendientes
+              )}
+              {metrica(
+                "Muestras pendientes",
+                resumen.muestrasPendientes
+              )}
+            </View>
+          </>
         )}
-
-        {/* DASHBOARD */}
-
-        {!cargando &&
-          !error &&
-          pestana === "dashboard" &&
-          resumen && (
-            <>
-              <Text style={styles.seccionTitulo}>
-                {resumen.laboratorio}
-              </Text>
-
-              <View style={styles.metricas}>
-                {metrica(
-                  "Pacientes",
-                  resumen.pacientes
-                )}
-
-                {metrica(
-                  "Análisis",
-                  resumen.analisis
-                )}
-
-                {metrica(
-                  "Ventas",
-                  resumen.ventas
-                )}
-
-                {metrica(
-                  "Total vendido",
-                  `Bs. ${resumen.totalVendido.toFixed(2)}`
-                )}
-
-                {metrica(
-                  "Órdenes",
-                  resumen.ordenes
-                )}
-
-                {metrica(
-                  "Resultados finalizados",
-                  resumen.resultadosFinalizados
-                )}
-
-                {metrica(
-                  "Resultados pendientes",
-                  resumen.resultadosPendientes
-                )}
-
-                {metrica(
-                  "Muestras pendientes",
-                  resumen.muestrasPendientes
-                )}
-              </View>
-            </>
-          )}
-
-        {/* PANEL DE REPORTES */}
 
         {pestana === "reportes" && (
           <View style={styles.panel}>
@@ -542,32 +493,27 @@ export default function Sprint3Admin() {
               Seleccionar tipo de reporte
             </Text>
 
-            {/* TIPOS DE REPORTE */}
-
             <View style={styles.pestanas}>
               {tipos.map((opcion) => (
                 <Pressable
-                  key={opcion.id}
+                  key={opcion}
                   style={[
                     styles.pestana,
-                    tipo === opcion.id &&
-                      styles.pestanaActiva,
+                    tipo === opcion && styles.pestanaActiva,
                   ]}
                   onPress={() => {
-                    setTipo(opcion.id);
-                    setBusqueda("");
+                    setTipo(opcion);
                     setEstado("");
-                    setRegistros([]);
                   }}
                 >
                   <Text
                     style={[
                       styles.pestanaTexto,
-                      tipo === opcion.id &&
+                      tipo === opcion &&
                         styles.pestanaTextoActivo,
                     ]}
                   >
-                    {opcion.nombre}
+                    {opcion}
                   </Text>
                 </Pressable>
               ))}
@@ -577,7 +523,7 @@ export default function Sprint3Admin() {
 
             <TextInput
               style={styles.input}
-              placeholder="Buscar por nombre, CI o datos del registro"
+              placeholder="Buscar registros"
               placeholderTextColor="#94A3B8"
               value={busqueda}
               onChangeText={setBusqueda}
@@ -651,23 +597,22 @@ export default function Sprint3Admin() {
           </View>
         )}
 
-        {/* LISTADO DE REPORTES */}
-
-        {!cargando &&
-          !error &&
+        {!cargando && !error &&
           pestana === "reportes" && (
-            <>
-              <Text style={styles.seccionTitulo}>
-                {filtrados.length} registro(s)
-              </Text>
+          <>
+            <Text style={styles.seccionTitulo}>
+              {filtrados.length} registro(s)
+            </Text>
 
-              {filtrados.length === 0 && (
-                <Text style={styles.subtitulo}>
-                  {registros.length === 0
-                    ? "No hay registros disponibles."
-                    : "No se encontraron registros con los filtros seleccionados."}
+            {filtrados.map((registro) => (
+              <View key={registro.id} style={styles.tarjeta}>
+                <Text style={styles.tarjetaTitulo}>
+                  {texto(registro.nombreCompleto) ||
+                    texto(registro.nombre) ||
+                    texto(registro.analisisNombre) ||
+                    texto(registro.codigo) ||
+                    registro.id}
                 </Text>
-              )}
 
               {filtrados.map((registro) => (
                 <View
@@ -730,6 +675,7 @@ export default function Sprint3Admin() {
 
                   {/* FECHA */}
 
+                {registro.pacienteId && (
                   <Text style={styles.dato}>
                     Fecha:{" "}
                     {fecha(
@@ -738,40 +684,61 @@ export default function Sprint3Admin() {
                         registro.fechaCreacion
                     )}
                   </Text>
-                </View>
-              ))}
-            </>
-          )}
+                )}
 
-        {/* NOTIFICACIONES */}
-
-        {!cargando &&
-          !error &&
-          pestana === "notificaciones" && (
-            <>
-              <Text style={styles.seccionTitulo}>
-                Notificaciones ({registros.length})
-              </Text>
-
-              {registros.length === 0 && (
-                <Text style={styles.subtitulo}>
-                  No hay notificaciones disponibles.
-                </Text>
-              )}
-
-              {registros.map((notificacion) => (
-                <View
-                  key={notificacion.id}
-                  style={styles.tarjeta}
-                >
-                  <Text style={styles.tarjetaTitulo}>
-                    {texto(notificacion.titulo) ||
-                      "Notificación"}
-                  </Text>
-
+                {registro.estado && (
                   <Text style={styles.dato}>
-                    {texto(notificacion.mensaje)}
+                    Estado: {texto(registro.estado)}
                   </Text>
+                )}
+
+                {registro.total !== undefined && (
+                  <Text style={styles.dato}>
+                    Total: Bs. {texto(registro.total)}
+                  </Text>
+                )}
+
+                {registro.ci && (
+                  <Text style={styles.dato}>
+                    CI: {texto(registro.ci)}
+                  </Text>
+                )}
+
+                <Text style={styles.dato}>
+                  Fecha: {fecha(
+                    registro.fecha ??
+                    registro.fechaRegistro ??
+                    registro.fechaCreacion
+                  )}
+                </Text>
+              </View>
+            ))}
+          </>
+        )}
+
+        {!cargando && !error &&
+          pestana === "notificaciones" && (
+          <>
+            <Text style={styles.seccionTitulo}>
+              Notificaciones ({registros.length})
+            </Text>
+
+            {registros.map((notificacion) => (
+              <View
+                key={notificacion.id}
+                style={styles.tarjeta}
+              >
+                <Text style={styles.tarjetaTitulo}>
+                  {texto(notificacion.titulo) || "Notificación"}
+                </Text>
+
+                <Text style={styles.dato}>
+                  {texto(notificacion.mensaje)}
+                </Text>
+
+                <Text style={styles.dato}>
+                  Fecha: {fecha(notificacion.fecha)}
+                </Text>
 
                   <Text style={styles.dato}>
                     Fecha:{" "}
@@ -811,16 +778,19 @@ export default function Sprint3Admin() {
         {!cargando &&
           !error &&
           pestana === "auditoria" && (
-            <>
-              <Text style={styles.seccionTitulo}>
-                Auditoría ({registros.length})
-              </Text>
+          <>
+            <Text style={styles.seccionTitulo}>
+              Auditoría ({registros.length})
+            </Text>
 
-              {registros.length === 0 && (
-                <Text style={styles.subtitulo}>
-                  No hay eventos de auditoría disponibles.
+            {registros.map((evento) => (
+              <View
+                key={evento.id}
+                style={styles.tarjeta}
+              >
+                <Text style={styles.tarjetaTitulo}>
+                  {texto(evento.accion) || "Evento"}
                 </Text>
-              )}
 
               {registros.map((evento) => (
                 <View
@@ -875,81 +845,67 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#F1F5F9",
   },
-
   contenido: {
     padding: 18,
     paddingBottom: 45,
     gap: 13,
   },
-
   encabezado: {
     flexDirection: "row",
     alignItems: "flex-start",
     gap: 10,
   },
-
   titulo: {
     fontSize: 25,
     fontWeight: "bold",
     color: "#19385F",
   },
-
   subtitulo: {
     color: "#64748B",
     marginTop: 6,
   },
-
   seccionTitulo: {
     fontSize: 19,
     fontWeight: "bold",
     color: "#19385F",
     marginTop: 10,
   },
-
   pestanas: {
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 8,
   },
-
   pestana: {
     backgroundColor: "#E2E8F0",
     borderRadius: 9,
     paddingHorizontal: 12,
     paddingVertical: 12,
   },
-
   pestanaActiva: {
     backgroundColor: "#19385F",
   },
-
   pestanaTexto: {
     color: "#334155",
     fontWeight: "600",
   },
-
   pestanaTextoActivo: {
     color: "#FFFFFF",
   },
-
   botonGris: {
     alignSelf: "flex-start",
     backgroundColor: "#E2E8F0",
     padding: 12,
     borderRadius: 9,
   },
-
   textoGris: {
     color: "#19385F",
     fontWeight: "bold",
   },
-
   metricas: {
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 10,
   },
-
   metrica: {
     flexGrow: 1,
     minWidth: 140,
@@ -957,26 +913,22 @@ const styles = StyleSheet.create({
     backgroundColor: "#FFFFFF",
     padding: 17,
   },
-
   metricaTitulo: {
     fontSize: 13,
     color: "#64748B",
   },
-
   metricaValor: {
     fontSize: 25,
     fontWeight: "bold",
     color: "#19385F",
     marginTop: 7,
   },
-
   panel: {
     backgroundColor: "#FFFFFF",
     padding: 17,
     borderRadius: 12,
     gap: 10,
   },
-
   input: {
     borderWidth: 1,
     borderColor: "#CBD5E1",
@@ -984,55 +936,37 @@ const styles = StyleSheet.create({
     padding: 12,
     color: "#0F172A",
   },
-
-  filtroEstados: {
-    gap: 10,
-    marginTop: 5,
-  },
-
-  filtroTitulo: {
-    fontWeight: "bold",
-    fontSize: 14,
-    color: "#19385F",
-  },
-
   tarjeta: {
     backgroundColor: "#FFFFFF",
     padding: 17,
     borderRadius: 12,
     gap: 9,
   },
-
   tarjetaTitulo: {
     color: "#19385F",
     fontWeight: "bold",
     fontSize: 17,
   },
-
   dato: {
     color: "#475569",
     lineHeight: 21,
   },
-
   botonAzul: {
     alignSelf: "flex-start",
     backgroundColor: "#2563EB",
     borderRadius: 9,
     padding: 12,
   },
-
   textoBlanco: {
     color: "#FFFFFF",
     fontWeight: "bold",
   },
-
   error: {
     padding: 15,
     backgroundColor: "#FEE2E2",
     borderRadius: 10,
     gap: 7,
   },
-
   errorTexto: {
     color: "#B91C1C",
     fontWeight: "bold",

@@ -325,7 +325,7 @@ export default function ValidacionResultados() {
       refreshControl={<RefreshControl refreshing={actualizando} onRefresh={() => void cargar(false)} colors={[C.azul]} />}>
       <View style={s.cabecera}>
         <View style={{ flex: 1 }}>
-          <Text style={s.sobretitulo}>LABORATORIO CLÍNICO</Text>
+          <Text style={s.sobretitulo}>LABORATORIO CLÍNICO · HU-28</Text>
           <Text style={s.titulo}>Validación de resultados</Text>
           <Text style={s.descripcion}>Revisa los valores clínicos y confirma los resultados antes de su entrega.</Text>
         </View>
