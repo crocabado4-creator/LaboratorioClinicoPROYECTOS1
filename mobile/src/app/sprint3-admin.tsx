@@ -17,6 +17,7 @@ import {
 } from "react-native";
 
 import { router } from "expo-router";
+import { doc, getDoc, getFirestore } from "firebase/firestore";
 
 import {
   type Registro,
@@ -37,20 +38,14 @@ type Pestana =
   | "notificaciones"
   | "auditoria";
 
-const pestanas: {
-  id: Pestana;
-  nombre: string;
-}[] = [
+const pestanas: { id: Pestana; nombre: string }[] = [
   { id: "dashboard", nombre: "Dashboard" },
   { id: "reportes", nombre: "Reportes" },
   { id: "notificaciones", nombre: "Notificaciones" },
   { id: "auditoria", nombre: "Auditoría" },
 ];
 
-const tipos: {
-  id: TipoReporte;
-  nombre: string;
-}[] = [
+const tipos: { id: TipoReporte; nombre: string }[] = [
   { id: "pacientes", nombre: "Pacientes" },
   { id: "analisis", nombre: "Análisis" },
   { id: "ventas", nombre: "Ventas" },
@@ -63,41 +58,23 @@ function normalizarEstado(valor: unknown): string {
 }
 
 function presentarEstado(valor: string): string {
-  const limpio = valor
-    .replace(/_/g, " ")
-    .replace(/-/g, " ");
+  const limpio = valor.replace(/_/g, " ").replace(/-/g, " ");
 
-  if (!limpio) {
-    return "";
-  }
+  if (!limpio) return "";
 
-  return limpio
-    .charAt(0)
-    .toUpperCase() + limpio.slice(1);
+  return limpio.charAt(0).toUpperCase() + limpio.slice(1);
 }
 
 function nombrePaciente(registro: Registro): string {
-  const nombreCompleto = texto(
-    registro.nombreCompleto
-  );
+  const nombreCompleto = texto(registro.nombreCompleto);
 
-  if (nombreCompleto) {
-    return nombreCompleto;
-  }
+  if (nombreCompleto) return nombreCompleto;
 
-  const nombres = texto(
-    registro.nombres ?? registro.nombre
-  );
+  const nombres = texto(registro.nombres ?? registro.nombre);
+  const apellidos = texto(registro.apellidos ?? registro.apellido);
 
-  const apellidos = texto(
-    registro.apellidos ?? registro.apellido
-  );
-
-  const completo = [nombres, apellidos]
-    .filter(Boolean)
-    .join(" ");
-
-  return completo || "Paciente sin nombre";
+  return [nombres, apellidos].filter(Boolean).join(" ") ||
+    "Paciente sin nombre";
 }
 
 function tituloReporte(
@@ -147,6 +124,61 @@ function tituloReporte(
   return "Registro";
 }
 
+// ===================================================
+// OBTENER NOMBRE REAL DEL USUARIO DESDE FIRESTORE
+// ===================================================
+
+async function obtenerNombreUsuario(uid: string): Promise<string> {
+  if (!uid) return "";
+
+  try {
+    const db = getFirestore();
+    const referencia = doc(db, "usuarios", uid);
+    const documento = await getDoc(referencia);
+
+    if (!documento.exists()) {
+      return "";
+    }
+
+    const usuario = documento.data();
+
+    const nombreCompleto = texto(usuario.nombreCompleto);
+
+    const nombres = texto(
+      usuario.nombres || usuario.nombre
+    );
+
+    const apellidos = texto(
+      usuario.apellidos || usuario.apellido
+    );
+
+    const nombre = [nombres, apellidos]
+      .filter(Boolean)
+      .join(" ");
+
+    const identificacion =
+      nombreCompleto ||
+      nombre ||
+      texto(usuario.displayName) ||
+      texto(usuario.correo || usuario.email);
+
+    if (identificacion === uid) return "";
+
+    return identificacion;
+  } catch (error) {
+    console.warn(
+      "No se pudo consultar el nombre del usuario:",
+      error
+    );
+
+    return "";
+  }
+}
+
+// ===================================================
+// COMPONENTE PRINCIPAL
+// ===================================================
+
 export default function Sprint3Admin() {
   const [pestana, setPestana] =
     useState<Pestana>("dashboard");
@@ -154,11 +186,8 @@ export default function Sprint3Admin() {
   const [tipo, setTipo] =
     useState<TipoReporte>("pacientes");
 
-  const [busqueda, setBusqueda] =
-    useState("");
-
-  const [estado, setEstado] =
-    useState("");
+  const [busqueda, setBusqueda] = useState("");
+  const [estado, setEstado] = useState("");
 
   const [resumen, setResumen] =
     useState<ResumenLaboratorio | null>(null);
@@ -166,41 +195,74 @@ export default function Sprint3Admin() {
   const [registros, setRegistros] =
     useState<Registro[]>([]);
 
-  const [cargando, setCargando] =
-    useState(true);
+  const [cargando, setCargando] = useState(true);
+  const [error, setError] = useState("");
+  const [marcando, setMarcando] = useState("");
 
-  const [error, setError] =
-    useState("");
+  // ===================================================
+  // CARGAR INFORMACIÓN
+  // ===================================================
 
-  const [marcando, setMarcando] =
-    useState("");
-
-  // Cargar información según la pestaña seleccionada.
   const cargar = useCallback(async () => {
     try {
       setCargando(true);
       setError("");
 
       if (pestana === "dashboard") {
-        const datos =
-          await cargarResumenLaboratorio();
+        const datos = await cargarResumenLaboratorio();
 
         setResumen(datos);
       } else if (pestana === "reportes") {
-        const datos =
-          await cargarReporte(tipo);
+        const datos = await cargarReporte(tipo);
 
         setRegistros(datos);
       } else if (pestana === "notificaciones") {
-        const datos =
-          await cargarNotificaciones();
+        const datos = await cargarNotificaciones();
 
         setRegistros(datos);
-      } else {
-        const datos =
-          await cargarAuditoria();
+      } else if (pestana === "auditoria") {
+        const datos = await cargarAuditoria();
 
-        setRegistros(datos);
+        // Obtener los UID de los eventos sin repetirlos.
+        const ids = Array.from(
+          new Set(
+            datos
+              .map((evento) => texto(evento.usuarioId))
+              .filter(Boolean)
+          )
+        );
+
+        // Buscar el nombre de cada usuario una sola vez.
+        const nombres = new Map<string, string>();
+
+        await Promise.all(
+          ids.map(async (uid) => {
+            const nombre = await obtenerNombreUsuario(uid);
+
+            if (nombre) {
+              nombres.set(uid, nombre);
+            }
+          })
+        );
+
+        // Agregar el nombre a cada evento.
+        const eventosConNombres = datos.map((evento) => {
+          const uid = texto(evento.usuarioId);
+          const nombreGuardado = texto(evento.usuarioNombre);
+
+          const nombre =
+            (nombreGuardado && nombreGuardado !== uid
+              ? nombreGuardado
+              : nombres.get(uid)) ||
+            "Nombre no disponible";
+
+          return {
+            ...evento,
+            usuarioNombre: nombre,
+          };
+        });
+
+        setRegistros(eventosConNombres);
       }
     } catch (e: any) {
       setError(
@@ -216,7 +278,10 @@ export default function Sprint3Admin() {
     cargar();
   }, [cargar]);
 
-  // Marcar notificaciones como leídas.
+  // ===================================================
+  // MARCAR NOTIFICACIÓN COMO LEÍDA
+  // ===================================================
+
   const marcarLeida = async (id: string) => {
     try {
       setMarcando(id);
@@ -234,17 +299,15 @@ export default function Sprint3Admin() {
     }
   };
 
-  // Obtener los estados reales disponibles
-  // para el reporte actual.
+  // ===================================================
+  // ESTADOS DISPONIBLES
+  // ===================================================
+
   const estadosDisponibles = useMemo(() => {
-    if (pestana !== "reportes") {
-      return [];
-    }
+    if (pestana !== "reportes") return [];
 
     const estados = registros
-      .map((registro) =>
-        normalizarEstado(registro.estado)
-      )
+      .map((registro) => normalizarEstado(registro.estado))
       .filter(Boolean);
 
     return Array.from(new Set(estados)).sort(
@@ -252,7 +315,10 @@ export default function Sprint3Admin() {
     );
   }, [registros, pestana]);
 
-  // Filtrar registros por búsqueda y estado.
+  // ===================================================
+  // FILTRAR REPORTES
+  // ===================================================
+
   const filtrados = useMemo(() => {
     const busquedaNormalizada =
       busqueda.trim().toLowerCase();
@@ -284,14 +350,15 @@ export default function Sprint3Admin() {
     });
   }, [registros, busqueda, estado]);
 
+  // ===================================================
+  // TARJETA DE MÉTRICA
+  // ===================================================
+
   const metrica = (
     titulo: string,
     valor: string | number
   ) => (
-    <View
-      style={styles.metrica}
-      key={titulo}
-    >
+    <View style={styles.metrica} key={titulo}>
       <Text style={styles.metricaTitulo}>
         {titulo}
       </Text>
@@ -301,6 +368,10 @@ export default function Sprint3Admin() {
       </Text>
     </View>
   );
+
+  // ===================================================
+  // INTERFAZ
+  // ===================================================
 
   return (
     <View style={styles.fondo}>
@@ -332,7 +403,7 @@ export default function Sprint3Admin() {
           </Pressable>
         </View>
 
-        {/* PESTAÑAS PRINCIPALES */}
+        {/* PESTAÑAS */}
 
         <View style={styles.pestanas}>
           {pestanas.map((opcion) => (
@@ -377,7 +448,7 @@ export default function Sprint3Admin() {
           </Text>
         </Pressable>
 
-        {/* MENSAJES DE ERROR */}
+        {/* ERROR */}
 
         {error ? (
           <View style={styles.error}>
@@ -385,9 +456,7 @@ export default function Sprint3Admin() {
               {error}
             </Text>
 
-            {error
-              .toLowerCase()
-              .includes("permission") && (
+            {error.toLowerCase().includes("permission") && (
               <Text style={styles.dato}>
                 Firebase rechazó esta operación.
                 Verifica los permisos del usuario
@@ -396,6 +465,8 @@ export default function Sprint3Admin() {
             )}
           </View>
         ) : null}
+
+        {/* CARGANDO */}
 
         {cargando && (
           <ActivityIndicator
@@ -502,7 +573,7 @@ export default function Sprint3Admin() {
               ))}
             </View>
 
-            {/* BUSCADOR GENERAL */}
+            {/* BUSCADOR */}
 
             <TextInput
               style={styles.input}
@@ -512,7 +583,7 @@ export default function Sprint3Admin() {
               onChangeText={setBusqueda}
             />
 
-            {/* FILTRO DINÁMICO DE ESTADOS */}
+            {/* FILTRO POR ESTADO */}
 
             {!cargando &&
               !error &&
@@ -523,8 +594,6 @@ export default function Sprint3Admin() {
                   </Text>
 
                   <View style={styles.pestanas}>
-                    {/* BOTÓN TODOS */}
-
                     <Pressable
                       style={[
                         styles.pestana,
@@ -543,8 +612,6 @@ export default function Sprint3Admin() {
                         Todos
                       </Text>
                     </Pressable>
-
-                    {/* BOTONES DE ESTADOS REALES */}
 
                     {estadosDisponibles.map(
                       (opcion) => (
@@ -575,9 +642,8 @@ export default function Sprint3Admin() {
 
                   {estado !== "" && (
                     <Text style={styles.dato}>
-                      Estado seleccionado: {
-                        presentarEstado(estado)
-                      }
+                      Estado seleccionado:{" "}
+                      {presentarEstado(estado)}
                     </Text>
                   )}
                 </View>
@@ -612,15 +678,14 @@ export default function Sprint3Admin() {
                     {tituloReporte(registro, tipo)}
                   </Text>
 
-                  {/* NOMBRE DEL PACIENTE */}
+                  {/* PACIENTE */}
 
                   {registro.pacienteId &&
                     tipo !== "pacientes" && (
                       <Text style={styles.dato}>
-                        Paciente: {
-                          texto(registro.pacienteNombre) ||
-                          "Paciente no encontrado"
-                        }
+                        Paciente:{" "}
+                        {texto(registro.pacienteNombre) ||
+                          "Paciente no encontrado"}
                       </Text>
                     )}
 
@@ -628,22 +693,20 @@ export default function Sprint3Admin() {
 
                   {registro.estado && (
                     <Text style={styles.dato}>
-                      Estado: {
-                        presentarEstado(
-                          texto(registro.estado)
-                        )
-                      }
+                      Estado:{" "}
+                      {presentarEstado(
+                        texto(registro.estado)
+                      )}
                     </Text>
                   )}
 
-                  {/* TOTAL DE VENTA */}
+                  {/* TOTAL */}
 
                   {registro.total !== undefined &&
                     registro.total !== null && (
                       <Text style={styles.dato}>
-                        Total: Bs. {
-                          texto(registro.total)
-                        }
+                        Total: Bs.{" "}
+                        {texto(registro.total)}
                       </Text>
                     )}
 
@@ -655,27 +718,25 @@ export default function Sprint3Admin() {
                     </Text>
                   )}
 
-                  {/* FECHA DE NACIMIENTO */}
+                  {/* NACIMIENTO */}
 
                   {tipo === "pacientes" &&
                     registro.fechaNacimiento && (
                       <Text style={styles.dato}>
-                        Fecha de nacimiento: {
-                          fecha(registro.fechaNacimiento)
-                        }
+                        Fecha de nacimiento:{" "}
+                        {fecha(registro.fechaNacimiento)}
                       </Text>
                     )}
 
-                  {/* FECHA DEL REGISTRO */}
+                  {/* FECHA */}
 
                   <Text style={styles.dato}>
-                    Fecha: {
-                      fecha(
-                        registro.fecha ??
+                    Fecha:{" "}
+                    {fecha(
+                      registro.fecha ??
                         registro.fechaRegistro ??
                         registro.fechaCreacion
-                      )
-                    }
+                    )}
                   </Text>
                 </View>
               ))}
@@ -713,9 +774,8 @@ export default function Sprint3Admin() {
                   </Text>
 
                   <Text style={styles.dato}>
-                    Fecha: {
-                      fecha(notificacion.fecha)
-                    }
+                    Fecha:{" "}
+                    {fecha(notificacion.fecha)}
                   </Text>
 
                   <Text style={styles.dato}>
@@ -746,7 +806,7 @@ export default function Sprint3Admin() {
             </>
           )}
 
-        {/* AUDITORÍA */}
+        {/* AUDITORÍA CORREGIDA */}
 
         {!cargando &&
           !error &&
@@ -768,38 +828,34 @@ export default function Sprint3Admin() {
                   style={styles.tarjeta}
                 >
                   <Text style={styles.tarjetaTitulo}>
-                    {texto(evento.accion) ||
-                      "Evento"}
+                    {texto(evento.accion) || "Evento"}
                   </Text>
 
+                  {/* MOSTRAR NOMBRE, NO UID */}
+
                   <Text style={styles.dato}>
-                    Usuario: {
-                      texto(evento.usuarioNombre) ||
-                      texto(evento.usuarioId) ||
-                      "No identificado"
-                    }
+                    Usuario:{" "}
+                    {texto(evento.usuarioNombre) ||
+                      "Nombre no disponible"}
                   </Text>
 
                   {evento.entidad && (
                     <Text style={styles.dato}>
-                      Entidad: {
-                        texto(evento.entidad)
-                      }
+                      Entidad:{" "}
+                      {texto(evento.entidad)}
                     </Text>
                   )}
 
                   {evento.detalle && (
                     <Text style={styles.dato}>
-                      Detalle: {
-                        texto(evento.detalle)
-                      }
+                      Detalle:{" "}
+                      {texto(evento.detalle)}
                     </Text>
                   )}
 
                   <Text style={styles.dato}>
-                    Fecha: {
-                      fecha(evento.fecha)
-                    }
+                    Fecha:{" "}
+                    {fecha(evento.fecha)}
                   </Text>
                 </View>
               ))}
@@ -809,6 +865,10 @@ export default function Sprint3Admin() {
     </View>
   );
 }
+
+// ===================================================
+// ESTILOS
+// ===================================================
 
 const styles = StyleSheet.create({
   fondo: {

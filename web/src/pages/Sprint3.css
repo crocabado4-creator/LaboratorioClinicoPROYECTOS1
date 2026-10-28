@@ -1,198 +1,671 @@
+
+/* ==========================================
+   SPRINT 3 - LABORATORIO CLINICO
+   ESTILO UNIFICADO CON GESTION DE PERSONAL
+   ========================================== */
+
+/* CONFIGURACION GENERAL */
+
+.s3-page,
+.s3-page * {
+  box-sizing: border-box;
+}
+
 .s3-page {
   min-height: 100vh;
-  background: #f4f7fb;
-  padding: 24px;
-  color: #1e293b;
+  padding: 34px clamp(16px, 4vw, 55px) 60px;
+
+  background:
+    radial-gradient(
+      circle at 100% 0%,
+      rgba(20, 184, 166, 0.08),
+      transparent 25%
+    ),
+    linear-gradient(
+      180deg,
+      #f8fafc 0%,
+      #f1f5f9 100%
+    );
+
+  color: #0f172a;
+
+  font-family:
+    Inter,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+
+  font-size: 14px;
 }
+
+/* EVITAR TIPOGRAFIA ANTIGUA */
+
+.s3-page h1,
+.s3-page h2,
+.s3-page h3,
+.s3-page h4,
+.s3-page p,
+.s3-page span,
+.s3-page strong,
+.s3-page small,
+.s3-page button,
+.s3-page input,
+.s3-page select,
+.s3-page textarea,
+.s3-page table {
+  font-family: inherit;
+}
+
+.s3-page button,
+.s3-page input,
+.s3-page select,
+.s3-page textarea {
+  font-size: inherit;
+}
+
+/* ==========================================
+   ENCABEZADO PRINCIPAL
+   ========================================== */
 
 .s3-header {
+  width: 100%;
+  max-width: 1500px;
+
   display: flex;
-  align-items: flex-start;
+  align-items: flex-end;
   justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 20px;
+
+  gap: 24px;
+  margin: 0 auto 25px;
 }
 
-.s3-header h1,
+.s3-header h1 {
+  margin: 0;
+
+  color: #0f172a;
+
+  font-size: clamp(29px, 4vw, 39px);
+  font-weight: 800;
+
+  letter-spacing: -1px;
+  line-height: 1.2;
+}
+
 .s3-header h2 {
-  margin: 0 0 6px;
-  color: #17365d;
+  margin: 0;
+
+  color: #0f172a;
+
+  font-size: clamp(22px, 3vw, 28px);
+  font-weight: 800;
+
+  letter-spacing: -0.6px;
 }
 
 .s3-header p {
-  margin: 0;
+  max-width: 700px;
+
+  margin: 8px 0 0;
+
   color: #64748b;
+
+  font-size: 12px;
+  line-height: 1.7;
 }
 
-.s3-actions,
-.s3-tabs {
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-}
+/* ==========================================
+   BOTONES
+   ========================================== */
 
 .s3-button {
-  border: 0;
-  border-radius: 9px;
-  padding: 10px 14px;
-  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  gap: 8px;
+
+  min-height: 42px;
+  padding: 11px 17px;
+
+  border: none;
+  border-radius: 10px;
+
+  background:
+    linear-gradient(
+      135deg,
+      #0f766e,
+      #14b8a6
+    );
+
+  color: #ffffff;
+
+  font-size: 11px;
+  font-weight: 800;
+
+  text-align: center;
+
   cursor: pointer;
-  background: #17365d;
-  color: #fff;
+
+  box-shadow:
+    0 8px 22px
+    rgba(20, 184, 166, 0.18);
+
+  transition:
+    background 0.2s ease,
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.s3-button:hover {
+  transform: translateY(-1px);
+
+  box-shadow:
+    0 10px 25px
+    rgba(20, 184, 166, 0.25);
+}
+
+.s3-button:active {
+  transform: translateY(0);
 }
 
 .s3-button.secondary {
-  background: #e2e8f0;
-  color: #334155;
+  border: 1px solid #cbd5e1;
+
+  background: #ffffff;
+
+  color: #475569;
+
+  box-shadow: none;
 }
+
+.s3-button.secondary:hover {
+  border-color: #5eead4;
+
+  background: #f0fdfa;
+
+  color: #0f766e;
+}
+
+.s3-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+
+  transform: none;
+  box-shadow: none;
+}
+
+.s3-button:focus-visible {
+  outline: 3px solid rgba(20, 184, 166, 0.3);
+  outline-offset: 2px;
+}
+
+/* ==========================================
+   PESTAÑAS
+   ========================================== */
+
+.s3-tabs {
+  width: 100%;
+  max-width: 1500px;
+
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+
+  gap: 10px;
+
+  margin: 0 auto 26px;
+  padding: 7px;
+
+  border: 1px solid #e2e8f0;
+  border-radius: 15px;
+
+  background: #ffffff;
+
+  box-shadow:
+    0 5px 20px
+    rgba(15, 23, 42, 0.03);
+}
+
+.s3-tabs .s3-button {
+  border-radius: 10px;
+
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.s3-tabs .s3-button:not(.secondary) {
+  background: #17365d;
+  color: #ffffff;
+
+  box-shadow: none;
+}
+
+.s3-tabs .s3-button.secondary {
+  border: 1px solid transparent;
+
+  background: #f1f5f9;
+  color: #475569;
+}
+
+.s3-tabs .s3-button.secondary:hover {
+  background: #e0f2fe;
+  color: #17365d;
+}
+
+/* ==========================================
+   ACCIONES
+   ========================================== */
+
+.s3-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+
+  gap: 10px;
+}
+
+/* ==========================================
+   SECCION DE CONTENIDO
+   ========================================== */
+
+.s3-section {
+  width: 100%;
+  max-width: 1500px;
+
+  margin: 0 auto;
+}
+
+.s3-section > h2 {
+  margin: 0 0 18px;
+
+  color: #0f172a;
+
+  font-size: 23px;
+  font-weight: 800;
+
+  letter-spacing: -0.5px;
+}
+
+/* ==========================================
+   BARRA DE BUSQUEDA Y FILTROS
+   ========================================== */
 
 .s3-toolbar {
   display: flex;
-  gap: 12px;
   align-items: center;
   flex-wrap: wrap;
-  padding: 15px;
-  background: #fff;
+
+  gap: 12px;
+
+  width: 100%;
+
+  margin-bottom: 20px;
+  padding: 16px;
+
   border: 1px solid #e2e8f0;
-  border-radius: 12px;
-  margin-bottom: 18px;
+  border-radius: 15px;
+
+  background: #ffffff;
+
+  box-shadow:
+    0 5px 20px
+    rgba(15, 23, 42, 0.03);
 }
 
 .s3-toolbar input,
-.s3-toolbar select {
+.s3-toolbar select,
+.s3-toolbar textarea {
   min-width: 220px;
-  padding: 10px 12px;
-  border-radius: 8px;
+
+  padding: 12px 14px;
+
   border: 1px solid #cbd5e1;
-  background: #fff;
+  border-radius: 10px;
+
+  outline: none;
+
+  background: #ffffff;
+
+  color: #0f172a;
+
+  font-size: 12px;
 }
+
+.s3-toolbar input::placeholder {
+  color: #94a3b8;
+}
+
+.s3-toolbar input:focus,
+.s3-toolbar select:focus,
+.s3-toolbar textarea:focus {
+  border-color: #14b8a6;
+
+  box-shadow:
+    0 0 0 3px
+    rgba(20, 184, 166, 0.1);
+}
+
+/* ==========================================
+   ESTADISTICAS DEL DASHBOARD
+   ========================================== */
 
 .s3-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 14px;
-}
 
-.s3-stat,
-.s3-card,
-.s3-detail {
-  background: #fff;
-  border: 1px solid #e2e8f0;
-  border-radius: 12px;
+  grid-template-columns:
+    repeat(4, minmax(0, 1fr));
+
+  gap: 14px;
+
+  margin: 0 0 24px;
 }
 
 .s3-stat {
-  padding: 18px;
+  position: relative;
+
+  min-width: 0;
+  min-height: 118px;
+
+  padding: 20px;
+
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+
+  background: #ffffff;
+
+  box-shadow:
+    0 6px 20px
+    rgba(15, 23, 42, 0.04);
+
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.s3-stat:hover {
+  transform: translateY(-2px);
+
+  box-shadow:
+    0 12px 28px
+    rgba(15, 23, 42, 0.07);
 }
 
 .s3-stat span {
+  display: block;
+
+  margin-bottom: 9px;
+
   color: #64748b;
-  font-size: 13px;
+
+  font-size: 11px;
+  font-weight: 700;
 }
 
 .s3-stat strong {
   display: block;
-  margin-top: 7px;
-  font-size: 26px;
-  color: #17365d;
+
+  color: #0f172a;
+
+  font-size: 27px;
+  font-weight: 800;
+
+  letter-spacing: -0.7px;
+
+  overflow-wrap: anywhere;
 }
 
+/* ==========================================
+   TARJETAS DE INFORMACION
+   ========================================== */
+
 .s3-card {
-  padding: 16px;
-  margin-bottom: 12px;
+  min-width: 0;
+
+  margin-bottom: 14px;
+  padding: 20px;
+
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+
+  background: #ffffff;
+
+  box-shadow:
+    0 6px 20px
+    rgba(15, 23, 42, 0.04);
+}
+
+.s3-card h2 {
+  margin: 0 0 12px;
+
+  color: #0f172a;
+
+  font-size: 19px;
+  font-weight: 800;
 }
 
 .s3-card h3 {
-  margin: 0 0 8px;
+  margin: 0 0 12px;
+
   color: #17365d;
+
+  font-size: 16px;
+  font-weight: 800;
 }
 
 .s3-card p {
-  margin: 5px 0;
+  margin: 7px 0;
+
+  color: #475569;
+
+  font-size: 12px;
+  line-height: 1.6;
 }
+
+.s3-card strong {
+  color: #0f172a;
+}
+
+/* ==========================================
+   DISTRIBUCION DE LISTAS Y DETALLES
+   ========================================== */
 
 .s3-layout {
   display: grid;
-  grid-template-columns: 340px minmax(0, 1fr);
-  gap: 18px;
+
+  grid-template-columns:
+    340px minmax(0, 1fr);
+
   align-items: start;
+
+  gap: 18px;
 }
 
 .s3-list {
   display: flex;
   flex-direction: column;
+
   gap: 12px;
 }
 
-.s3-detail {
-  padding: 18px;
-  min-width: 0;
+.s3-list .s3-card {
+  margin-bottom: 0;
 }
 
+.s3-detail {
+  min-width: 0;
+
+  padding: 22px;
+
+  border: 1px solid #e2e8f0;
+  border-radius: 18px;
+
+  background: #ffffff;
+
+  box-shadow:
+    0 8px 25px
+    rgba(15, 23, 42, 0.05);
+}
+
+.s3-detail h2,
+.s3-detail h3 {
+  margin-top: 0;
+
+  color: #0f172a;
+}
+
+/* ==========================================
+   TABLAS
+   ========================================== */
+
 .s3-table-wrap {
-  overflow-x: auto;
   width: 100%;
+
+  overflow-x: auto;
+
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+
+  background: #ffffff;
+
+  box-shadow:
+    0 5px 20px
+    rgba(15, 23, 42, 0.03);
 }
 
 .s3-table {
-  border-collapse: collapse;
   width: 100%;
   min-width: 700px;
+
+  border-collapse: collapse;
+
+  background: #ffffff;
 }
 
-.s3-table th,
-.s3-table td {
+.s3-table th {
+  padding: 14px 16px;
+
   border-bottom: 1px solid #e2e8f0;
-  padding: 10px;
+
+  background: #f8fafc;
+
+  color: #64748b;
+
+  font-size: 10px;
+  font-weight: 800;
+
+  text-align: left;
+  text-transform: uppercase;
+
+  letter-spacing: 0.3px;
+}
+
+.s3-table td {
+  padding: 15px 16px;
+
+  border-bottom: 1px solid #f1f5f9;
+
+  color: #475569;
+
+  font-size: 11px;
   text-align: left;
   vertical-align: top;
 }
 
-.s3-table th {
-  background: #f8fafc;
-  color: #475569;
+.s3-table tbody tr:hover {
+  background: #f8fffd;
 }
+
+.s3-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+/* ==========================================
+   ESTADOS Y ETIQUETAS
+   ========================================== */
 
 .s3-badge {
   display: inline-flex;
-  padding: 5px 8px;
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 800;
+  align-items: center;
+  justify-content: center;
+
+  gap: 5px;
+
+  padding: 6px 11px;
+
+  border-radius: 30px;
+
   background: #dcfce7;
-  color: #166534;
-}
 
-.s3-error {
-  margin-bottom: 16px;
-  background: #fee2e2;
-  color: #991b1b;
-  border: 1px solid #fecaca;
-  border-radius: 9px;
-  padding: 12px;
-}
+  color: #15803d;
 
-.s3-empty {
-  padding: 24px;
-  border: 1px dashed #cbd5e1;
-  border-radius: 12px;
-  background: #fff;
-  text-align: center;
-  color: #64748b;
-}
-
-.s3-section {
-  margin-top: 22px;
+  font-size: 10px;
+  font-weight: 800;
 }
 
 .s3-muted {
   color: #64748b;
-  font-size: 13px;
+
+  font-size: 12px;
+  line-height: 1.6;
 }
 
-@media (max-width: 1000px) {
+/* ==========================================
+   MENSAJES DE ERROR
+   ========================================== */
+
+.s3-error {
+  margin-bottom: 18px;
+  padding: 15px 17px;
+
+  border: 1px solid #fecaca;
+  border-radius: 12px;
+
+  background: #fff1f2;
+
+  color: #b91c1c;
+
+  font-size: 12px;
+  font-weight: 600;
+
+  line-height: 1.6;
+}
+
+/* ==========================================
+   REGISTROS VACIOS
+   ========================================== */
+
+.s3-empty {
+  min-height: 180px;
+
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+
+  padding: 30px;
+
+  border: 1px dashed #cbd5e1;
+  border-radius: 16px;
+
+  background: #ffffff;
+
+  color: #64748b;
+
+  font-size: 12px;
+  text-align: center;
+  line-height: 1.7;
+}
+
+/* ==========================================
+   RESPONSIVE - TABLETS
+   ========================================== */
+
+@media (max-width: 1050px) {
   .s3-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns:
+      repeat(2, minmax(0, 1fr));
   }
 
   .s3-layout {
@@ -200,23 +673,73 @@
   }
 }
 
-@media (max-width: 650px) {
+/* ==========================================
+   RESPONSIVE - CELULARES
+   ========================================== */
+
+@media (max-width: 700px) {
   .s3-page {
-    padding: 14px;
+    padding: 22px 13px 40px;
   }
 
   .s3-header {
+    align-items: flex-start;
     flex-direction: column;
+  }
+
+  .s3-header h1 {
+    font-size: 28px;
+  }
+
+  .s3-header > .s3-button {
+    width: 100%;
+  }
+
+  .s3-tabs {
+    gap: 8px;
+  }
+
+  .s3-tabs .s3-button {
+    flex: 1 1 auto;
   }
 
   .s3-grid {
     grid-template-columns: 1fr;
   }
 
+  .s3-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .s3-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
   .s3-toolbar input,
-  .s3-toolbar select {
+  .s3-toolbar select,
+  .s3-toolbar textarea {
     width: 100%;
     min-width: 0;
-    box-sizing: border-box;
+  }
+
+  .s3-toolbar .s3-button {
+    width: 100%;
+  }
+
+  .s3-card {
+    padding: 16px;
+  }
+
+  .s3-detail {
+    padding: 16px;
+  }
+
+  .s3-stat {
+    min-height: 100px;
+  }
+
+  .s3-table {
+    min-width: 650px;
   }
 }

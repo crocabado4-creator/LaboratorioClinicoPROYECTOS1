@@ -37,6 +37,7 @@ import { auth, db } from "../firebase/firebase";
 type UsuarioActual = {
   uid: string;
   laboratorioId: string;
+  rol: "bioquimico" | "administrador";
 };
 
 type Muestra = {
@@ -88,6 +89,14 @@ function normalizar(valor: unknown): string {
   return texto(valor).toLowerCase();
 }
 
+// Los nombres de roles pueden venir con o sin tildes desde Firestore.
+function normalizarRol(valor: unknown): string {
+  return texto(valor)
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+}
+
 function obtenerError(error: unknown): string {
   const codigo = (
     error as { code?: string }
@@ -99,8 +108,8 @@ function obtenerError(error: unknown): string {
   ) {
     return (
       "Firestore rechazó la operación. " +
-      "Comprueba los permisos del bioquímico, " +
-      "el laboratorio y el estado de la muestra."
+      "Comprueba que tu rol tenga acceso de lectura a las " +
+      "muestras y pacientes de tu laboratorio."
     );
   }
 
@@ -296,7 +305,7 @@ async function obtenerUsuarioActual(): Promise<UsuarioActual> {
 
   if (!firebaseUser) {
     throw new Error(
-      "Debes iniciar sesión para registrar resultados."
+      "Debes iniciar sesión para consultar las muestras."
     );
   }
 
@@ -318,14 +327,16 @@ async function obtenerUsuarioActual(): Promise<UsuarioActual> {
     );
   }
 
-  const rol = normalizar(datos.rol);
+  const rol = normalizarRol(datos.rolNombre || datos.rol);
+  const esBioquimico = rol === "bioquimico";
+  const esAdministrador =
+    rol === "administrador" ||
+    rol === "administrador del laboratorio" ||
+    rol === "admin";
 
-  if (
-    rol !== "bioquimico" &&
-    rol !== "bioquímico"
-  ) {
+  if (!esBioquimico && !esAdministrador) {
     throw new Error(
-      "Este módulo está disponible únicamente para bioquímicos."
+      "No tienes permiso para consultar las muestras de este laboratorio."
     );
   }
 
@@ -342,6 +353,7 @@ async function obtenerUsuarioActual(): Promise<UsuarioActual> {
   return {
     uid: firebaseUser.uid,
     laboratorioId,
+    rol: esBioquimico ? "bioquimico" : "administrador",
   };
 }
 
@@ -436,23 +448,11 @@ export default function RegistroResultados() {
           )
         );
 
-        const consultaResultados = query(
-          collection(db, "resultados"),
-          where(
-            "laboratorioId",
-            "==",
-            usuarioActual.laboratorioId
-          )
-        );
-
-        const [
-          muestrasSnap,
-          pacientesSnap,
-          resultadosSnap,
-        ] = await Promise.all([
+        // El administrador solamente consulta muestras y pacientes.
+        // No necesita permiso para leer resultados en esta pantalla.
+        const [muestrasSnap, pacientesSnap] = await Promise.all([
           getDocs(consultaMuestras),
           getDocs(consultaPacientes),
-          getDocs(consultaResultados),
         ]);
 
         const listaMuestras =
@@ -500,19 +500,23 @@ export default function RegistroResultados() {
           }
         );
 
-        const listaResultados =
-          resultadosSnap.docs.map((documento) =>
-            convertirResultado(
-              documento.id,
-              documento.data()
-            )
+        let listaResultados: Resultado[] = [];
+
+        // El Bioquímico conserva la carga y edición de resultados.
+        if (usuarioActual.rol === "bioquimico") {
+          const consultaResultados = query(
+            collection(db, "resultados"),
+            where("laboratorioId", "==", usuarioActual.laboratorioId)
           );
 
-        listaResultados.sort((a, b) =>
-          a.analisisNombre.localeCompare(
-            b.analisisNombre
-          )
-        );
+          const resultadosSnap = await getDocs(consultaResultados);
+          listaResultados = resultadosSnap.docs.map((documento) =>
+            convertirResultado(documento.id, documento.data())
+          );
+          listaResultados.sort((a, b) =>
+            a.analisisNombre.localeCompare(b.analisisNombre)
+          );
+        }
 
         setMuestras(listaMuestras);
         setPacientes(mapaPacientes);
@@ -521,6 +525,7 @@ export default function RegistroResultados() {
         const mensaje = obtenerError(e);
 
         setError(mensaje);
+        setUsuario(null);
         setMuestras([]);
         setPacientes({});
         setResultados([]);
@@ -561,6 +566,8 @@ export default function RegistroResultados() {
   const seleccionarMuestra = (
     muestra: Muestra
   ): void => {
+    if (usuario?.rol !== "bioquimico") return;
+
     const resultadoExistente =
       resultados.find(
         (resultado) =>
@@ -625,6 +632,13 @@ export default function RegistroResultados() {
       try {
         const usuarioActual =
           await obtenerUsuarioActual();
+
+        // Nunca autorizar escrituras desde la vista del Administrador.
+        if (usuarioActual.rol !== "bioquimico") {
+          throw new Error(
+            "Solo el bioquímico puede registrar o modificar resultados."
+          );
+        }
 
         if (!muestraSeleccionada) {
           throw new Error(
@@ -1020,13 +1034,15 @@ export default function RegistroResultados() {
       <View style={styles.encabezado}>
         <View style={{ flex: 1 }}>
           <Text style={styles.titulo}>
-            Registro de resultados
+            {usuario?.rol === "administrador"
+              ? "Muestras disponibles"
+              : "Registro de resultados"}
           </Text>
 
           <Text style={styles.subtitulo}>
-            Registra los resultados de las
-            muestras que finalizaron su
-            procesamiento.
+            {usuario?.rol === "administrador"
+              ? "Consulta las muestras procesadas de tu laboratorio (solo lectura)."
+              : "Registra los resultados de las muestras que finalizaron su procesamiento."}
           </Text>
         </View>
 
@@ -1044,6 +1060,7 @@ export default function RegistroResultados() {
         </Pressable>
       </View>
 
+      {usuario?.rol === "bioquimico" && (
       <View style={styles.contadores}>
         <View style={styles.contador}>
           <Text
@@ -1087,6 +1104,7 @@ export default function RegistroResultados() {
           </Text>
         </View>
       </View>
+      )}
 
       <View style={styles.panel}>
         <Text style={styles.etiqueta}>
@@ -1237,6 +1255,8 @@ export default function RegistroResultados() {
                     Procesada
                   </Text>
 
+                  {usuario?.rol === "bioquimico" && (
+                  <>
                   <Text
                     style={[
                       styles.estadoResultado,
@@ -1283,6 +1303,8 @@ export default function RegistroResultados() {
                         : "Registrar resultado"}
                     </Text>
                   </Pressable>
+                  </>
+                  )}
                 </View>
               );
             }
@@ -1290,7 +1312,7 @@ export default function RegistroResultados() {
         )}
       </View>
 
-      {muestraSeleccionada && (
+      {usuario?.rol === "bioquimico" && muestraSeleccionada && (
         <View
           style={styles.panel}
           onLayout={(evento) => {
@@ -1431,6 +1453,7 @@ export default function RegistroResultados() {
         </View>
       )}
 
+      {usuario?.rol === "bioquimico" && (
       <View style={styles.panel}>
         <Text
           style={styles.seccionTitulo}
@@ -1531,6 +1554,7 @@ export default function RegistroResultados() {
           )
         )}
       </View>
+      )}
     </ScrollView>
   );
 }
