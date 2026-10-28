@@ -569,6 +569,46 @@ if (
   );
 }
 
+
+
+  // ============================================
+  // PANEL DEL LABORATORIO - ADMINISTRADOR
+  // ============================================
+
+  if (
+    vista === "sprint3Admin" &&
+    usuario.rol === "administrador"
+  ) {
+    return (
+      <ModuloAdministracionSprint3
+        usuario={usuario}
+        permisos={permisos}
+        onVolver={() => setVista("dashboard")}
+        volver={() => setVista("dashboard")}
+      />
+    );
+  }
+
+  // ============================================
+  // RESULTADOS - CONSULTA ADMINISTRADOR
+  // ============================================
+
+  if (
+    vista === "resultados" &&
+    usuario.rol === "administrador" &&
+    tienePermiso("resultados.ver")
+  ) {
+    return (
+      <ModuloAdministracionSprint3
+        usuario={usuario}
+        permisos={permisos}
+        onVolver={() => setVista("dashboard")}
+        volver={() => setVista("dashboard")}
+      />
+    );
+  }
+
+
 // ============================================
 // MODULO DE RESULTADOS - BIOQUIMICO
 // ============================================
@@ -1263,7 +1303,11 @@ if (
   <ModuloCard
     icono="📊"
     titulo="Resultados"
-    descripcion="Registra, consulta y valida los resultados clínicos del laboratorio."
+    descripcion={
+  usuario.rol === "administrador"
+    ? "Consulta los resultados clínicos de tu laboratorio."
+    : "Registra, consulta y valida los resultados clínicos del laboratorio."
+}
     fondo="#DBEAFE"
     color="#1D4ED8"
     onClick={() => setVista("resultados")}
