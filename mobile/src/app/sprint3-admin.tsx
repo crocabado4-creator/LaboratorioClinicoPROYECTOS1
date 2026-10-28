@@ -680,14 +680,17 @@ export default function Sprint3Admin() {
 
                   {/* PACIENTE */}
 
-                  {registro.pacienteId &&
-                    tipo !== "pacientes" && (
-                      <Text style={styles.dato}>
-                        Paciente:{" "}
-                        {texto(registro.pacienteNombre) ||
-                          "Paciente no encontrado"}
-                      </Text>
-                    )}
+                  {/* El servicio resuelve pacienteId, CI y vínculos
+                      mediante orden y solicitud antes de mostrar el nombre. */}
+                  {(tipo === "ventas" ||
+                    tipo === "ordenes" ||
+                    tipo === "resultados") && (
+                    <Text style={styles.dato}>
+                      Paciente:{" "}
+                      {texto(registro.pacienteNombre) ||
+                        "Paciente no identificado (revisar vínculo con paciente)"}
+                    </Text>
+                  )}
 
                   {/* ESTADO */}
 

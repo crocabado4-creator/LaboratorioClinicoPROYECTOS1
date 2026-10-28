@@ -1,7 +1,14 @@
+
+import { useCallback, useEffect, useState } from "react";
+
 import {
-  useEffect,
-  useState,
-} from "react";
+  collection,
+  getDocs,
+  query,
+  where,
+} from "firebase/firestore";
+
+import { db } from "../firebase/firebase";
 
 import {
   cargarDashboardLaboratorio,
@@ -10,75 +17,331 @@ import {
 
 import "./Sprint3.css";
 
-export default function DashboardLaboratorio({
-  usuario,
-}) {
+// ==========================================
+// CONVERTIR VALORES A TEXTO
+// ==========================================
+
+function texto(valor) {
+  if (valor === null || valor === undefined) {
+    return "";
+  }
+
+  if (typeof valor === "string" || typeof valor === "number") {
+    return String(valor).trim();
+  }
+
+  return "";
+}
+
+// ==========================================
+// OBTENER NOMBRE COMPLETO DEL PACIENTE
+// ==========================================
+
+function nombrePaciente(paciente) {
+  if (!paciente) {
+    return "";
+  }
+
+  const nombreCompleto =
+    texto(paciente.nombreCompleto) ||
+    texto(paciente.nombrePaciente);
+
+  if (nombreCompleto) {
+    return nombreCompleto;
+  }
+
+  const nombres =
+    texto(paciente.nombres) ||
+    texto(paciente.nombre);
+
+  const apellidos =
+    texto(paciente.apellidos) ||
+    texto(paciente.apellido);
+
+  return [nombres, apellidos]
+    .filter(Boolean)
+    .join(" ");
+}
+
+// ==========================================
+// OBTENER ID DEL PACIENTE DE UNA ORDEN
+// ==========================================
+
+function obtenerPacienteId(orden) {
+  return (
+    texto(orden.pacienteId) ||
+    texto(orden.idPaciente) ||
+    texto(orden.paciente_id) ||
+    texto(orden.paciente?.id) ||
+    texto(orden.paciente?.pacienteId)
+  );
+}
+
+// ==========================================
+// BUSCAR PACIENTE RELACIONADO
+// ==========================================
+
+function resolverNombrePaciente(orden, mapaPacientes) {
+  const pacienteId = obtenerPacienteId(orden);
+
+  // Primero buscamos el documento del paciente.
+  if (pacienteId) {
+    const paciente = mapaPacientes.get(pacienteId);
+
+    if (paciente) {
+      const nombre = nombrePaciente(paciente);
+
+      if (nombre) {
+        return nombre;
+      }
+    }
+  }
+
+  // Si la orden guarda el objeto del paciente.
+  if (orden.paciente && typeof orden.paciente === "object") {
+    const nombre = nombrePaciente(orden.paciente);
+
+    if (nombre) {
+      return nombre;
+    }
+  }
+
+  // Si la orden ya tiene un nombre guardado.
+  const nombreGuardado =
+    texto(orden.pacienteNombre) ||
+    texto(orden.nombrePaciente);
+
+  if (
+    nombreGuardado &&
+    nombreGuardado !== pacienteId
+  ) {
+    return nombreGuardado;
+  }
+
+  return "Nombre no disponible";
+}
+
+// ==========================================
+// MOSTRAR MONTO
+// ==========================================
+
+function montoVisible(valor) {
+  const numero = Number(valor);
+
+  if (!Number.isFinite(numero)) {
+    return "Bs. 0.00";
+  }
+
+  return `Bs. ${numero.toFixed(2)}`;
+}
+
+// ==========================================
+// FORMATO DEL ESTADO
+// ==========================================
+
+function estadoVisible(valor) {
+  const estado = texto(valor);
+
+  if (!estado) {
+    return "Sin estado";
+  }
+
+  const limpio = estado.replace(/_/g, " ");
+
+  return (
+    limpio.charAt(0).toUpperCase() +
+    limpio.slice(1)
+  );
+}
+
+// ==========================================
+// TARJETA DE ESTADISTICA
+// ==========================================
+
+function TarjetaEstadistica({ titulo, valor }) {
+  return (
+    <div className="s3-stat">
+      <span>{titulo}</span>
+
+      <strong>{valor}</strong>
+    </div>
+  );
+}
+
+// ==========================================
+// COMPONENTE PRINCIPAL
+// ==========================================
+
+export default function DashboardLaboratorio({ usuario }) {
   const laboratorioId =
-    usuario?.laboratorioId || "";
+    texto(usuario?.laboratorioId);
 
-  const [datos, setDatos] =
-    useState(null);
+  const [resumen, setResumen] = useState(null);
 
-  const [
-    laboratorio,
-    setLaboratorio,
-  ] = useState(null);
+  const [laboratorio, setLaboratorio] = useState(null);
 
-  const [error, setError] =
-    useState("");
+  const [ordenes, setOrdenes] = useState([]);
 
-  const [
-    cargando,
-    setCargando,
-  ] = useState(true);
+  const [cargando, setCargando] = useState(true);
 
-  const cargar = async () => {
+  const [error, setError] = useState("");
+
+  const [aviso, setAviso] = useState("");
+
+  // ==========================================
+  // CARGAR DATOS
+  // ==========================================
+
+  const cargar = useCallback(async () => {
+    if (!laboratorioId) {
+      setError("El usuario no tiene un laboratorio asignado.");
+      setCargando(false);
+      return;
+    }
+
     try {
       setCargando(true);
       setError("");
+      setAviso("");
 
-      const [
-        metricas,
-        lab,
-      ] = await Promise.all([
-        cargarDashboardLaboratorio(
-          laboratorioId
-        ),
-        obtenerLaboratorioAdmin(
-          laboratorioId
-        ),
-      ]);
+      // 1. Consultar las estadísticas y el laboratorio.
+      const [datosResumen, datosLaboratorio] =
+        await Promise.all([
+          cargarDashboardLaboratorio(laboratorioId),
+          obtenerLaboratorioAdmin(laboratorioId),
+        ]);
 
-      setDatos(metricas);
-      setLaboratorio(lab);
+      setResumen(datosResumen);
+      setLaboratorio(datosLaboratorio);
+
+      // 2. Leer las órdenes recientes.
+      const ordenesRecientes =
+        datosResumen.ordenesRecientes || [];
+
+      // 3. Obtener los pacientes del mismo laboratorio.
+      const mapaPacientes = new Map();
+
+      try {
+        const consultaPacientes = query(
+          collection(db, "pacientes"),
+          where("laboratorioId", "==", laboratorioId)
+        );
+
+        const snapshotPacientes =
+          await getDocs(consultaPacientes);
+
+        snapshotPacientes.forEach((documento) => {
+          mapaPacientes.set(documento.id, {
+            id: documento.id,
+            ...documento.data(),
+          });
+        });
+      } catch (errorPacientes) {
+        console.error(
+          "Error al consultar los pacientes:",
+          errorPacientes
+        );
+
+        setAviso(
+          "Las estadísticas se cargaron, pero no fue posible consultar los nombres de los pacientes. Revisa los permisos de lectura de Firestore."
+        );
+      }
+
+      // 4. Relacionar cada orden con su paciente.
+      const ordenesConPacientes =
+        ordenesRecientes.map((orden) => {
+          const nombre =
+            resolverNombrePaciente(
+              orden,
+              mapaPacientes
+            );
+
+          return {
+            ...orden,
+            pacienteNombreVisible: nombre,
+          };
+        });
+
+      setOrdenes(ordenesConPacientes);
+
     } catch (e) {
-      console.error(e);
+      console.error(
+        "Error al cargar el dashboard:",
+        e
+      );
 
       setError(
         e?.message ||
-          "No se pudo cargar el dashboard."
+        "No se pudo cargar el Dashboard del laboratorio."
       );
     } finally {
       setCargando(false);
     }
-  };
-
-  useEffect(() => {
-    if (laboratorioId) {
-      cargar();
-    }
   }, [laboratorioId]);
 
-  if (cargando) {
+  // ==========================================
+  // CARGAR AL ENTRAR
+  // ==========================================
+
+  useEffect(() => {
+    cargar();
+  }, [cargar]);
+
+  // ==========================================
+  // VERIFICAR ROL
+  // ==========================================
+
+  if (usuario?.rol !== "administrador") {
     return (
-      <div className="s3-empty">
-        Cargando indicadores...
+      <div className="s3-error">
+        Este Dashboard está disponible únicamente
+        para el Administrador del Laboratorio.
       </div>
     );
   }
 
+  // ==========================================
+  // CARGANDO
+  // ==========================================
+
+  if (cargando) {
+    return (
+      <div className="s3-empty">
+        Cargando Dashboard del laboratorio...
+      </div>
+    );
+  }
+
+  // ==========================================
+  // ERROR
+  // ==========================================
+
+  if (error) {
+    return (
+      <div>
+        <div className="s3-error">
+          {error}
+        </div>
+
+        <button
+          type="button"
+          className="s3-button secondary"
+          onClick={cargar}
+        >
+          Reintentar
+        </button>
+      </div>
+    );
+  }
+
+  // ==========================================
+  // INTERFAZ DEL DASHBOARD
+  // ==========================================
+
   return (
     <div>
+      {/* ENCABEZADO */}
+
       <div className="s3-header">
         <div>
           <h2>
@@ -86,184 +349,153 @@ export default function DashboardLaboratorio({
           </h2>
 
           <p>
-            {laboratorio?.nombreVisible ||
-              laboratorio?.nombre ||
-              "Laboratorio"}
+            {texto(laboratorio?.nombreVisible) ||
+              texto(laboratorio?.nombre) ||
+              "Laboratorio Clínico"}
           </p>
         </div>
 
         <button
-          className="s3-button secondary"
           type="button"
+          className="s3-button secondary"
           onClick={cargar}
         >
-          Actualizar
+          Actualizar datos
         </button>
       </div>
 
-      {error && (
-        <div className="s3-error">
-          {error}
+      {/* ESTADÍSTICAS */}
+
+      {resumen && (
+        <div className="s3-grid">
+          <TarjetaEstadistica
+            titulo="Pacientes"
+            valor={resumen.pacientes ?? 0}
+          />
+
+          <TarjetaEstadistica
+            titulo="Análisis"
+            valor={resumen.analisis ?? 0}
+          />
+
+          <TarjetaEstadistica
+            titulo="Ventas"
+            valor={resumen.ventas ?? 0}
+          />
+
+          <TarjetaEstadistica
+            titulo="Total vendido"
+            valor={montoVisible(
+              resumen.totalVentas
+            )}
+          />
+
+          <TarjetaEstadistica
+            titulo="Órdenes"
+            valor={resumen.ordenes ?? 0}
+          />
+
+          <TarjetaEstadistica
+            titulo="Resultados finalizados"
+            valor={
+              resumen.resultadosFinalizados ?? 0
+            }
+          />
+
+          <TarjetaEstadistica
+            titulo="Resultados pendientes"
+            valor={
+              resumen.resultadosPendientes ?? 0
+            }
+          />
+
+          <TarjetaEstadistica
+            titulo="Muestras pendientes"
+            valor={
+              resumen.muestrasPendientes ?? 0
+            }
+          />
         </div>
       )}
 
-      {datos && (
-        <>
-          <div className="s3-grid">
-            <div className="s3-stat">
-              <span>
-                Pacientes
-              </span>
-              <strong>
-                {
-                  datos.pacientes
-                }
-              </strong>
-            </div>
+      {/* AVISO SI NO SE PUDO LEER PACIENTES */}
 
-            <div className="s3-stat">
-              <span>
-                Análisis
-              </span>
-              <strong>
-                {
-                  datos.analisis
-                }
-              </strong>
-            </div>
+      {aviso && (
+        <div className="s3-error">
+          {aviso}
+        </div>
+      )}
 
-            <div className="s3-stat">
-              <span>
-                Ventas
-              </span>
-              <strong>
-                {
-                  datos.ventas
-                }
-              </strong>
-            </div>
+      {/* ÓRDENES RECIENTES */}
 
-            <div className="s3-stat">
-              <span>
-                Total vendido
-              </span>
-              <strong>
-                Bs.{" "}
-                {datos.totalVentas.toFixed(
-                  2
+      <div className="s3-header">
+        <div>
+          <h2>
+            Órdenes recientes
+          </h2>
+
+          <p>
+            Últimas órdenes registradas en tu laboratorio.
+          </p>
+        </div>
+      </div>
+
+      {ordenes.length === 0 ? (
+        <div className="s3-empty">
+          No hay órdenes recientes.
+        </div>
+      ) : (
+        <div className="s3-list">
+          {ordenes.map((orden) => (
+            <div
+              className="s3-card"
+              key={orden.id}
+            >
+              {/* NÚMERO DE ORDEN */}
+
+              <h3>
+                Orden:{" "}
+                {texto(orden.numeroOrden) ||
+                  texto(orden.codigoOrden) ||
+                  texto(orden.codigo) ||
+                  texto(orden.id) ||
+                  "Sin número"}
+              </h3>
+
+              {/* NOMBRE DEL PACIENTE */}
+
+              <p>
+                <strong>
+                  Paciente:
+                </strong>{" "}
+                {orden.pacienteNombreVisible}
+              </p>
+
+              {/* ESTADO */}
+
+              <p>
+                <strong>
+                  Estado:
+                </strong>{" "}
+                {estadoVisible(orden.estado)}
+              </p>
+
+              {/* TOTAL */}
+
+              <p>
+                <strong>
+                  Total:
+                </strong>{" "}
+                {montoVisible(
+                  orden.total ?? orden.totalVenta ?? 0
                 )}
-              </strong>
+              </p>
             </div>
-
-            <div className="s3-stat">
-              <span>
-                Órdenes
-              </span>
-              <strong>
-                {
-                  datos.ordenes
-                }
-              </strong>
-            </div>
-
-            <div className="s3-stat">
-              <span>
-                Resultados finalizados
-              </span>
-              <strong>
-                {
-                  datos
-                    .resultadosFinalizados
-                }
-              </strong>
-            </div>
-
-            <div className="s3-stat">
-              <span>
-                Resultados pendientes
-              </span>
-              <strong>
-                {
-                  datos
-                    .resultadosPendientes
-                }
-              </strong>
-            </div>
-
-            <div className="s3-stat">
-              <span>
-                Muestras pendientes
-              </span>
-              <strong>
-                {
-                  datos
-                    .muestrasPendientes
-                }
-              </strong>
-            </div>
-          </div>
-
-          <div className="s3-section">
-            <h3>
-              Órdenes recientes
-            </h3>
-
-            {datos.ordenesRecientes
-              .length === 0 ? (
-              <div className="s3-empty">
-                No hay órdenes
-                registradas.
-              </div>
-            ) : (
-              datos.ordenesRecientes.map(
-                (orden) => (
-                  <div
-                    className="s3-card"
-                    key={orden.id}
-                  >
-                    <p>
-                      <strong>
-                        Orden:
-                      </strong>{" "}
-                      {orden.ordenId ||
-                        orden.id}
-                    </p>
-
-                    <p>
-                      <strong>
-                        Paciente:
-                      </strong>{" "}
-                      {orden.pacienteId ||
-                        "-"}
-                    </p>
-
-                    <p>
-                      <strong>
-                        Estado:
-                      </strong>{" "}
-                      {orden.estado ||
-                        "-"}
-                    </p>
-
-                    <p>
-                      <strong>
-                        Total:
-                      </strong>{" "}
-                      Bs.{" "}
-                      {Number(
-                        orden.total ||
-                          0
-                      ).toFixed(
-                        2
-                      )}
-                    </p>
-                  </div>
-                )
-              )
-            )}
-          </div>
-        </>
+          ))}
+        </div>
       )}
     </div>
   );
 }
+
+
