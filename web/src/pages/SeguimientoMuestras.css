@@ -1,182 +1,498 @@
+
+/* ==========================================
+   LABORATORIO CLÍNICO
+   SEGUIMIENTO DE MUESTRAS
+   Diseño unificado con Informe de resultados
+   y Recepción y validación de muestras
+   ========================================== */
+
+/* ==========================================
+   1. CONFIGURACIÓN GENERAL
+   ========================================== */
+
 .sm-contenedor {
-  padding: 25px;
-  background: #f4f7fb;
+  --sm-navy: #19385f;
+  --sm-navy-deep: #122b4b;
+  --sm-ink: #20334d;
+  --sm-muted: #64748b;
+  --sm-border: #dfe6ef;
+  --sm-bg: #f1f5f9;
+  --sm-white: #ffffff;
+  --sm-blue: #2563eb;
+
+  box-sizing: border-box;
+
+  width: 100%;
+  min-width: 0;
   min-height: 100%;
-  font-family: Arial, sans-serif;
+
+  margin: 0 auto;
+  padding: clamp(16px, 2.2vw, 28px);
+
+  background: var(--sm-bg);
+  color: var(--sm-ink);
+
+  font-family:
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+
+  font-size: 14px;
+  line-height: 1.5;
 }
+
+.sm-contenedor *,
+.sm-contenedor *::before,
+.sm-contenedor *::after,
+.sm-modal-fondo *,
+.sm-modal-fondo *::before,
+.sm-modal-fondo *::after {
+  box-sizing: border-box;
+}
+
+.sm-contenedor button,
+.sm-contenedor input,
+.sm-contenedor select,
+.sm-contenedor textarea,
+.sm-modal-fondo button,
+.sm-modal-fondo textarea {
+  font-family:
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+}
+
+/* ==========================================
+   2. ENCABEZADO
+   ========================================== */
 
 .sm-encabezado {
   display: flex;
+  align-items: flex-start;
   justify-content: space-between;
-  align-items: center;
+
+  gap: 20px;
   margin-bottom: 25px;
 }
 
-.sm-encabezado h1 {
-  color: #17365d;
-  margin: 0 0 8px;
+/* MISMA LETRA DE INFORME DE RESULTADOS */
+
+.sm-contenedor .sm-encabezado h1 {
+  margin: 0 0 12px;
+  padding: 0;
+
+  font-family:
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif !important;
+
+  font-size: clamp(30px, 3vw, 36px) !important;
+  font-weight: 800 !important;
+
+  line-height: 1.2 !important;
+  letter-spacing: -0.5px !important;
+
+  color: #19385f !important;
 }
 
 .sm-encabezado p {
+  margin: 0;
+
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 1.5;
+
   color: #64748b;
 }
 
+/* BOTÓN VOLVER */
+
 .sm-volver {
-  padding: 11px 18px;
-  background: #334155;
-  color: white;
-  border: none;
-  border-radius: 8px;
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+
+  min-height: 45px;
+  padding: 11px 17px;
+
+  background: #e2e8f0;
+  color: #19385f;
+
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+
+  font-size: 14px;
+  font-weight: 600;
+
   cursor: pointer;
+  white-space: nowrap;
+
+  transition:
+    background 0.16s ease,
+    color 0.16s ease;
 }
+
+.sm-volver:hover {
+  background: #d4dce7;
+}
+
+/* ==========================================
+   3. TARJETAS ESTADÍSTICAS
+   ========================================== */
 
 .sm-resumen {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 15px;
+
+  grid-template-columns:
+    repeat(3, minmax(0, 1fr));
+
+  gap: 16px;
   margin-bottom: 25px;
 }
 
 .sm-tarjeta {
-  background: white;
-  padding: 20px;
-  border-radius: 12px;
-  border: 1px solid #e2e8f0;
+  min-width: 0;
+
+  padding: 22px;
+
+  background: #ffffff;
+
+  border: 1px solid #dfe6ef;
+  border-radius: 14px;
+
+  box-shadow:
+    0 2px 12px rgba(25, 56, 95, 0.035);
 }
 
 .sm-tarjeta span {
   display: block;
-  color: #64748b;
+
   margin-bottom: 10px;
+
+  font-size: 14px;
+  font-weight: 400;
+
+  color: #64748b;
 }
 
 .sm-tarjeta strong {
-  font-size: 30px;
-  color: #17365d;
+  display: block;
+
+  color: #19385f;
+
+  font-size: 32px;
+  font-weight: 800;
+  line-height: 1.2;
 }
+
+/* ==========================================
+   4. FILTROS Y BUSCADORES
+   ========================================== */
 
 .sm-filtros {
   display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+
   gap: 12px;
   margin-bottom: 20px;
-  flex-wrap: wrap;
+
+  padding: 20px;
+
+  background: #ffffff;
+  border: 1px solid #dfe6ef;
+  border-radius: 16px;
+
+  box-shadow:
+    0 2px 12px rgba(25, 56, 95, 0.035);
 }
 
 .sm-filtros input,
 .sm-filtros select {
-  padding: 12px;
+  min-width: 0;
+  min-height: 45px;
+
+  padding: 11px 13px;
+
+  background: #ffffff;
+  color: #20334d;
+
   border: 1px solid #cbd5e1;
-  border-radius: 8px;
+  border-radius: 10px;
+
+  font-size: 14px;
+  font-weight: 400;
 }
 
 .sm-filtros input {
-  flex: 1;
-  min-width: 250px;
+  flex: 1 1 250px;
 }
+
+.sm-filtros select {
+  flex: 0 1 230px;
+}
+
+.sm-filtros input::placeholder {
+  color: #94a3b8;
+  opacity: 1;
+}
+
+.sm-filtros input:focus-visible,
+.sm-filtros select:focus-visible,
+.sm-modal textarea:focus-visible {
+  outline: 3px solid #9fc3ee;
+  outline-offset: 2px;
+}
+
+/* BOTÓN ACTUALIZAR */
 
 .sm-filtros button {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+
+  min-height: 45px;
+  padding: 11px 17px;
+
   background: #2563eb;
-  color: white;
-  border: none;
-  padding: 11px 18px;
-  border-radius: 8px;
+  color: #ffffff;
+
+  border: 1px solid #2563eb;
+  border-radius: 10px;
+
+  font-size: 14px;
+  font-weight: 600;
+
   cursor: pointer;
+
+  transition: background 0.16s ease;
 }
 
+.sm-filtros button:hover {
+  background: #1d4ed8;
+}
+
+.sm-filtros button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* ==========================================
+   5. TABLAS DE MUESTRAS
+   ========================================== */
+
 .sm-tabla-contenedor {
-  background: white;
-  border-radius: 12px;
+  width: 100%;
   overflow-x: auto;
+
+  background: #ffffff;
+
+  border: 1px solid #dfe6ef;
+  border-radius: 14px;
+
+  box-shadow:
+    0 2px 12px rgba(25, 56, 95, 0.035);
 }
 
 .sm-tabla {
   width: 100%;
+  min-width: 850px;
+
   border-collapse: collapse;
+
+  font-size: 13px;
+  text-align: left;
 }
 
 .sm-tabla th {
-  background: #17365d;
-  color: white;
   padding: 15px;
+
+  background: #19385f;
+  color: #ffffff;
+
+  font-size: 13px;
+  font-weight: 700;
+
   text-align: left;
+  white-space: nowrap;
 }
 
 .sm-tabla td {
   padding: 14px;
+
   border-bottom: 1px solid #e2e8f0;
+
+  font-size: 13px;
+  color: #33475f;
+
+  vertical-align: middle;
 }
+
+.sm-tabla tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.sm-tabla tbody tr:hover {
+  background: #f8fafc;
+}
+
+/* ==========================================
+   6. BOTONES DE ACCIONES
+   ========================================== */
 
 .sm-acciones {
   display: flex;
-  gap: 8px;
+  align-items: center;
   flex-wrap: wrap;
+
+  gap: 8px;
 }
 
 .sm-iniciar,
 .sm-finalizar,
 .sm-historial {
-  border: none;
-  border-radius: 7px;
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+
+  min-height: 38px;
   padding: 9px 13px;
-  color: white;
+
+  border: none;
+  border-radius: 9px;
+
+  color: #ffffff;
+
+  font-size: 13px;
+  font-weight: 700;
+
   cursor: pointer;
+
+  transition:
+    background 0.16s ease,
+    opacity 0.16s ease;
 }
+
+/* INICIAR PROCESAMIENTO */
 
 .sm-iniciar {
   background: #2563eb;
 }
 
+.sm-iniciar:hover {
+  background: #1d4ed8;
+}
+
+/* FINALIZAR PROCESAMIENTO */
+
 .sm-finalizar {
   background: #16a34a;
 }
+
+.sm-finalizar:hover {
+  background: #15803d;
+}
+
+/* VER HISTORIAL */
 
 .sm-historial {
   background: #64748b;
 }
 
-.sm-estado {
-  padding: 6px 12px;
-  border-radius: 20px;
-  font-weight: bold;
-  background: #e2e8f0;
+.sm-historial:hover {
+  background: #475569;
 }
+
+.sm-iniciar:disabled,
+.sm-finalizar:disabled,
+.sm-historial:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ==========================================
+   7. ESTADOS DE MUESTRAS
+   ========================================== */
+
+.sm-estado {
+  display: inline-flex;
+  align-items: center;
+
+  padding: 6px 12px;
+
+  background: #e2e8f0;
+  color: #334155;
+
+  border-radius: 999px;
+
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+/* TOMADA */
 
 .sm-tomada {
   background: #fef3c7;
   color: #92400e;
 }
 
+/* ACEPTADA */
+
 .sm-aceptada {
   background: #dcfce7;
   color: #166534;
 }
+
+/* RECHAZADA */
 
 .sm-rechazada {
   background: #fee2e2;
   color: #991b1b;
 }
 
+/* EN PROCESO */
+
 .sm-en_proceso {
   background: #dbeafe;
   color: #1d4ed8;
 }
+
+/* PROCESADA */
 
 .sm-procesada {
   background: #ccfbf1;
   color: #0f766e;
 }
 
+/* ==========================================
+   8. MENSAJES
+   ========================================== */
+
 .sm-vacio {
-  text-align: center;
   padding: 30px;
+
   color: #64748b;
+
+  font-size: 14px;
+  text-align: center;
 }
 
 .sm-exito,
 .sm-error {
-  padding: 13px;
-  border-radius: 8px;
   margin-bottom: 15px;
+  padding: 14px 16px;
+
+  border-radius: 10px;
+
+  font-size: 14px;
+  line-height: 1.5;
 }
 
 .sm-exito {
@@ -189,91 +505,259 @@
   color: #991b1b;
 }
 
+/* ==========================================
+   9. VENTANAS MODALES
+   ========================================== */
+
 .sm-modal-fondo {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.55);
+
   display: flex;
-  align-items: center;
   justify-content: center;
+  align-items: center;
+
+  padding: 15px;
+
+  background: rgba(0, 0, 0, 0.55);
+
   z-index: 1000;
 }
 
 .sm-modal {
-  width: 90%;
+  width: 100%;
   max-width: 500px;
-  background: white;
-  padding: 25px;
-  border-radius: 12px;
   max-height: 85vh;
+
+  padding: 25px;
+
   overflow-y: auto;
+
+  background: #ffffff;
+  color: #20334d;
+
+  border-radius: 14px;
+
+  font-family:
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
 }
 
 .sm-modal h2 {
-  color: #17365d;
+  margin: 0 0 15px;
+
+  color: #19385f;
+
+  font-size: 23px;
+  font-weight: 800;
 }
 
 .sm-modal label {
   display: block;
+
   margin: 15px 0 8px;
+
+  color: #334155;
+  font-size: 14px;
+  font-weight: 700;
 }
 
 .sm-modal textarea {
   width: 100%;
+  min-height: 100px;
+
   padding: 12px;
+
+  background: #ffffff;
+  color: #20334d;
+
   border: 1px solid #cbd5e1;
-  border-radius: 8px;
-  box-sizing: border-box;
+  border-radius: 10px;
+
+  font-size: 14px;
+  resize: vertical;
 }
+
+/* BOTONES DEL MODAL */
 
 .sm-modal-acciones {
   display: flex;
   justify-content: flex-end;
+  flex-wrap: wrap;
+
   gap: 10px;
   margin-top: 20px;
 }
 
 .sm-cancelar,
 .sm-confirmar {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+
+  min-height: 40px;
   padding: 10px 15px;
+
   border: none;
-  border-radius: 7px;
+  border-radius: 9px;
+
+  font-size: 14px;
+  font-weight: 600;
+
   cursor: pointer;
 }
 
 .sm-cancelar {
   background: #e2e8f0;
+  color: #334155;
+}
+
+.sm-cancelar:hover {
+  background: #d4dce7;
 }
 
 .sm-confirmar {
   background: #2563eb;
-  color: white;
+  color: #ffffff;
 }
+
+.sm-confirmar:hover {
+  background: #1d4ed8;
+}
+
+.sm-cancelar:disabled,
+.sm-confirmar:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ==========================================
+   10. HISTORIAL DE MUESTRAS
+   ========================================== */
 
 .sm-lista-historial {
   margin: 20px 0;
 }
 
 .sm-item-historial {
-  padding: 15px;
-  background: #f8fafc;
-  border-left: 4px solid #2563eb;
   margin-bottom: 12px;
-  border-radius: 6px;
+  padding: 15px;
+
+  background: #f8fafc;
+
+  border-left: 4px solid #2563eb;
+  border-radius: 8px;
+
+  color: #334155;
+  font-size: 14px;
+  line-height: 1.5;
 }
+
+/* ==========================================
+   11. DISEÑO RESPONSIVE
+   ========================================== */
 
 @media (max-width: 1000px) {
   .sm-resumen {
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns:
+      repeat(2, minmax(0, 1fr));
   }
 }
 
 @media (max-width: 600px) {
-  .sm-resumen {
-    grid-template-columns: repeat(2, 1fr);
+  .sm-contenedor {
+    padding: 14px;
   }
 
-  .sm-contenedor {
-    padding: 12px;
+  .sm-encabezado {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .sm-contenedor .sm-encabezado h1 {
+    font-size: 30px !important;
+  }
+
+  .sm-volver {
+    width: 100%;
+  }
+
+  .sm-resumen {
+    grid-template-columns: 1fr;
+  }
+
+  .sm-filtros {
+    flex-direction: column;
+    align-items: stretch;
+    padding: 15px;
+  }
+
+  .sm-filtros input,
+  .sm-filtros select,
+  .sm-filtros button {
+    width: 100%;
+  }
+
+  .sm-modal {
+    padding: 20px;
+  }
+
+  .sm-modal-acciones {
+    flex-direction: column;
+  }
+
+  .sm-modal-acciones button {
+    width: 100%;
+  }
+}
+
+/* ==========================================
+   CORRECCIÓN FINAL DEL ENCABEZADO
+   MISMA TIPOGRAFÍA QUE INFORME DE RESULTADOS
+   ========================================== */
+
+.sm-contenedor .sm-encabezado h1,
+.sm-contenedor .sm-encabezado h2 {
+  font-family:
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif !important;
+
+  font-size: 36px !important;
+  font-weight: 900 !important;
+  line-height: 1.2 !important;
+  letter-spacing: -0.5px !important;
+
+  color: #19385f !important;
+
+  margin: 0 0 12px !important;
+  padding: 0 !important;
+}
+
+.sm-contenedor .sm-encabezado p {
+  font-family:
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif !important;
+
+  font-size: 16px !important;
+  font-weight: 400 !important;
+  line-height: 1.5 !important;
+
+ color: #64748b !important;
+  margin: 0 !important;
+}
+
+@media (max-width: 600px) {
+  .sm-contenedor .sm-encabezado h1,
+  .sm-contenedor .sm-encabezado h2 {
+    font-size: 30px !important;
   }
 }

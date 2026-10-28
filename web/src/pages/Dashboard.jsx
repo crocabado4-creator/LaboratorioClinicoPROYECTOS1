@@ -551,9 +551,10 @@ if (vista === "ventas") {
 }
 
 
-// =====================================================
-// HU-22, HU-23, HU-24 - GESTIÓN Y VALIDACIÓN DE MUESTRAS
-// =====================================================
+
+// ============================================
+// MODULO DE MUESTRAS - BIOQUIMICO
+// ============================================
 
 if (
   vista === "muestras" &&
@@ -562,26 +563,30 @@ if (
   return (
     <ModuloMuestras
       usuario={usuario}
-      onVolver={() =>
-        setVista("dashboard")
-      }
+      tipo="muestras"
+      onVolver={() => setVista("dashboard")}
     />
   );
 }
 
+// ============================================
+// MODULO DE RESULTADOS - BIOQUIMICO
+// ============================================
+
 if (
-  vista === "sprint3Admin" &&
-  usuario.rol === "administrador"
+  vista === "resultados" &&
+  usuario.rol === "bioquimico" &&
+  tienePermiso("resultados.ver")
 ) {
   return (
-    <ModuloAdministracionSprint3
+    <ModuloMuestras
       usuario={usuario}
-      onVolver={() =>
-        setVista("dashboard")
-      }
+      tipo="resultados"
+      onVolver={() => setVista("dashboard")}
     />
   );
 }
+
 
   // =====================================================
   // PERSONALIZACIÓN DEL DASHBOARD
@@ -1173,7 +1178,7 @@ if (
             )}
 
 
-            
+
 
 {/* =============================================
     SOLICITUDES DE ANÁLISIS
@@ -1253,22 +1258,18 @@ if (
                 RESULTADOS
             ============================================= */}
 
-            {tienePermiso(
-              "resultados.ver"
-            ) && (
-              <ModuloCard
-                icono="📊"
-                titulo="Resultados"
-                descripcion="Consulta los resultados clínicos registrados."
-                fondo="#DBEAFE"
-                color="#1D4ED8"
-                onClick={() =>
-                  window.alert(
-                    "Este módulo estará disponible próximamente."
-                  )
-                }
-              />
-            )}
+
+{tienePermiso("resultados.ver") && (
+  <ModuloCard
+    icono="📊"
+    titulo="Resultados"
+    descripcion="Registra, consulta y valida los resultados clínicos del laboratorio."
+    fondo="#DBEAFE"
+    color="#1D4ED8"
+    onClick={() => setVista("resultados")}
+  />
+)}
+
           </div>
         </section>
 

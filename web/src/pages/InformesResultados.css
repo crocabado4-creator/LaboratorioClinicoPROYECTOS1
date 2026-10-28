@@ -1,0 +1,740 @@
+
+/* ==============================================
+   LABORATORIO CLÍNICO
+   INFORME E HISTORIAL DE RESULTADOS
+
+   Diseño uniforme con el sistema Web
+   ============================================== */
+
+/* ==============================================
+   1. CONFIGURACIÓN GENERAL
+   ============================================== */
+
+.ir-page {
+  --ir-navy: #19385f;
+  --ir-navy-deep: #122b4b;
+  --ir-ink: #20334d;
+  --ir-muted: #64748b;
+  --ir-border: #dfe6ef;
+  --ir-bg: #f1f5f9;
+  --ir-white: #ffffff;
+  --ir-blue: #2563eb;
+
+  box-sizing: border-box;
+
+  width: 100%;
+  max-width: 1500px;
+  min-width: 0;
+
+  margin: 0 auto;
+  padding: clamp(16px, 2.2vw, 28px);
+
+  background-color: var(--ir-bg);
+  color: var(--ir-ink);
+
+  font-family:
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif !important;
+
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+/* Evitar que estilos generales cambien
+   la tipografía de este módulo */
+
+.ir-page,
+.ir-page h1,
+.ir-page h2,
+.ir-page h3,
+.ir-page h4,
+.ir-page p,
+.ir-page span,
+.ir-page strong,
+.ir-page label,
+.ir-page th,
+.ir-page td,
+.ir-page div,
+.ir-page button,
+.ir-page input,
+.ir-page select {
+  font-family:
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif !important;
+}
+
+.ir-page *,
+.ir-page *::before,
+.ir-page *::after {
+  box-sizing: border-box;
+}
+
+/* ==============================================
+   2. ENCABEZADO
+   ============================================== */
+
+.ir-page .ir-page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 20px;
+
+  margin-bottom: 22px;
+}
+
+/* Título principal: estilo grueso y moderno */
+
+.ir-page .ir-page-header h1 {
+  margin: 0 !important;
+  padding: 0 !important;
+
+  font-family:
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif !important;
+
+  font-size: clamp(30px, 3vw, 36px) !important;
+  font-weight: 800 !important;
+
+  line-height: 1.2 !important;
+  letter-spacing: -0.5px !important;
+
+  color: #19385f !important;
+  text-transform: none !important;
+}
+
+/* Descripción debajo del título */
+
+.ir-page .ir-page-header p {
+  margin: 12px 0 0 !important;
+
+  font-size: 16px !important;
+  font-weight: 400 !important;
+
+  line-height: 1.5 !important;
+  letter-spacing: 0 !important;
+
+  color: #64748b !important;
+}
+
+/* Títulos secundarios */
+
+.ir-page h2 {
+  margin: 0;
+  color: var(--ir-navy);
+
+  font-size: 21px;
+  font-weight: 700;
+  letter-spacing: -0.3px;
+}
+
+.ir-page h3 {
+  margin: 0;
+  color: var(--ir-navy);
+
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.2px;
+}
+
+/* Texto pequeño encima del título */
+
+.ir-page .ir-eyebrow {
+  margin-bottom: 8px;
+
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.11em;
+
+  text-transform: uppercase;
+  color: #607895;
+}
+
+/* ==============================================
+   3. BOTONES
+   ============================================== */
+
+.ir-page .ir-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.ir-page .ir-btn {
+  appearance: none;
+
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+
+  min-height: 45px;
+  padding: 11px 17px;
+
+  border-radius: 10px;
+
+  font-size: 14px;
+  font-weight: 600;
+
+  cursor: pointer;
+  white-space: nowrap;
+
+  transition:
+    background 0.16s ease,
+    border-color 0.16s ease,
+    color 0.16s ease;
+}
+
+/* Botón principal */
+
+.ir-page .ir-btn-primary {
+  background-color: #19385f;
+  border: 1px solid #19385f;
+  color: #ffffff;
+}
+
+.ir-page .ir-btn-primary:not(:disabled):hover {
+  background-color: #122b4b;
+  border-color: #122b4b;
+  color: #ffffff;
+}
+
+/* Botón secundario */
+
+.ir-page .ir-btn-secondary {
+  background-color: #e2e8f0;
+  border: 1px solid #e2e8f0;
+  color: #19385f;
+}
+
+.ir-page .ir-btn-secondary:not(:disabled):hover {
+  background-color: #d4dce7;
+  border-color: #d4dce7;
+}
+
+/* Botones desactivados */
+
+.ir-page .ir-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* Accesibilidad */
+
+.ir-page .ir-btn:focus-visible,
+.ir-page input:focus-visible,
+.ir-page select:focus-visible {
+  outline: 3px solid #9fc3ee;
+  outline-offset: 2px;
+}
+
+/* ==============================================
+   4. TARJETAS GENERALES
+   ============================================== */
+
+.ir-page .ir-panel {
+  min-width: 0;
+  padding: 20px;
+
+  background-color: #ffffff;
+
+  border: 1px solid #dfe6ef;
+  border-radius: 16px;
+
+  box-shadow:
+    0 2px 12px rgba(25, 56, 95, 0.035);
+}
+
+/* ==============================================
+   5. INDICADORES DEL LABORATORIO
+   ============================================== */
+
+.ir-page .ir-summary {
+  display: grid;
+
+  grid-template-columns:
+    repeat(2, minmax(0, 1fr));
+
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.ir-page .ir-summary-card {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+
+  padding: 18px 20px;
+
+  background: #ffffff;
+
+  border: 1px solid #dfe6ef;
+  border-radius: 14px;
+}
+
+.ir-page .ir-summary-card span {
+  color: #64748b;
+
+  font-size: 13px;
+  font-weight: 400;
+}
+
+.ir-page .ir-summary-card strong {
+  color: #19385f;
+
+  font-size: 28px;
+  font-weight: 800;
+
+  line-height: 1.1;
+}
+
+/* ==============================================
+   6. BUSCADORES Y FILTROS
+   ============================================== */
+
+.ir-page .ir-filters {
+  margin-bottom: 18px;
+}
+
+.ir-page .ir-filters label {
+  display: block;
+
+  margin-bottom: 8px;
+
+  font-size: 14px;
+  font-weight: 700;
+
+  color: #19385f;
+}
+
+.ir-page .ir-filter-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.ir-page input,
+.ir-page select {
+  width: 100%;
+  min-width: 0;
+  min-height: 45px;
+
+  padding: 11px 13px;
+
+  background-color: #ffffff;
+  color: #20334d;
+
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+
+  font-size: 14px;
+  font-weight: 400;
+}
+
+.ir-page input::placeholder {
+  color: #94a3b8;
+  opacity: 1;
+}
+
+.ir-page input:disabled,
+.ir-page select:disabled {
+  background: #f7f9fc;
+  color: #64748b;
+  cursor: not-allowed;
+}
+
+.ir-page .ir-counter {
+  flex-shrink: 0;
+
+  color: #64748b;
+  font-size: 13px;
+}
+
+.ir-page .ir-history-filters {
+  display: grid;
+
+  grid-template-columns:
+    repeat(2, minmax(0, 1fr));
+
+  gap: 16px;
+}
+
+.ir-page .ir-filter-field {
+  min-width: 0;
+}
+
+/* ==============================================
+   7. DISTRIBUCIÓN DE INFORMES
+   ============================================== */
+
+.ir-page .ir-layout {
+  display: grid;
+
+  grid-template-columns:
+    minmax(270px, 0.85fr)
+    minmax(0, 1.65fr);
+
+  gap: 18px;
+  align-items: start;
+}
+
+.ir-page .ir-list {
+  display: flex;
+  flex-direction: column;
+
+  gap: 12px;
+  min-width: 0;
+}
+
+.ir-page .ir-list-heading {
+  padding: 2px 0 4px;
+
+  font-size: 13px;
+  font-weight: 600;
+  color: #64748b;
+}
+
+/* ==============================================
+   8. TARJETAS DE INFORMES
+   ============================================== */
+
+.ir-page .ir-list-card {
+  padding: 18px;
+}
+
+.ir-page .ir-list-card.ir-selected {
+  border-color: #7c9bc2;
+
+  box-shadow:
+    inset 3px 0 0 #19385f;
+}
+
+.ir-page .ir-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+
+  gap: 10px;
+}
+
+.ir-page .ir-card-top h2 {
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1.3;
+
+  overflow-wrap: anywhere;
+}
+
+.ir-page .ir-list-card p {
+  margin: 10px 0;
+
+  font-size: 13px;
+  line-height: 1.45;
+
+  color: #20334d;
+
+  overflow-wrap: anywhere;
+}
+
+.ir-page .ir-list-card .ir-btn {
+  width: 100%;
+  margin-top: 8px;
+}
+
+/* ==============================================
+   9. ETIQUETAS DE ESTADO
+   ============================================== */
+
+.ir-page .ir-status {
+  display: inline-flex;
+  align-items: center;
+
+  padding: 5px 9px;
+
+  background-color: #e6f5ed;
+  color: #176844;
+
+  border-radius: 999px;
+
+  font-size: 11px;
+  font-weight: 700;
+
+  white-space: nowrap;
+}
+
+/* ==============================================
+   10. DETALLE DEL INFORME CLÍNICO
+   ============================================== */
+
+.ir-page .ir-detail {
+  min-height: 260px;
+  padding: 22px;
+}
+
+.ir-page .ir-detail-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.ir-page .ir-detail-header h2 {
+  font-size: 21px;
+  font-weight: 700;
+  line-height: 1.3;
+
+  overflow-wrap: anywhere;
+}
+
+.ir-page .ir-detail-header p {
+  margin: 7px 0 0;
+}
+
+/* ==============================================
+   11. INFORMACIÓN DEL PACIENTE
+   ============================================== */
+
+.ir-page .ir-patient-grid {
+  display: grid;
+
+  grid-template-columns:
+    repeat(2, minmax(0, 1fr));
+
+  gap: 12px;
+
+  padding: 16px;
+  margin-bottom: 18px;
+
+  background: #f7f9fc;
+
+  border: 1px solid #e6edf5;
+  border-radius: 12px;
+}
+
+.ir-page .ir-patient-grid div {
+  min-width: 0;
+}
+
+.ir-page .ir-patient-grid span,
+.ir-page .ir-patient-grid strong {
+  display: block;
+}
+
+.ir-page .ir-patient-grid span {
+  margin-bottom: 4px;
+
+  font-size: 12px;
+  color: #64748b;
+}
+
+.ir-page .ir-patient-grid strong {
+  font-size: 14px;
+  font-weight: 700;
+  color: #20334d;
+
+  overflow-wrap: anywhere;
+}
+
+/* ==============================================
+   12. RESULTADOS Y ANÁLISIS
+   ============================================== */
+
+.ir-page .ir-result {
+  margin-top: 14px;
+
+  border: 1px solid #dfe6ef;
+  border-radius: 12px;
+
+  overflow: hidden;
+}
+
+.ir-page .ir-result-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+
+  gap: 12px;
+  padding: 14px 16px;
+
+  background: #f7f9fc;
+
+  border-bottom: 1px solid #dfe6ef;
+}
+
+.ir-page .ir-result-header h3 {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+/* ==============================================
+   13. TABLAS DE RESULTADOS
+   ============================================== */
+
+.ir-page .ir-table-scroll {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.ir-page .ir-table {
+  width: 100%;
+  border-collapse: collapse;
+
+  text-align: left;
+  font-size: 13px;
+}
+
+.ir-page .ir-table th {
+  padding: 12px 14px;
+
+  background-color: #fbfcfe;
+  color: #48627d;
+
+  font-size: 13px;
+  font-weight: 700;
+
+  border-bottom: 1px solid #dfe6ef;
+  white-space: nowrap;
+}
+
+.ir-page .ir-table td {
+  padding: 12px 14px;
+
+  color: #33475f;
+
+  border-bottom: 1px solid #edf1f6;
+  vertical-align: top;
+}
+
+.ir-page .ir-table tr:last-child td {
+  border-bottom: 0;
+}
+
+.ir-page .ir-result-footer {
+  margin: 0;
+  padding: 10px 14px;
+
+  background-color: #fbfcfe;
+}
+
+/* ==============================================
+   14. TEXTOS SECUNDARIOS
+   ============================================== */
+
+.ir-page .ir-muted {
+  color: #64748b !important;
+  font-size: 13px;
+}
+
+/* ==============================================
+   15. MENSAJES Y ESTADOS VACÍOS
+   ============================================== */
+
+.ir-page .ir-empty {
+  padding: 34px 18px;
+
+  color: #64748b;
+
+  font-size: 14px;
+  font-weight: 400;
+
+  line-height: 1.5;
+  text-align: center;
+}
+
+.ir-page .ir-alert {
+  margin-bottom: 16px;
+  padding: 14px 16px;
+
+  background-color: #fee2e2;
+  color: #a12626;
+
+  border: 1px solid #fecaca;
+  border-radius: 12px;
+
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.5;
+}
+
+/* ==============================================
+   16. DISEÑO RESPONSIVE
+   ============================================== */
+
+@media (max-width: 1024px) {
+  .ir-page .ir-layout {
+    grid-template-columns:
+      minmax(230px, 0.8fr)
+      minmax(0, 1.2fr);
+  }
+}
+
+@media (max-width: 800px) {
+  .ir-page .ir-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ir-page .ir-page-header {
+    flex-direction: column;
+  }
+
+  .ir-page .ir-detail {
+    padding: 18px;
+  }
+}
+
+@media (max-width: 560px) {
+  .ir-page {
+    padding: 14px;
+  }
+
+  .ir-page .ir-panel {
+    padding: 15px;
+    border-radius: 13px;
+  }
+
+  .ir-page .ir-filter-row,
+  .ir-page .ir-detail-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .ir-page .ir-history-filters {
+    grid-template-columns: 1fr;
+  }
+
+  .ir-page .ir-summary {
+    gap: 8px;
+  }
+
+  .ir-page .ir-summary-card {
+    padding: 14px;
+  }
+
+  .ir-page .ir-patient-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .ir-page .ir-actions {
+    width: 100%;
+  }
+
+  .ir-page .ir-actions .ir-btn {
+    flex: 1;
+  }
+
+  .ir-page .ir-page-header h1 {
+    font-size: 30px !important;
+  }
+}
