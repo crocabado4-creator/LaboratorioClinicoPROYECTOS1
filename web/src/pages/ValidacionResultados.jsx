@@ -7,8 +7,6 @@ import {
 
 import {
   collection,
-  doc,
-  getDoc,
   getDocs,
   query,
   where,
@@ -20,12 +18,11 @@ import {
   validarResultadoFinal,
 } from "../services/validacionResultadosService";
 
-import {
-  listarParametrosAnalisis,
-  listarValoresResultado,
-} from "../services/valoresResultadosService";
-
 import "./ValidacionResultados.css";
+
+// ======================================================
+// FUNCIONES AUXILIARES
+// ======================================================
 
 function limpiar(valor) {
   if (valor === null || valor === undefined) {
@@ -113,194 +110,61 @@ function estaValidado(resultado) {
 
 function obtenerMensajeError(error) {
   if (error?.code === "permission-denied") {
-    return "Firestore rechazó la operación. Verifica los permisos del Bioquímico.";
+    return (
+      "Firestore rechazó la operación. " +
+      "Verifica los permisos del Bioquímico."
+    );
   }
 
   if (error?.code === "unavailable") {
-    return "No se pudo conectar con Firebase. Comprueba tu conexión.";
-  }
-
-  return error?.message || "Ocurrió un error inesperado.";
-}
-
-function obtenerIdParametro(parametro) {
-  return limpiar(
-    parametro?.parametroId ||
-      parametro?.id
-  );
-}
-
-function obtenerNombreParametro(parametro, indice = 0) {
-  return (
-    limpiar(
-      parametro?.nombre ||
-        parametro?.nombreParametro
-    ) || `Parámetro ${indice + 1}`
-  );
-}
-
-function obtenerValorRegistro(registro) {
-  if (!registro) {
-    return "";
-  }
-
-  return limpiar(
-    registro.valor ??
-      registro.valorResultado ??
-      registro.resultado
-  );
-}
-
-function obtenerValoresAntiguos(resultado) {
-  const posibles = [
-    resultado?.valoresParametros,
-    resultado?.valores,
-    resultado?.parametros,
-    resultado?.resultadosParametros,
-  ];
-
-  for (const valores of posibles) {
-    if (Array.isArray(valores)) {
-      return valores;
-    }
-
-    if (valores && typeof valores === "object") {
-      return Object.entries(valores).map(([id, dato]) => {
-        if (dato && typeof dato === "object") {
-          return {
-            id,
-            ...dato,
-          };
-        }
-
-        return {
-          id,
-          valor: dato,
-        };
-      });
-    }
-  }
-
-  return [];
-}
-
-function buscarValorParametro(
-  parametro,
-  valoresFirestore,
-  resultado
-) {
-  const idParametro = obtenerIdParametro(parametro);
-
-  const nombreParametro = normalizar(
-    obtenerNombreParametro(parametro)
-  );
-
-  const valores = [
-    ...valoresFirestore,
-    ...obtenerValoresAntiguos(resultado),
-  ];
-
-  const coincidenciaPorId = valores.find((registro) => {
-    const idRegistro = limpiar(
-      registro.parametroId ||
-        registro.id
-    );
-
     return (
-      idParametro &&
-      idRegistro === idParametro
+      "No se pudo conectar con Firebase. " +
+      "Comprueba tu conexión."
     );
-  });
-
-  if (coincidenciaPorId) {
-    return coincidenciaPorId;
   }
 
   return (
-    valores.find((registro) => {
-      const nombreRegistro = normalizar(
-        registro.nombreParametro ||
-          registro.nombre
-      );
-
-      return (
-        nombreParametro &&
-        nombreRegistro === nombreParametro
-      );
-    }) || null
+    error?.message ||
+    "Ocurrió un error inesperado."
   );
 }
 
-function obtenerReferencia(parametro) {
-  const referencia =
-    parametro?.rangoReferencia ??
-    parametro?.referencia ??
-    parametro?.rango;
+function obtenerRol(usuario) {
+  const rol = usuario?.rol;
 
-  if (
-    referencia !== undefined &&
-    referencia !== null &&
-    typeof referencia !== "object" &&
-    limpiar(referencia)
-  ) {
-    return String(referencia);
+  if (typeof rol === "object" && rol !== null) {
+    return normalizar(
+      rol.nombre ||
+        rol.nombreRol ||
+        rol.id
+    );
   }
 
-  const minimo =
-    parametro?.valorMinimo ??
-    parametro?.minimo ??
-    parametro?.min ??
-    referencia?.min ??
-    referencia?.minimo;
+  return normalizar(rol);
+}
 
-  const maximo =
-    parametro?.valorMaximo ??
-    parametro?.maximo ??
-    parametro?.max ??
-    referencia?.max ??
-    referencia?.maximo;
-
-  if (
-    minimo !== undefined &&
-    maximo !== undefined
-  ) {
-    return `${minimo} - ${maximo}`;
-  }
+function resultadoTieneValor(resultado) {
+  const valor =
+    resultado?.valorResultado ??
+    resultado?.valor;
 
   return (
-    referencia?.descripcion ||
-    referencia?.texto ||
-    "No configurada"
+    valor !== null &&
+    valor !== undefined &&
+    limpiar(valor) !== ""
   );
 }
 
-function esParametroObligatorio(parametro) {
+function resultadoEsBorrador(resultado) {
   return (
-    parametro.activo !== false &&
-    parametro.obligatorio !== false
+    normalizar(resultado?.estado) === "borrador" &&
+    !estaValidado(resultado)
   );
 }
 
-function normalizarParametros(parametros) {
-  if (!Array.isArray(parametros)) {
-    return [];
-  }
-
-  return parametros
-    .filter(
-      (parametro) =>
-        parametro &&
-        parametro.activo !== false
-    )
-    .map((parametro, indice) => ({
-      ...parametro,
-      id:
-        parametro.parametroId ||
-        parametro.id ||
-        `parametro-${indice}`,
-      nombre: obtenerNombreParametro(parametro, indice),
-    }));
-}
+// ======================================================
+// COMPONENTE PRINCIPAL
+// ======================================================
 
 export default function ValidacionResultados({
   usuario,
@@ -311,23 +175,32 @@ export default function ValidacionResultados({
     usuario?.laboratorioId
   );
 
-  const rol = normalizar(usuario?.rol);
+  const rol = obtenerRol(usuario);
 
   const puedeValidar =
     rol === "bioquimico" &&
     usuario?.activo === true;
 
+  // ====================================================
+  // ESTADOS
+  // ====================================================
+
   const [resultados, setResultados] = useState([]);
+
   const [pacientes, setPacientes] = useState([]);
+
   const [analisis, setAnalisis] = useState([]);
 
   const [busqueda, setBusqueda] = useState("");
+
   const [filtro, setFiltro] = useState("todos");
 
   const [cargando, setCargando] = useState(true);
+
   const [actualizando, setActualizando] = useState(false);
 
   const [error, setError] = useState("");
+
   const [mensaje, setMensaje] = useState("");
 
   const [
@@ -335,34 +208,24 @@ export default function ValidacionResultados({
     setResultadoSeleccionado,
   ] = useState(null);
 
-  const [
-    parametrosDetalle,
-    setParametrosDetalle,
-  ] = useState([]);
-
-  const [
-    valoresDetalle,
-    setValoresDetalle,
-  ] = useState([]);
-
-  const [
-    cargandoDetalle,
-    setCargandoDetalle,
-  ] = useState(false);
-
-  const [
-    errorDetalle,
-    setErrorDetalle,
-  ] = useState("");
+  const [errorDetalle, setErrorDetalle] = useState("");
 
   const [validando, setValidando] = useState(false);
+
+  // ====================================================
+  // CARGAR DATOS
+  // ====================================================
 
   const cargarDatos = useCallback(
     async (mostrarActualizacion = false) => {
       if (!laboratorioId) {
-        setError("No se encontró el laboratorio asignado.");
+        setError(
+          "No se encontró el laboratorio asignado."
+        );
+
         setCargando(false);
         setActualizando(false);
+
         return;
       }
 
@@ -383,19 +246,33 @@ export default function ValidacionResultados({
           getDocs(
             query(
               collection(db, "resultados"),
-              where("laboratorioId", "==", laboratorioId)
+              where(
+                "laboratorioId",
+                "==",
+                laboratorioId
+              )
             )
           ),
+
           getDocs(
             query(
               collection(db, "pacientes"),
-              where("laboratorioId", "==", laboratorioId)
+              where(
+                "laboratorioId",
+                "==",
+                laboratorioId
+              )
             )
           ),
+
           getDocs(
             query(
               collection(db, "analisis"),
-              where("laboratorioId", "==", laboratorioId)
+              where(
+                "laboratorioId",
+                "==",
+                laboratorioId
+              )
             )
           ),
         ]);
@@ -421,7 +298,11 @@ export default function ValidacionResultados({
           }))
         );
       } catch (err) {
-        console.error("Error cargando resultados:", err);
+        console.error(
+          "Error cargando resultados:",
+          err
+        );
+
         setError(obtenerMensajeError(err));
       } finally {
         setCargando(false);
@@ -431,9 +312,17 @@ export default function ValidacionResultados({
     [laboratorioId]
   );
 
+  // ====================================================
+  // CARGA AUTOMÁTICA
+  // ====================================================
+
   useEffect(() => {
     cargarDatos();
   }, [cargarDatos]);
+
+  // ====================================================
+  // PACIENTES POR ID
+  // ====================================================
 
   const pacientesPorId = useMemo(() => {
     return new Map(
@@ -444,6 +333,10 @@ export default function ValidacionResultados({
     );
   }, [pacientes]);
 
+  // ====================================================
+  // ANÁLISIS POR ID
+  // ====================================================
+
   const analisisPorId = useMemo(() => {
     return new Map(
       analisis.map((item) => [
@@ -453,17 +346,35 @@ export default function ValidacionResultados({
     );
   }, [analisis]);
 
+  // ====================================================
+  // BUSCAR PACIENTE
+  // ====================================================
+
   const buscarPaciente = useCallback(
-    (pacienteId) =>
-      pacientesPorId.get(limpiar(pacienteId)),
+    (pacienteId) => {
+      return pacientesPorId.get(
+        limpiar(pacienteId)
+      );
+    },
     [pacientesPorId]
   );
 
+  // ====================================================
+  // BUSCAR ANÁLISIS
+  // ====================================================
+
   const buscarAnalisis = useCallback(
-    (analisisId) =>
-      analisisPorId.get(limpiar(analisisId)),
+    (analisisId) => {
+      return analisisPorId.get(
+        limpiar(analisisId)
+      );
+    },
     [analisisPorId]
   );
+
+  // ====================================================
+  // NOMBRE DEL ANÁLISIS
+  // ====================================================
 
   const obtenerNombreAnalisis = useCallback(
     (resultado) => {
@@ -481,6 +392,10 @@ export default function ValidacionResultados({
     [buscarAnalisis]
   );
 
+  // ====================================================
+  // ESTADÍSTICAS
+  // ====================================================
+
   const estadisticas = useMemo(() => {
     const validados = resultados.filter(
       estaValidado
@@ -492,6 +407,10 @@ export default function ValidacionResultados({
       validados,
     };
   }, [resultados]);
+
+  // ====================================================
+  // FILTRAR RESULTADOS
+  // ====================================================
 
   const resultadosFiltrados = useMemo(() => {
     const termino = normalizar(busqueda);
@@ -521,7 +440,10 @@ export default function ValidacionResultados({
         (filtro === "validados" && validado) ||
         (filtro === "pendientes" && !validado);
 
-      return contenido.includes(termino) && coincideFiltro;
+      return (
+        contenido.includes(termino) &&
+        coincideFiltro
+      );
     });
   }, [
     resultados,
@@ -530,6 +452,10 @@ export default function ValidacionResultados({
     buscarPaciente,
     obtenerNombreAnalisis,
   ]);
+
+  // ====================================================
+  // NOMBRE DEL BIOQUÍMICO
+  // ====================================================
 
   const obtenerNombreBioquimico = (resultado) => {
     return (
@@ -540,61 +466,20 @@ export default function ValidacionResultados({
     );
   };
 
-  const cargarDetalle = useCallback(
-    async (resultado) => {
-      setCargandoDetalle(true);
-      setErrorDetalle("");
-      setParametrosDetalle([]);
-      setValoresDetalle([]);
+  // ====================================================
+  // ABRIR DETALLE
+  // ====================================================
 
-      try {
-        const analisisEncontrado = buscarAnalisis(
-          resultado.analisisId
-        );
-
-        let parametros = [];
-
-        if (resultado.analisisId) {
-          parametros = await listarParametrosAnalisis(
-            resultado.analisisId,
-            laboratorioId
-          );
-        }
-
-        if (
-          (!Array.isArray(parametros) ||
-            parametros.length === 0) &&
-          Array.isArray(analisisEncontrado?.parametros)
-        ) {
-          parametros = analisisEncontrado.parametros;
-        }
-
-        setParametrosDetalle(
-          normalizarParametros(parametros)
-        );
-
-        const valores = await listarValoresResultado(
-          resultado.id
-        );
-
-        setValoresDetalle(
-          Array.isArray(valores) ? valores : []
-        );
-      } catch (err) {
-        console.error("Error cargando detalle:", err);
-        setErrorDetalle(obtenerMensajeError(err));
-      } finally {
-        setCargandoDetalle(false);
-      }
-    },
-    [buscarAnalisis, laboratorioId]
-  );
-
-  const abrirDetalle = async (resultado) => {
+  const abrirDetalle = (resultado) => {
     setResultadoSeleccionado(resultado);
+
+    setErrorDetalle("");
     setMensaje("");
-    await cargarDetalle(resultado);
   };
+
+  // ====================================================
+  // CERRAR DETALLE
+  // ====================================================
 
   const cerrarDetalle = () => {
     if (validando) {
@@ -602,46 +487,12 @@ export default function ValidacionResultados({
     }
 
     setResultadoSeleccionado(null);
-    setParametrosDetalle([]);
-    setValoresDetalle([]);
     setErrorDetalle("");
   };
 
-  const parametrosConValores = useMemo(() => {
-    if (!resultadoSeleccionado) {
-      return [];
-    }
-
-    return parametrosDetalle.map((parametro) => {
-      const registro = buscarValorParametro(
-        parametro,
-        valoresDetalle,
-        resultadoSeleccionado
-      );
-
-      const valor = obtenerValorRegistro(registro);
-
-      return {
-        ...parametro,
-        registro,
-        valor,
-        completo: valor !== "",
-        obligatorio: esParametroObligatorio(parametro),
-      };
-    });
-  }, [
-    parametrosDetalle,
-    valoresDetalle,
-    resultadoSeleccionado,
-  ]);
-
-  const parametrosFaltantes = useMemo(() => {
-    return parametrosConValores.filter(
-      (parametro) =>
-        parametro.obligatorio &&
-        !parametro.completo
-    );
-  }, [parametrosConValores]);
+  // ====================================================
+  // COMPROBAR SI PUEDE VALIDARSE
+  // ====================================================
 
   const resultadoPuedeValidarse = useMemo(() => {
     if (!resultadoSeleccionado) {
@@ -650,23 +501,19 @@ export default function ValidacionResultados({
 
     return (
       puedeValidar &&
-      !cargandoDetalle &&
       !validando &&
-      !errorDetalle &&
-      !estaValidado(resultadoSeleccionado) &&
-      normalizar(resultadoSeleccionado.estado) ===
-        "borrador" &&
-      limpiar(resultadoSeleccionado.valorResultado) !== "" &&
-      parametrosFaltantes.length === 0
+      resultadoEsBorrador(resultadoSeleccionado) &&
+      resultadoTieneValor(resultadoSeleccionado)
     );
   }, [
     resultadoSeleccionado,
     puedeValidar,
-    cargandoDetalle,
     validando,
-    errorDetalle,
-    parametrosFaltantes,
   ]);
+
+  // ====================================================
+  // VALIDAR RESULTADO
+  // ====================================================
 
   const validarResultado = async () => {
     if (!resultadoSeleccionado || validando) {
@@ -675,18 +522,15 @@ export default function ValidacionResultados({
 
     if (!resultadoPuedeValidarse) {
       setErrorDetalle(
-        parametrosFaltantes.length > 0
-          ? "No puedes validar el resultado porque faltan valores en: " +
-              parametrosFaltantes
-                .map((parametro) => parametro.nombre)
-                .join(", ")
-          : "El resultado todavía no cumple las condiciones para validarse."
+        "El resultado no cumple las condiciones para validarse. " +
+          "Verifica que esté en borrador y tenga un valor registrado."
       );
+
       return;
     }
 
     const confirmar = window.confirm(
-      "¿Confirmas que revisaste el resultado principal y todos sus parámetros?\n\n" +
+      "¿Confirmas que revisaste el resultado registrado?\n\n" +
         "Después de validar, el resultado no deberá modificarse."
     );
 
@@ -696,6 +540,7 @@ export default function ValidacionResultados({
 
     try {
       setValidando(true);
+
       setErrorDetalle("");
       setError("");
       setMensaje("");
@@ -705,7 +550,6 @@ export default function ValidacionResultados({
         laboratorioId,
       });
 
-      cerrarDetalle();
       setResultadoSeleccionado(null);
 
       await cargarDatos(true);
@@ -714,18 +558,36 @@ export default function ValidacionResultados({
         "El resultado fue validado correctamente."
       );
     } catch (err) {
-      console.error("Error validando resultado:", err);
-      setErrorDetalle(obtenerMensajeError(err));
+      console.error(
+        "Error validando resultado:",
+        err
+      );
+
+      setErrorDetalle(
+        obtenerMensajeError(err)
+      );
     } finally {
       setValidando(false);
     }
   };
 
+  // ====================================================
+  // INTERFAZ PRINCIPAL
+  // ====================================================
+
   return (
     <div className="vdr-page">
+
+      {/* ================================================
+          ENCABEZADO
+      ================================================ */}
+
       <div className="vdr-header">
         <div>
-          <h1>Validación de resultados</h1>
+          <h1>
+            Validación de resultados
+          </h1>
+
           <p>
             Revisa, consulta y valida los resultados
             registrados.
@@ -743,48 +605,91 @@ export default function ValidacionResultados({
         )}
       </div>
 
+      {/* ================================================
+          ESTADÍSTICAS
+      ================================================ */}
+
       <div className="vdr-stats">
+
         <div className="vdr-stat">
-          <span>Total de resultados</span>
-          <strong>{estadisticas.total}</strong>
+          <span>
+            Total de resultados
+          </span>
+
+          <strong>
+            {estadisticas.total}
+          </strong>
         </div>
 
         <div className="vdr-stat">
-          <span>Pendientes</span>
-          <strong>{estadisticas.pendientes}</strong>
+          <span>
+            Pendientes
+          </span>
+
+          <strong>
+            {estadisticas.pendientes}
+          </strong>
         </div>
 
         <div className="vdr-stat">
-          <span>Validados</span>
-          <strong>{estadisticas.validados}</strong>
+          <span>
+            Validados
+          </span>
+
+          <strong>
+            {estadisticas.validados}
+          </strong>
         </div>
+
       </div>
 
+      {/* ================================================
+          MENSAJES
+      ================================================ */}
+
       {error && (
-        <div className="vdr-error" role="alert">
+        <div
+          className="vdr-error"
+          role="alert"
+        >
           {error}
         </div>
       )}
 
       {mensaje && (
-        <div className="vdr-success" role="status">
+        <div
+          className="vdr-success"
+          role="status"
+        >
           {mensaje}
         </div>
       )}
 
       {!puedeValidar && (
         <div className="vdr-error">
-          Solo el Bioquímico activo puede validar resultados.
+          Solo el Bioquímico activo puede validar
+          resultados.
         </div>
       )}
 
+      {/* ================================================
+          BUSCADOR
+      ================================================ */}
+
       <div className="vdr-card">
+
         <div className="vdr-card-title">
-          <h2>Buscar resultado</h2>
-          <p>Busca por paciente, CI o análisis.</p>
+          <h2>
+            Buscar resultado
+          </h2>
+
+          <p>
+            Busca por paciente, CI o análisis.
+          </p>
         </div>
 
         <div className="vdr-search">
+
           <input
             type="text"
             placeholder="Paciente, CI o análisis..."
@@ -798,15 +703,22 @@ export default function ValidacionResultados({
             type="button"
             className="vdr-btn-primary"
             onClick={() => cargarDatos(true)}
-            disabled={actualizando || cargando}
+            disabled={
+              actualizando ||
+              cargando
+            }
           >
             {actualizando
               ? "Actualizando..."
               : "Actualizar"}
           </button>
+
         </div>
 
+        {/* FILTROS */}
+
         <div className="vdr-filters">
+
           <button
             type="button"
             className={
@@ -814,7 +726,9 @@ export default function ValidacionResultados({
                 ? "vdr-filter active"
                 : "vdr-filter"
             }
-            onClick={() => setFiltro("todos")}
+            onClick={() =>
+              setFiltro("todos")
+            }
           >
             Todos
           </button>
@@ -826,7 +740,9 @@ export default function ValidacionResultados({
                 ? "vdr-filter active"
                 : "vdr-filter"
             }
-            onClick={() => setFiltro("pendientes")}
+            onClick={() =>
+              setFiltro("pendientes")
+            }
           >
             Pendientes
           </button>
@@ -838,33 +754,54 @@ export default function ValidacionResultados({
                 ? "vdr-filter active"
                 : "vdr-filter"
             }
-            onClick={() => setFiltro("validados")}
+            onClick={() =>
+              setFiltro("validados")
+            }
           >
             Validados
           </button>
+
         </div>
+
       </div>
 
+      {/* ================================================
+          RESULTADOS REGISTRADOS
+      ================================================ */}
+
       <div className="vdr-card">
+
         <div className="vdr-card-title">
-          <h2>Resultados registrados</h2>
+
+          <h2>
+            Resultados registrados
+          </h2>
+
           <p>
             {resultadosFiltrados.length} resultados
             encontrados.
           </p>
+
         </div>
 
         {cargando ? (
+
           <div className="vdr-empty">
             Cargando resultados...
           </div>
+
         ) : resultadosFiltrados.length === 0 ? (
+
           <div className="vdr-empty">
             No se encontraron resultados.
           </div>
+
         ) : (
+
           <div className="vdr-results">
+
             {resultadosFiltrados.map((resultado) => {
+
               const paciente = buscarPaciente(
                 resultado.pacienteId
               );
@@ -876,32 +813,46 @@ export default function ValidacionResultados({
                   key={resultado.id}
                   className="vdr-result"
                 >
+
                   <div className="vdr-result-top">
+
                     <div>
+
                       <h3>
                         {obtenerNombreAnalisis(resultado)}
                       </h3>
 
                       <p>
-                        <strong>Paciente:</strong>{" "}
+                        <strong>
+                          Paciente:
+                        </strong>{" "}
                         {obtenerNombrePaciente(paciente)}
                       </p>
 
                       <p>
-                        <strong>CI:</strong>{" "}
+                        <strong>
+                          CI:
+                        </strong>{" "}
                         {obtenerCI(paciente)}
                       </p>
 
                       <p>
-                        <strong>Valor:</strong>{" "}
+                        <strong>
+                          Valor:
+                        </strong>{" "}
                         {limpiar(resultado.valorResultado) ||
                           "Sin valor"}
                       </p>
 
                       <p>
-                        <strong>Fecha:</strong>{" "}
-                        {obtenerFecha(resultado.fechaRegistro)}
+                        <strong>
+                          Fecha:
+                        </strong>{" "}
+                        {obtenerFecha(
+                          resultado.fechaRegistro
+                        )}
                       </p>
+
                     </div>
 
                     <span
@@ -911,8 +862,11 @@ export default function ValidacionResultados({
                           : "vdr-badge pending"
                       }
                     >
-                      {validado ? "Validado" : "Pendiente"}
+                      {validado
+                        ? "Validado"
+                        : "Pendiente"}
                     </span>
+
                   </div>
 
                   <button
@@ -922,36 +876,55 @@ export default function ValidacionResultados({
                         ? "vdr-btn-view"
                         : "vdr-btn-primary"
                     }
-                    onClick={() => abrirDetalle(resultado)}
+                    onClick={() =>
+                      abrirDetalle(resultado)
+                    }
                   >
                     {validado
                       ? "Ver resultado"
                       : "Revisar y validar"}
                   </button>
+
                 </div>
               );
             })}
+
           </div>
+
         )}
+
       </div>
 
+      {/* ================================================
+          VENTANA DE DETALLE
+      ================================================ */}
+
       {resultadoSeleccionado && (
+
         <div
           className="vdr-overlay"
           onMouseDown={(evento) => {
-            if (evento.target === evento.currentTarget) {
+            if (
+              evento.target === evento.currentTarget
+            ) {
               cerrarDetalle();
             }
           }}
         >
+
           <div
             className="vdr-modal"
             role="dialog"
             aria-modal="true"
             aria-labelledby="vdr-titulo-modal"
           >
+
+            {/* ENCABEZADO */}
+
             <div className="vdr-modal-header">
+
               <div>
+
                 <h2 id="vdr-titulo-modal">
                   Detalle del resultado
                 </h2>
@@ -959,6 +932,7 @@ export default function ValidacionResultados({
                 <p>
                   Información del análisis y validación.
                 </p>
+
               </div>
 
               <button
@@ -970,9 +944,13 @@ export default function ValidacionResultados({
               >
                 ×
               </button>
+
             </div>
 
+            {/* INFORMACIÓN DEL PACIENTE */}
+
             <div className="vdr-summary">
+
               <h3>
                 {obtenerNombreAnalisis(
                   resultadoSeleccionado
@@ -980,7 +958,9 @@ export default function ValidacionResultados({
               </h3>
 
               <p>
-                <strong>Paciente:</strong>{" "}
+                <strong>
+                  Paciente:
+                </strong>{" "}
                 {obtenerNombrePaciente(
                   buscarPaciente(
                     resultadoSeleccionado.pacienteId
@@ -989,7 +969,9 @@ export default function ValidacionResultados({
               </p>
 
               <p>
-                <strong>CI:</strong>{" "}
+                <strong>
+                  CI:
+                </strong>{" "}
                 {obtenerCI(
                   buscarPaciente(
                     resultadoSeleccionado.pacienteId
@@ -998,190 +980,159 @@ export default function ValidacionResultados({
               </p>
 
               <p>
-                <strong>Estado:</strong>{" "}
+                <strong>
+                  Estado:
+                </strong>{" "}
                 {estaValidado(resultadoSeleccionado)
                   ? "Validado"
                   : "Pendiente de validación"}
               </p>
+
             </div>
 
+            {/* ==========================================
+                RESULTADO REGISTRADO
+            ========================================== */}
+
             <div className="vdr-modal-section">
-              <h3>Resultado principal</h3>
+
+              <h3>
+                Resultado registrado
+              </h3>
 
               <div className="vdr-detail-grid">
+
                 <div>
-                  <label>Valor</label>
+
+                  <label>
+                    Valor del resultado
+                  </label>
+
                   <strong>
                     {limpiar(
                       resultadoSeleccionado.valorResultado
                     ) || "Sin valor registrado"}
                   </strong>
+
                 </div>
 
                 <div>
-                  <label>Unidad</label>
+
+                  <label>
+                    Unidad
+                  </label>
+
                   <strong>
-                    {limpiar(resultadoSeleccionado.unidad) ||
-                      "Sin unidad"}
+                    {limpiar(
+                      resultadoSeleccionado.unidad
+                    ) || "Sin unidad"}
                   </strong>
+
                 </div>
 
                 <div>
-                  <label>Fecha de registro</label>
+
+                  <label>
+                    Fecha de registro
+                  </label>
+
                   <strong>
                     {obtenerFecha(
                       resultadoSeleccionado.fechaRegistro
                     )}
                   </strong>
+
                 </div>
 
                 <div>
-                  <label>Observaciones</label>
+
+                  <label>
+                    Observaciones
+                  </label>
+
                   <strong>
                     {limpiar(
-                      resultadoSeleccionado.observaciones
+                      resultadoSeleccionado.observaciones ??
+                      resultadoSeleccionado.observacion
                     ) || "Sin observaciones"}
                   </strong>
+
                 </div>
+
               </div>
+
             </div>
 
-            {errorDetalle && (
-              <div className="vdr-error" role="alert">
-                {errorDetalle}
-              </div>
-            )}
+            {/* ==========================================
+                INFORMACIÓN DE VALIDACIÓN
+            ========================================== */}
 
-            {!cargandoDetalle &&
-              !estaValidado(resultadoSeleccionado) &&
-              parametrosFaltantes.length > 0 &&
-              !errorDetalle && (
-                <div className="vdr-error" role="alert">
-                  No puedes validar el resultado porque
-                  faltan valores en{" "}
-                  {parametrosFaltantes.length} parámetro(s):{" "}
-                  {parametrosFaltantes
-                    .map((parametro) => parametro.nombre)
-                    .join(", ")}
-                  . Regístralos en la sección
-                  "Valores por parámetros".
+            {!estaValidado(resultadoSeleccionado) &&
+              !resultadoTieneValor(resultadoSeleccionado) && (
+
+                <div
+                  className="vdr-error"
+                  role="alert"
+                >
+                  Este resultado no tiene un valor registrado.
+
+                  Debes completar el registro antes
+                  de validarlo.
                 </div>
+
               )}
 
-            {!cargandoDetalle &&
-              !estaValidado(resultadoSeleccionado) &&
-              parametrosFaltantes.length === 0 &&
-              parametrosConValores.length > 0 &&
-              !errorDetalle && (
+            {!estaValidado(resultadoSeleccionado) &&
+              resultadoTieneValor(resultadoSeleccionado) && (
+
                 <div className="vdr-success">
-                  Todos los parámetros obligatorios tienen
-                  valores registrados.
+                  El resultado tiene un valor registrado
+                  y está disponible para revisión.
+
+                  Verifica que los datos sean correctos
+                  antes de validar.
                 </div>
+
               )}
 
-            <div className="vdr-modal-section">
-              <h3>Valores por parámetros</h3>
-
-              {cargandoDetalle ? (
-                <div className="vdr-empty">
-                  Consultando parámetros y valores...
-                </div>
-              ) : parametrosConValores.length === 0 ? (
-                <p>
-                  Este análisis no tiene parámetros
-                  configurados.
-                </p>
-              ) : (
-                <div className="vdr-parameters">
-                  {parametrosConValores.map(
-                    (parametro, indice) => (
-                      <div
-                        key={parametro.id}
-                        className="vdr-parameter"
-                      >
-                        <h4>
-                          {indice + 1}. {parametro.nombre}
-                        </h4>
-
-                        <div className="vdr-detail-grid">
-                          <div>
-                            <label>Valor</label>
-                            <strong>
-                              {parametro.valor ||
-                                "Sin valor registrado"}
-                            </strong>
-                          </div>
-
-                          <div>
-                            <label>Unidad</label>
-                            <strong>
-                              {limpiar(
-                                parametro.registro?.unidad ??
-                                  parametro.unidad
-                              ) || "Sin unidad"}
-                            </strong>
-                          </div>
-
-                          <div>
-                            <label>Referencia</label>
-                            <strong>
-                              {obtenerReferencia(parametro)}
-                            </strong>
-                          </div>
-
-                          <div>
-                            <label>Observación</label>
-                            <strong>
-                              {limpiar(
-                                parametro.registro?.observacion ??
-                                  parametro.registro?.observaciones
-                              ) || "Sin observaciones"}
-                            </strong>
-                          </div>
-                        </div>
-
-                        {!parametro.completo && (
-                          <p
-                            style={{
-                              marginTop: "10px",
-                              color: "#dc2626",
-                              fontSize: "12px",
-                              fontWeight: 600,
-                            }}
-                          >
-                            {parametro.obligatorio
-                              ? "Parámetro obligatorio pendiente."
-                              : "Parámetro opcional sin valor."}
-                          </p>
-                        )}
-                      </div>
-                    )
-                  )}
-                </div>
-              )}
-            </div>
+            {/* RESULTADO VALIDADO */}
 
             {estaValidado(resultadoSeleccionado) && (
+
               <div className="vdr-validated-box">
-                <h3>Resultado validado</h3>
+
+                <h3>
+                  Resultado validado
+                </h3>
 
                 <p>
-                  <strong>Fecha:</strong>{" "}
+                  <strong>
+                    Fecha:
+                  </strong>{" "}
                   {obtenerFecha(
                     resultadoSeleccionado.fechaValidacion
                   )}
                 </p>
 
                 <p>
-                  <strong>Validado por:</strong>{" "}
+                  <strong>
+                    Validado por:
+                  </strong>{" "}
                   {obtenerNombreBioquimico(
                     resultadoSeleccionado
                   )}
                 </p>
+
               </div>
+
             )}
 
+            {/* ==========================================
+                BOTONES
+            ========================================== */}
+
             <div className="vdr-modal-footer">
+
               <button
                 type="button"
                 className="vdr-btn-secondary"
@@ -1193,6 +1144,7 @@ export default function ValidacionResultados({
 
               {!estaValidado(resultadoSeleccionado) &&
                 puedeValidar && (
+
                   <button
                     type="button"
                     className="vdr-btn-primary"
@@ -1201,15 +1153,19 @@ export default function ValidacionResultados({
                   >
                     {validando
                       ? "Validando..."
-                      : parametrosFaltantes.length > 0
-                      ? "Faltan parámetros"
                       : "Validar resultado"}
                   </button>
+
                 )}
+
             </div>
+
           </div>
+
         </div>
+
       )}
+
     </div>
   );
 }
