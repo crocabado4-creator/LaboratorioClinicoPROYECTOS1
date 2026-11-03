@@ -39,6 +39,8 @@ function GestionPersonal({ usuario, permisos = [], volver }) {
   const [cargando, setCargando] = useState(true);
   const [guardando, setGuardando] = useState(false);
   const [mensaje, setMensaje] = useState(null);
+  const [errorCorreo, setErrorCorreo] = useState("");
+
 
   const [busqueda, setBusqueda] = useState("");
   const [mostrarFiltros, setMostrarFiltros] = useState(false);
@@ -203,6 +205,14 @@ function GestionPersonal({ usuario, permisos = [], volver }) {
   const manejarCambio = (evento) => {
     const { name, value, type, checked } = evento.target;
 
+    if (name === "email") {
+      const correo = value.trim().toLowerCase();
+      const duplicado = personal.some(
+        (item) => (item.email || "").trim().toLowerCase() === correo
+      );
+      setErrorCorreo(duplicado ? "Este correo electrónico ya está registrado. Utiliza otro correo." : "");
+    }
+
     setFormulario((anterior) => ({
       ...anterior,
       [name]: type === "checkbox" ? checked : value,
@@ -246,6 +256,11 @@ function GestionPersonal({ usuario, permisos = [], volver }) {
 
   const guardar = async (evento) => {
     evento.preventDefault();
+
+    if (modoFormulario === "crear" && errorCorreo) {
+      mostrarMensaje("error", errorCorreo);
+      return;
+    }
 
     const validacion = validarFormulario();
 
@@ -305,6 +320,18 @@ function GestionPersonal({ usuario, permisos = [], volver }) {
       }
     } catch (error) {
       console.error("Error guardando personal:", error);
+
+      const detalleError = (error?.message || "").toLowerCase();
+      if (error?.code === "auth/email-already-in-use" ||
+          detalleError.includes("ya existe") ||
+          detalleError.includes("ya está registrado") ||
+          detalleError.includes("already-in-use")) {
+        const advertencia = "Este correo electrónico ya está registrado. Utiliza otro correo.";
+        setErrorCorreo(advertencia);
+        mostrarMensaje("error", advertencia);
+        return;
+      }
+
 
       mostrarMensaje(
         "error",
@@ -919,6 +946,12 @@ function GestionPersonal({ usuario, permisos = [], volver }) {
                       placeholder="usuario@correo.com"
                       required
                     />
+
+                    {modoFormulario === "crear" && errorCorreo && (
+                      <small role="alert" style={{ color: "#c62828", fontWeight: 600 }}>
+                        {errorCorreo}
+                      </small>
+                    )}
 
                     {modoFormulario === "editar" && (
                       <small>

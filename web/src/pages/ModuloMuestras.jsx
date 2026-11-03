@@ -1,4 +1,3 @@
-
 import { useState } from "react";
 
 import GestionMuestras from "./GestionMuestras";
@@ -6,7 +5,6 @@ import ValidacionMuestras from "./ValidacionMuestras";
 import SeguimientoMuestras from "./SeguimientoMuestras";
 
 import GestionResultados from "./GestionResultados";
-import ValoresResultados from "./ValoresResultados";
 import EstadoAnalisis from "./EstadoAnalisis";
 import ValidacionResultados from "./ValidacionResultados";
 import InformeResultados from "./InformeResultados";
@@ -31,14 +29,14 @@ const OPCIONES_MUESTRAS = [
   },
 ];
 
+// ===============================================
+// OPCIONES DE RESULTADOS
+// ===============================================
+
 const OPCIONES_RESULTADOS = [
   {
     id: "resultados",
     titulo: "Registro de resultados",
-  },
-  {
-    id: "parametros",
-    titulo: "Valores por parámetros",
   },
   {
     id: "estadoAnalisis",
@@ -77,9 +75,15 @@ export default function ModuloMuestras({
     ? OPCIONES_RESULTADOS
     : OPCIONES_MUESTRAS;
 
+  // ===============================================
+  // ESTILO DE LOS BOTONES
+  // ===============================================
+
   const estiloBoton = (activo) => ({
     padding: "12px 20px",
+
     border: "none",
+
     borderRadius: "9px",
 
     background: activo
@@ -94,11 +98,17 @@ export default function ModuloMuestras({
       'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
 
     fontSize: "14px",
+
     fontWeight: 700,
 
     cursor: "pointer",
+
     transition: "background 0.2s",
   });
+
+  // ===============================================
+  // INTERFAZ PRINCIPAL
+  // ===============================================
 
   return (
     <div
@@ -108,7 +118,7 @@ export default function ModuloMuestras({
       }}
     >
       {/* =======================================
-          MENU SEGUN MODULO SELECCIONADO
+          MENÚ SEGÚN EL MÓDULO SELECCIONADO
       ======================================= */}
 
       <div
@@ -169,6 +179,8 @@ export default function ModuloMuestras({
           FUNCIONALIDADES DE RESULTADOS
       ======================================= */}
 
+      {/* REGISTRO DE RESULTADOS */}
+
       {esResultados &&
         seccion === "resultados" && (
           <GestionResultados
@@ -177,13 +189,7 @@ export default function ModuloMuestras({
           />
         )}
 
-      {esResultados &&
-        seccion === "parametros" && (
-          <ValoresResultados
-            usuario={usuario}
-            onVolver={onVolver}
-          />
-        )}
+      {/* ESTADO DE ANÁLISIS */}
 
       {esResultados &&
         seccion === "estadoAnalisis" && (
@@ -193,6 +199,8 @@ export default function ModuloMuestras({
           />
         )}
 
+      {/* VALIDACIÓN DE RESULTADOS */}
+
       {esResultados &&
         seccion === "validacionResultados" && (
           <ValidacionResultados
@@ -201,6 +209,8 @@ export default function ModuloMuestras({
           />
         )}
 
+      {/* INFORME DE RESULTADOS */}
+
       {esResultados &&
         seccion === "informeResultados" && (
           <InformeResultados
@@ -208,6 +218,8 @@ export default function ModuloMuestras({
             onVolver={onVolver}
           />
         )}
+
+      {/* HISTORIAL DE RESULTADOS */}
 
       {esResultados &&
         seccion === "historialResultados" && (

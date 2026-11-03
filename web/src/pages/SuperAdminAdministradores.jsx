@@ -83,6 +83,8 @@ function SuperAdminAdministradores({
     mensaje,
     setMensaje,
   ] = useState(null);
+  const [errorCorreo, setErrorCorreo] = useState("");
+
 
   const [
     busqueda,
@@ -439,6 +441,14 @@ function SuperAdminAdministradores({
       checked,
     } = evento.target;
 
+    if (name === "email") {
+      const correo = value.trim().toLowerCase();
+      const duplicado = administradores.some(
+        (item) => (item.email || "").trim().toLowerCase() === correo
+      );
+      setErrorCorreo(duplicado ? "Este correo electrónico ya está registrado. Utiliza otro correo." : "");
+    }
+
     setFormulario(
       (anterior) => ({
         ...anterior,
@@ -516,6 +526,11 @@ function SuperAdminAdministradores({
       evento
     ) => {
       evento.preventDefault();
+
+      if (modoFormulario === "crear" && errorCorreo) {
+        mostrarMensaje("error", errorCorreo);
+        return;
+      }
 
       const validacion =
         validarFormulario();
@@ -616,6 +631,18 @@ function SuperAdminAdministradores({
           "Error guardando administrador:",
           error
         );
+
+        const detalleError = (error?.message || "").toLowerCase();
+        if (error?.code === "auth/email-already-in-use" ||
+            detalleError.includes("ya existe") ||
+            detalleError.includes("ya está registrado") ||
+            detalleError.includes("already-in-use")) {
+          const advertencia = "Este correo electrónico ya está registrado. Utiliza otro correo.";
+          setErrorCorreo(advertencia);
+          mostrarMensaje("error", advertencia);
+          return;
+        }
+
 
         if (
           error?.code ===
@@ -1440,6 +1467,12 @@ function SuperAdminAdministradores({
                       }
                       placeholder="administrador@correo.com"
                     />
+
+                    {modoFormulario === "crear" && errorCorreo && (
+                      <small role="alert" style={{ color: "#c62828", fontWeight: 600 }}>
+                        {errorCorreo}
+                      </small>
+                    )}
 
                     {modoFormulario ===
                       "editar" && (
