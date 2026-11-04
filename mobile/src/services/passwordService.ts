@@ -12,75 +12,100 @@ export function validarPasswordNueva(password: string): boolean {
   );
 }
 
+type RespuestaBackend = {
+  correcto?: boolean;
+  success?: boolean;
+  mensaje?: string;
+  error?: string;
+};
+
 export async function cambiarPasswordUsuario(
   usuarioId: string,
   nuevaPassword: string
 ): Promise<string> {
-  const usuarioActual = getAuth().currentUser;
+  const auth = getAuth();
+  const usuarioActual = auth.currentUser;
 
   if (!usuarioActual) {
-    throw new Error("Tu sesión ha terminado. Inicia sesión nuevamente.");
+    throw new Error(
+      "Tu sesión ha terminado. Inicia sesión nuevamente."
+    );
   }
 
-  if (!usuarioId?.trim()) {
-    throw new Error("No se recibió el UID del empleado.");
+  if (!usuarioId || !usuarioId.trim()) {
+    throw new Error("No se recibió el UID del usuario.");
   }
 
   if (!validarPasswordNueva(nuevaPassword)) {
     throw new Error(
-      "La contraseña debe tener mínimo 8 caracteres, mayúscula, minúscula, número y carácter especial."
+      "La contraseña debe tener mínimo 8 caracteres, " +
+        "una mayúscula, una minúscula, un número " +
+        "y un carácter especial."
     );
   }
 
   const token = await usuarioActual.getIdToken(true);
 
+  const url = `${API_URL.replace(/\/+$/, "")}/cambiar-password`;
+
+  console.log("Conectando al backend:", url);
+
   let respuesta: Response;
 
   try {
-    respuesta = await fetch(`${API_URL}/cambiar-password`, {
+    respuesta = await fetch(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`
+        Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify({
         usuarioId: usuarioId.trim(),
-        nuevaPassword
-      })
+        nuevaPassword,
+      }),
     });
-  } catch {
+  } catch (error) {
+    console.error("Error de conexión con backend:", error);
+
     throw new Error(
-      `No se pudo conectar al backend en ${API_URL}.`
+      `No se pudo conectar al backend en ${API_URL}. ` +
+        "Comprueba que el servidor esté encendido " +
+        "y que permita conexiones desde Expo."
     );
   }
 
-  let datos: {
-    correcto?: boolean;
-    mensaje?: string;
-    error?: string;
-  };
+  let datos: RespuestaBackend;
 
   try {
     datos = await respuesta.json();
   } catch {
     throw new Error(
-      `El backend devolvió una respuesta inválida. Código: ${respuesta.status}`
+      `El backend devolvió una respuesta inválida. ` +
+        `Código HTTP: ${respuesta.status}`
     );
   }
 
   if (!respuesta.ok) {
     throw new Error(
-      datos.error || `Error del backend: ${respuesta.status}`
+      datos.error ||
+        datos.mensaje ||
+        `Error del backend: ${respuesta.status}`
     );
   }
 
-  if (datos.correcto !== true) {
+  if (datos.correcto === false || datos.success === false) {
     throw new Error(
-      "Firebase no confirmó el cambio de contraseña."
+      datos.error ||
+        datos.mensaje ||
+        "No se pudo actualizar la contraseña."
     );
   }
 
-  return datos.mensaje || "Contraseña actualizada correctamente.";
+  return (
+    datos.mensaje ||
+    "Contraseña actualizada correctamente."
+  );
 }
 
-export const restablecerPasswordUsuario = cambiarPasswordUsuario;
+export const restablecerPasswordUsuario =
+  cambiarPasswordUsuario;

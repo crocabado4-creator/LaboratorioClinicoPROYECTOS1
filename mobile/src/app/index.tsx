@@ -1,4 +1,10 @@
-import { useEffect, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
+
 import {
   ActivityIndicator,
   Alert,
@@ -20,16 +26,27 @@ import { useRouter } from "expo-router";
 
 import {
   onAuthStateChanged,
-  reload,
   signInWithEmailAndPassword,
   type User,
 } from "firebase/auth";
 
-import { doc, getDoc } from "firebase/firestore";
+import {
+  doc,
+  getDoc,
+} from "firebase/firestore";
 
-import { auth, db } from "../firebase/firebase";
-import { obtenerPermisosRol } from "../services/rolesService";
-import { cerrarSesionFirebase } from "../services/sessionService";
+import {
+  auth,
+  db,
+} from "../firebase/firebase";
+
+import {
+  obtenerPermisosRol,
+} from "../services/rolesService";
+
+import {
+  cerrarSesionFirebase,
+} from "../services/sessionService";
 
 import {
   obtenerPersonalizacion,
@@ -41,12 +58,18 @@ import {
 // TIPOS
 // ======================================================
 
+type RolUsuario =
+  | "super_admin"
+  | "administrador"
+  | "recepcionista"
+  | "bioquimico";
+
 type UsuarioSistema = {
   id: string;
   nombre: string;
   apellido: string;
   email: string;
-  rol: string;
+  rol: RolUsuario;
   laboratorioId: string;
   activo: boolean;
   requiereVerificacionEmail: boolean;
@@ -61,6 +84,139 @@ type ModuloProps = {
   onPress: () => void;
 };
 
+type ModuloSistema = {
+  icono: string;
+  titulo: string;
+  descripcion: string;
+  fondo: string;
+  color: string;
+  ruta: string;
+};
+
+// ======================================================
+// FUNCIONES GENERALES
+// ======================================================
+
+function normalizarRol(valor: unknown): string {
+  if (typeof valor !== "string") {
+    return "";
+  }
+
+  return valor
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+}
+
+function esRolValido(
+  rol: string
+): rol is RolUsuario {
+  return [
+    "super_admin",
+    "administrador",
+    "recepcionista",
+    "bioquimico",
+  ].includes(rol);
+}
+
+function nombreRol(rol: string): string {
+  switch (rol) {
+    case "super_admin":
+      return "Super Administrador";
+
+    case "administrador":
+      return "Administrador del Laboratorio";
+
+    case "recepcionista":
+      return "Recepcionista";
+
+    case "bioquimico":
+      return "Bioquímico";
+
+    default:
+      return "Usuario";
+  }
+}
+
+function mostrarMensaje(
+  titulo: string,
+  mensaje: string
+) {
+  if (Platform.OS === "web") {
+    if (typeof window !== "undefined") {
+      window.alert(`${titulo}\n\n${mensaje}`);
+    }
+
+    return;
+  }
+
+  Alert.alert(titulo, mensaje);
+}
+
+function mensajeError(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return "Ocurrió un error inesperado.";
+}
+
+// ======================================================
+// COMPONENTE DE MÓDULO
+// ======================================================
+
+function Modulo({
+  icono,
+  titulo,
+  descripcion,
+  fondo,
+  color,
+  onPress,
+}: ModuloProps) {
+  return (
+    <Pressable
+      style={({ pressed }) => [
+        styles.modulo,
+        pressed && styles.moduloPresionado,
+      ]}
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={`Abrir ${titulo}`}
+    >
+      <View
+        style={[
+          styles.moduloIcono,
+          { backgroundColor: fondo },
+        ]}
+      >
+        <Text style={styles.moduloEmoji}>
+          {icono}
+        </Text>
+      </View>
+
+      <View style={styles.moduloContenido}>
+        <Text style={styles.moduloTitulo}>
+          {titulo}
+        </Text>
+
+        <Text style={styles.moduloDescripcion}>
+          {descripcion}
+        </Text>
+      </View>
+
+      <Text
+        style={[
+          styles.moduloFlecha,
+          { color },
+        ]}
+      >
+        ›
+      </Text>
+    </Pressable>
+  );
+}
+
 // ======================================================
 // PANTALLA PRINCIPAL
 // ======================================================
@@ -68,225 +224,340 @@ type ModuloProps = {
 export default function Index() {
   const router = useRouter();
 
+  // ====================================================
+  // ESTADOS DEL LOGIN
+  // ====================================================
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [mostrarPassword, setMostrarPassword] = useState(false);
 
-  const [usuario, setUsuario] = useState<UsuarioSistema | null>(
+  const [
+    mostrarPassword,
+    setMostrarPassword,
+  ] = useState(false);
+
+  // ====================================================
+  // ESTADOS DEL USUARIO
+  // ====================================================
+
+  const [
+    usuario,
+    setUsuario,
+  ] = useState<UsuarioSistema | null>(null);
+
+  const [
+    permisos,
+    setPermisos,
+  ] = useState<string[]>([]);
+
+  const [
+    laboratorio,
+    setLaboratorio,
+  ] = useState<PersonalizacionLaboratorio | null>(
     null
   );
 
-  const [permisos, setPermisos] = useState<string[]>([]);
-
-  const [laboratorio, setLaboratorio] =
-    useState<PersonalizacionLaboratorio | null>(null);
+  // ====================================================
+  // ESTADOS GENERALES
+  // ====================================================
 
   const [cargando, setCargando] = useState(true);
-  const [procesando, setProcesando] = useState(false);
 
-  const [mostrarCerrarSesion, setMostrarCerrarSesion] =
-    useState(false);
+  const [
+    procesando,
+    setProcesando,
+  ] = useState(false);
+
+  const [
+    mostrarCerrarSesion,
+    setMostrarCerrarSesion,
+  ] = useState(false);
+
+  const [
+    errorAcceso,
+    setErrorAcceso,
+  ] = useState("");
+
+  const versionSesion = useRef(0);
 
   // ====================================================
   // LIMPIAR SESIÓN LOCAL
   // ====================================================
 
-  const limpiarSesionLocal = () => {
+  const limpiarSesionLocal = useCallback(() => {
     setUsuario(null);
     setPermisos([]);
     setLaboratorio(null);
-  };
+  }, []);
 
   // ====================================================
   // CERRAR SESIÓN INTERNA
   // ====================================================
 
-  const cerrarSesionInterna = async () => {
-    try {
-      await cerrarSesionFirebase();
-    } catch (error) {
-      console.error("Error cerrando sesión:", error);
-    } finally {
-      limpiarSesionLocal();
-    }
-  };
+  const cerrarSesionInterna = useCallback(
+    async () => {
+      versionSesion.current += 1;
+
+      try {
+        await cerrarSesionFirebase();
+      } catch (error) {
+        console.error(
+          "Error cerrando sesión:",
+          error
+        );
+      } finally {
+        limpiarSesionLocal();
+      }
+    },
+    [limpiarSesionLocal]
+  );
 
   // ====================================================
   // CARGAR USUARIO AUTENTICADO
   // ====================================================
 
-  const cargarUsuario = async (firebaseUser: User) => {
-    try {
-      await reload(firebaseUser);
-
-      const usuarioSnap = await getDoc(
-        doc(db, "usuarios", firebaseUser.uid)
-      );
-
-      if (!usuarioSnap.exists()) {
-        await cerrarSesionInterna();
-
-        Alert.alert(
-          "Cuenta no disponible",
-          "No se encontró información de esta cuenta."
+  const cargarUsuario = useCallback(
+    async (
+      firebaseUser: User,
+      versionActual: number
+    ) => {
+      try {
+        const usuarioRef = doc(
+          db,
+          "usuarios",
+          firebaseUser.uid
         );
 
-        return;
-      }
-
-      const datos = usuarioSnap.data();
-
-      if (datos.activo !== true) {
-        await cerrarSesionInterna();
-
-        Alert.alert(
-          "Cuenta inactiva",
-          "Tu cuenta se encuentra deshabilitada."
+        const usuarioSnap = await getDoc(
+          usuarioRef
         );
 
-        return;
-      }
+        if (
+          versionActual !== versionSesion.current
+        ) {
+          return;
+        }
 
-      const rol =
-        typeof datos.rol === "string"
-          ? datos.rol.trim()
-          : "";
-
-      if (!rol) {
-        await cerrarSesionInterna();
-
-        Alert.alert(
-          "Cuenta sin rol",
-          "La cuenta no tiene un rol asignado."
-        );
-
-        return;
-      }
-
-      // Mantener la validación de correo existente.
-
-      const requiereVerificacion =
-        datos.requiereVerificacionEmail === true;
-
-      const debeVerificarCorreo =
-        requiereVerificacion && rol !== "administrador";
-
-      if (
-        debeVerificarCorreo &&
-        !firebaseUser.emailVerified
-      ) {
-        await cerrarSesionInterna();
-
-        Alert.alert(
-          "Correo pendiente",
-          "Debes verificar tu correo antes de ingresar."
-        );
-
-        return;
-      }
-
-      const usuarioSistema: UsuarioSistema = {
-        id: usuarioSnap.id,
-
-        nombre:
-          typeof datos.nombre === "string"
-            ? datos.nombre.trim()
-            : "",
-
-        apellido:
-          typeof datos.apellido === "string"
-            ? datos.apellido.trim()
-            : "",
-
-        email:
-          typeof datos.email === "string"
-            ? datos.email.trim()
-            : firebaseUser.email || "",
-
-        rol,
-
-        laboratorioId:
-          typeof datos.laboratorioId === "string"
-            ? datos.laboratorioId.trim()
-            : "",
-
-        activo: true,
-
-        requiereVerificacionEmail: debeVerificarCorreo,
-      };
-
-      // Obtener permisos de Firestore.
-
-      const permisosRol = await obtenerPermisosRol(rol);
-
-      setUsuario(usuarioSistema);
-
-      setPermisos(
-        Array.isArray(permisosRol) ? permisosRol : []
-      );
-
-      // Cargar personalización del laboratorio.
-
-      if (usuarioSistema.laboratorioId) {
-        try {
-          const identidad = await obtenerPersonalizacion(
-            usuarioSistema.laboratorioId
+        if (!usuarioSnap.exists()) {
+          throw new Error(
+            "No se encontró la cuenta en Firestore."
           );
+        }
 
-          setLaboratorio(identidad);
+        const datos = usuarioSnap.data();
+
+        if (datos.activo !== true) {
+          throw new Error(
+            "Tu cuenta se encuentra inactiva."
+          );
+        }
+
+        const rol = normalizarRol(
+          datos.rol
+        );
+
+        if (!esRolValido(rol)) {
+          throw new Error(
+            "El usuario no tiene un rol válido."
+          );
+        }
+
+        const laboratorioId = String(
+          datos.laboratorioId || ""
+        ).trim();
+
+        if (
+          rol !== "super_admin" &&
+          !laboratorioId
+        ) {
+          throw new Error(
+            "El usuario no tiene un laboratorio asignado."
+          );
+        }
+
+        // ==========================================
+        // CONSTRUIR USUARIO
+        // ==========================================
+
+        const usuarioSistema: UsuarioSistema = {
+          id: usuarioSnap.id,
+
+          nombre: String(
+            datos.nombre || ""
+          ).trim(),
+
+          apellido: String(
+            datos.apellido || ""
+          ).trim(),
+
+          email: String(
+            datos.email ||
+            firebaseUser.email ||
+            ""
+          )
+            .trim()
+            .toLowerCase(),
+
+          rol,
+
+          laboratorioId,
+
+          activo: true,
+
+          requiereVerificacionEmail: false,
+        };
+
+        if (
+          versionActual !== versionSesion.current
+        ) {
+          return;
+        }
+
+        setUsuario(usuarioSistema);
+        setErrorAcceso("");
+
+        // ==========================================
+        // CARGAR PERMISOS
+        // ==========================================
+
+        try {
+          const permisosRol =
+            await obtenerPermisosRol(rol);
+
+          if (
+            versionActual !== versionSesion.current
+          ) {
+            return;
+          }
+
+          setPermisos(
+            Array.isArray(permisosRol)
+              ? permisosRol
+              : []
+          );
         } catch (error) {
           console.error(
-            "No se pudo cargar la personalización:",
+            "Error consultando permisos:",
             error
           );
 
+          if (
+            versionActual === versionSesion.current
+          ) {
+            setPermisos([]);
+          }
+        }
+
+        // ==========================================
+        // CARGAR PERSONALIZACIÓN
+        // ==========================================
+
+        if (laboratorioId) {
+          try {
+            const identidad =
+              await obtenerPersonalizacion(
+                laboratorioId
+              );
+
+            if (
+              versionActual !== versionSesion.current
+            ) {
+              return;
+            }
+
+            setLaboratorio(identidad);
+          } catch (error) {
+            console.error(
+              "Error de personalización:",
+              error
+            );
+
+            if (
+              versionActual === versionSesion.current
+            ) {
+              setLaboratorio(null);
+            }
+          }
+        } else {
           setLaboratorio(null);
         }
-      } else {
-        setLaboratorio(null);
+
+        console.log(
+          "Acceso completado:",
+          rol
+        );
+      } catch (error) {
+        if (
+          versionActual !== versionSesion.current
+        ) {
+          return;
+        }
+
+        console.error(
+          "Error cargando usuario:",
+          error
+        );
+
+        const mensaje = mensajeError(error);
+
+        setErrorAcceso(mensaje);
+
+        await cerrarSesionInterna();
+
+        mostrarMensaje(
+          "Error de acceso",
+          mensaje
+        );
       }
-    } catch (error) {
-      console.error("Error cargando usuario:", error);
-
-      await cerrarSesionInterna();
-
-      Alert.alert(
-        "Error de acceso",
-        error instanceof Error
-          ? error.message
-          : "No se pudo cargar tu cuenta."
-      );
-    }
-  };
+    },
+    [cerrarSesionInterna]
+  );
 
   // ====================================================
-  // OBSERVAR SESIÓN
+  // OBSERVAR AUTENTICACIÓN
   // ====================================================
 
   useEffect(() => {
-    let activo = true;
+    let componenteActivo = true;
 
     const cancelar = onAuthStateChanged(
       auth,
       async (firebaseUser) => {
-        try {
-          if (activo) {
-            setCargando(true);
-          }
+        const versionActual =
+          ++versionSesion.current;
 
+        if (!componenteActivo) {
+          return;
+        }
+
+        setCargando(true);
+
+        try {
           if (!firebaseUser) {
             limpiarSesionLocal();
             return;
           }
 
-          await cargarUsuario(firebaseUser);
+          await cargarUsuario(
+            firebaseUser,
+            versionActual
+          );
         } catch (error) {
           console.error(
             "Error observando autenticación:",
             error
           );
         } finally {
-          if (activo) {
+          if (
+            componenteActivo &&
+            versionActual ===
+              versionSesion.current
+          ) {
+            setCargando(false);
+          } else if (
+            componenteActivo &&
+            !auth.currentUser
+          ) {
             setCargando(false);
           }
         }
@@ -294,20 +565,30 @@ export default function Index() {
     );
 
     return () => {
-      activo = false;
+      componenteActivo = false;
+      versionSesion.current += 1;
       cancelar();
     };
-  }, []);
+  }, [
+    cargarUsuario,
+    limpiarSesionLocal,
+  ]);
 
   // ====================================================
   // INICIAR SESIÓN
   // ====================================================
 
   const iniciarSesion = async () => {
-    const correo = email.trim().toLowerCase();
+    if (procesando) {
+      return;
+    }
+
+    const correo = email
+      .trim()
+      .toLowerCase();
 
     if (!correo || !password) {
-      Alert.alert(
+      mostrarMensaje(
         "Campos incompletos",
         "Ingresa tu correo y contraseña."
       );
@@ -315,10 +596,14 @@ export default function Index() {
       return;
     }
 
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(correo)) {
-      Alert.alert(
+    if (
+      !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(
+        correo
+      )
+    ) {
+      mostrarMensaje(
         "Correo inválido",
-        "Ingresa un correo válido."
+        "Ingresa un correo electrónico válido."
       );
 
       return;
@@ -326,6 +611,7 @@ export default function Index() {
 
     try {
       setProcesando(true);
+      setErrorAcceso("");
 
       await signInWithEmailAndPassword(
         auth,
@@ -335,6 +621,11 @@ export default function Index() {
 
       setPassword("");
     } catch (error: unknown) {
+      console.error(
+        "Error iniciando sesión:",
+        error
+      );
+
       let codigo = "";
 
       if (
@@ -347,47 +638,47 @@ export default function Index() {
         );
       }
 
-      if (
-        codigo === "auth/invalid-credential" ||
-        codigo === "auth/wrong-password" ||
-        codigo === "auth/user-not-found"
-      ) {
-        Alert.alert(
-          "Acceso rechazado",
-          "El correo o la contraseña son incorrectos."
-        );
-      } else if (codigo === "auth/invalid-email") {
-        Alert.alert(
-          "Correo inválido",
-          "El correo electrónico no es válido."
-        );
-      } else if (codigo === "auth/user-disabled") {
-        Alert.alert(
-          "Cuenta deshabilitada",
-          "Esta cuenta no se encuentra disponible."
-        );
-      } else if (codigo === "auth/too-many-requests") {
-        Alert.alert(
-          "Acceso temporalmente bloqueado",
-          "Se realizaron demasiados intentos. Intenta más tarde."
-        );
-      } else if (
-        codigo === "auth/network-request-failed"
-      ) {
-        Alert.alert(
-          "Sin conexión",
-          "Revisa tu conexión a Internet."
-        );
-      } else {
-        console.error("Error iniciando sesión:", error);
+      let mensaje =
+        "No se pudo iniciar sesión.";
 
-        Alert.alert(
-          "Error",
-          error instanceof Error
-            ? error.message
-            : "No se pudo iniciar sesión."
-        );
+      switch (codigo) {
+        case "auth/invalid-credential":
+        case "auth/wrong-password":
+        case "auth/user-not-found":
+          mensaje =
+            "El correo o la contraseña son incorrectos.";
+          break;
+
+        case "auth/invalid-email":
+          mensaje =
+            "El correo electrónico no es válido.";
+          break;
+
+        case "auth/user-disabled":
+          mensaje =
+            "Esta cuenta se encuentra deshabilitada.";
+          break;
+
+        case "auth/too-many-requests":
+          mensaje =
+            "Demasiados intentos. Intenta más tarde.";
+          break;
+
+        case "auth/network-request-failed":
+          mensaje =
+            "No se pudo conectar con Firebase. Revisa Internet.";
+          break;
+
+        default:
+          mensaje = mensajeError(error);
       }
+
+      setErrorAcceso(mensaje);
+
+      mostrarMensaje(
+        "Error de inicio de sesión",
+        mensaje
+      );
     } finally {
       setProcesando(false);
     }
@@ -398,25 +689,30 @@ export default function Index() {
   // ====================================================
 
   const ejecutarCerrarSesion = async () => {
-    if (procesando) return;
+    if (procesando) {
+      return;
+    }
 
     try {
       setProcesando(true);
+
       setMostrarCerrarSesion(false);
 
-      await cerrarSesionFirebase();
-
-      limpiarSesionLocal();
+      await cerrarSesionInterna();
 
       setEmail("");
       setPassword("");
       setMostrarPassword(false);
+      setErrorAcceso("");
 
       router.replace("/");
     } catch (error) {
-      console.error("Error cerrando sesión:", error);
+      console.error(
+        "Error cerrando sesión:",
+        error
+      );
 
-      Alert.alert(
+      mostrarMensaje(
         "Error",
         "No se pudo cerrar la sesión."
       );
@@ -429,7 +725,9 @@ export default function Index() {
   // PERMISOS
   // ====================================================
 
-  const tienePermiso = (permiso: string): boolean => {
+  const tienePermiso = (
+    permiso: string
+  ): boolean => {
     return permisos.includes(permiso);
   };
 
@@ -441,13 +739,6 @@ export default function Index() {
     );
   };
 
-  const moduloNoDisponible = (nombre: string) => {
-    Alert.alert(
-      nombre,
-      "Este módulo todavía no está disponible."
-    );
-  };
-
   // ====================================================
   // NAVEGACIÓN
   // ====================================================
@@ -456,9 +747,12 @@ export default function Index() {
     try {
       router.push(ruta as never);
     } catch (error) {
-      console.error("Error navegando:", error);
+      console.error(
+        "Error navegando:",
+        error
+      );
 
-      Alert.alert(
+      mostrarMensaje(
         "Error",
         "No se pudo abrir el módulo."
       );
@@ -481,6 +775,367 @@ export default function Index() {
     laboratorio?.nombreVisible ||
     laboratorio?.nombre ||
     "Laboratorio Clínico";
+
+  // ====================================================
+  // OBTENER MÓDULOS DEL DASHBOARD
+  // ====================================================
+
+  const obtenerModulos = (): ModuloSistema[] => {
+    if (!usuario) {
+      return [];
+    }
+
+    const lista: ModuloSistema[] = [];
+
+    const agregar = (
+      modulo: ModuloSistema
+    ) => {
+      lista.push(modulo);
+    };
+
+    // ==================================================
+    // SUPER ADMINISTRADOR
+    // ==================================================
+
+    if (usuario.rol === "super_admin") {
+      if (
+        tieneAlgunPermiso([
+          "laboratorios.crear",
+          "laboratorios.ver",
+          "laboratorios.editar",
+          "laboratorios.desactivar",
+        ])
+      ) {
+        agregar({
+          icono: "🏥",
+          titulo: "Laboratorios",
+          descripcion:
+            "Administra los laboratorios registrados.",
+          fondo: "#DBEAFE",
+          color: "#1D4ED8",
+          ruta: "/laboratorios",
+        });
+      }
+
+      if (
+        tienePermiso("laboratorios.editar")
+      ) {
+        agregar({
+          icono: "🎨",
+          titulo: "Personalización",
+          descripcion:
+            "Configura la identidad visual de los laboratorios.",
+          fondo: "#EDE9FE",
+          color: "#6D28D9",
+          ruta: "/personalizacion",
+        });
+      }
+
+      if (
+        tieneAlgunPermiso([
+          "administradores.crear",
+          "administradores.ver",
+          "administradores.editar",
+          "administradores.desactivar",
+        ])
+      ) {
+        agregar({
+          icono: "👤",
+          titulo: "Administradores",
+          descripcion:
+            "Gestiona responsables de laboratorio.",
+          fondo: "#F3E8FF",
+          color: "#7E22CE",
+          ruta: "/administradores",
+        });
+      }
+
+      if (tienePermiso("roles.ver")) {
+        agregar({
+          icono: "🛡️",
+          titulo: "Roles",
+          descripcion:
+            "Consulta los roles y permisos del sistema.",
+          fondo: "#E0E7FF",
+          color: "#4338CA",
+          ruta: "/roles",
+        });
+      }
+    }
+
+    // ==================================================
+    // ADMINISTRADOR
+    // ==================================================
+
+    if (usuario.rol === "administrador") {
+      if (
+        tienePermiso("configuracion.editar")
+      ) {
+        agregar({
+          icono: "⚙️",
+          titulo: "Configuración",
+          descripcion:
+            "Actualiza los datos generales del laboratorio.",
+          fondo: "#E0F2FE",
+          color: "#0369A1",
+          ruta: "/configuracion",
+        });
+      }
+
+      if (
+        tienePermiso("roles.asignar")
+      ) {
+        agregar({
+          icono: "🛡️",
+          titulo: "Roles y permisos",
+          descripcion:
+            "Gestiona los roles del personal.",
+          fondo: "#E0E7FF",
+          color: "#4338CA",
+          ruta: "/roles",
+        });
+      }
+
+      if (
+        tieneAlgunPermiso([
+          "empleados.crear",
+          "empleados.ver",
+          "empleados.editar",
+          "empleados.desactivar",
+        ])
+      ) {
+        agregar({
+          icono: "👥",
+          titulo: "Personal",
+          descripcion:
+            "Administra Recepcionistas y Bioquímicos.",
+          fondo: "#CCFBF1",
+          color: "#0F766E",
+          ruta: "/personal",
+        });
+      }
+    }
+
+    // ==================================================
+    // PACIENTES
+    // ==================================================
+
+    if (
+      tieneAlgunPermiso([
+        "pacientes.crear",
+        "pacientes.editar",
+        "pacientes.ver",
+      ])
+    ) {
+      agregar({
+        icono: "🧑‍⚕️",
+        titulo: "Pacientes",
+        descripcion:
+          "Registra, consulta y administra pacientes.",
+        fondo: "#DCFCE7",
+        color: "#15803D",
+        ruta: "/pacientes",
+      });
+    }
+
+    // ==================================================
+    // HISTORIAL DE PACIENTES
+    // RECEPCIONISTA Y ADMINISTRADOR
+    // ==================================================
+
+    if (
+      usuario.rol === "recepcionista" ||
+      usuario.rol === "administrador"
+    ) {
+      agregar({
+        icono: "📁",
+        titulo: "Historial de pacientes",
+        descripcion:
+          "Consulta las atenciones, análisis, ventas, muestras y resultados de cada paciente. Genera su historial en PDF.",
+        fondo: "#DBEAFE",
+        color: "#1D4ED8",
+        ruta: "/historial-paciente",
+      });
+    }
+
+    // ==================================================
+    // ANÁLISIS CLÍNICOS
+    // ==================================================
+
+    if (
+      tieneAlgunPermiso([
+        "analisis.crear",
+        "analisis.editar",
+        "analisis.ver",
+      ])
+    ) {
+      agregar({
+        icono: "🔬",
+        titulo: "Análisis clínicos",
+        descripcion:
+          "Gestiona los análisis disponibles.",
+        fondo: "#CFFAFE",
+        color: "#0E7490",
+        ruta: "/analisis",
+      });
+    }
+
+    // ==================================================
+    // SOLICITUDES
+    // ==================================================
+
+    if (
+      (
+        usuario.rol === "administrador" ||
+        usuario.rol === "recepcionista"
+      ) &&
+      tieneAlgunPermiso([
+        "solicitudes.ver",
+        "solicitudes.crear",
+      ])
+    ) {
+      agregar({
+        icono: "📋",
+        titulo: "Solicitudes de análisis",
+        descripcion:
+          "Registra solicitudes y consulta análisis.",
+        fondo: "#E0F2FE",
+        color: "#0369A1",
+        ruta: "/solicitudes",
+      });
+    }
+
+    // ==================================================
+    // VENTAS
+    // ==================================================
+
+    if (
+      (
+        usuario.rol === "administrador" ||
+        usuario.rol === "recepcionista"
+      ) &&
+      tieneAlgunPermiso([
+        "ventas.ver",
+        "ventas.crear",
+      ])
+    ) {
+      agregar({
+        icono: "💳",
+        titulo: "Ventas",
+        descripcion:
+          usuario.rol === "recepcionista"
+            ? "Registra pagos, genera órdenes y comprobantes."
+            : "Consulta ventas y comprobantes.",
+        fondo: "#FEF3C7",
+        color: "#A16207",
+        ruta: "/ventas",
+      });
+    }
+
+    // ==================================================
+    // RECEPCIONISTA - NOTIFICACIONES
+    // ==================================================
+
+    if (usuario.rol === "recepcionista") {
+      agregar({
+        icono: "🔔",
+        titulo: "Notificaciones de Recepción",
+        descripcion:
+          "Consulta muestras pendientes, rechazadas, procesadas y nuevas tomas solicitadas.",
+        fondo: "#DBEAFE",
+        color: "#2563EB",
+        ruta: "/notificaciones-recepcion",
+      });
+
+      // ================================================
+      // NUEVO MÓDULO: RESULTADOS Y NOTAS DE VENTA
+      // ================================================
+
+      agregar({
+        icono: "📄",
+        titulo: "Resultados y notas de venta",
+        descripcion:
+          "Busca pacientes, consulta los resultados clínicos disponibles y descarga sus notas de venta.",
+        fondo: "#DCFCE7",
+        color: "#00853D",
+        ruta: "/resultados-notas-venta",
+      });
+    }
+
+    // ==================================================
+    // BIOQUÍMICO - MUESTRAS
+    // ==================================================
+
+    if (usuario.rol === "bioquimico") {
+      agregar({
+        icono: "🧪",
+        titulo: "Muestras",
+        descripcion:
+          "Registra y consulta las muestras del laboratorio.",
+        fondo: "#EDE9FE",
+        color: "#7C3AED",
+        ruta: "/muestras",
+      });
+    }
+
+    // ==================================================
+    // RESULTADOS
+    // ==================================================
+
+    if (
+      tienePermiso("resultados.ver")
+    ) {
+      agregar({
+        icono: "📋",
+        titulo: "Resultados",
+        descripcion:
+          "Consulta resultados clínicos.",
+        fondo: "#DBEAFE",
+        color: "#1D4ED8",
+        ruta: "/resultados",
+      });
+    }
+
+    // ==================================================
+    // REPORTES
+    // ==================================================
+
+    if (
+      tienePermiso("reportes.ver")
+    ) {
+      agregar({
+        icono: "📊",
+        titulo: "Reportes",
+        descripcion:
+          "Consulta reportes del laboratorio.",
+        fondo: "#EDE9FE",
+        color: "#7C3AED",
+        ruta: "/sprint3-admin",
+      });
+    }
+
+    // ==================================================
+    // AUDITORÍA
+    // ==================================================
+
+    if (
+      tienePermiso(
+        "auditoria.ver_global"
+      )
+    ) {
+      agregar({
+        icono: "📜",
+        titulo: "Auditoría global",
+        descripcion:
+          "Consulta operaciones importantes del sistema.",
+        fondo: "#E2E8F0",
+        color: "#475569",
+        ruta: "/auditoria-global",
+      });
+    }
+
+    return lista;
+  };
 
   // ====================================================
   // PANTALLA DE CARGA
@@ -531,7 +1186,9 @@ export default function Index() {
           }
         >
           <ScrollView
-            contentContainerStyle={styles.loginScroll}
+            contentContainerStyle={
+              styles.loginScroll
+            }
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
           >
@@ -556,8 +1213,11 @@ export default function Index() {
                 Bienvenido
               </Text>
 
-              <Text style={styles.loginDescription}>
-                Ingresa con las credenciales de tu cuenta.
+              <Text
+                style={styles.loginDescription}
+              >
+                Ingresa con las credenciales
+                de tu cuenta.
               </Text>
 
               <Text style={styles.label}>
@@ -596,7 +1256,9 @@ export default function Index() {
 
                 <Pressable
                   onPress={() =>
-                    setMostrarPassword(!mostrarPassword)
+                    setMostrarPassword(
+                      !mostrarPassword
+                    )
                   }
                   disabled={procesando}
                 >
@@ -608,18 +1270,31 @@ export default function Index() {
                 </Pressable>
               </View>
 
+              {errorAcceso !== "" && (
+                <View style={styles.errorBox}>
+                  <Text style={styles.errorText}>
+                    {errorAcceso}
+                  </Text>
+                </View>
+              )}
+
               <Pressable
                 style={[
                   styles.loginButton,
-                  procesando && styles.buttonDisabled,
+                  procesando &&
+                    styles.buttonDisabled,
                 ]}
                 onPress={iniciarSesion}
                 disabled={procesando}
               >
                 {procesando ? (
-                  <ActivityIndicator color="#FFFFFF" />
+                  <ActivityIndicator
+                    color="#FFFFFF"
+                  />
                 ) : (
-                  <Text style={styles.loginButtonText}>
+                  <Text
+                    style={styles.loginButtonText}
+                  >
                     Iniciar sesión
                   </Text>
                 )}
@@ -635,6 +1310,8 @@ export default function Index() {
   // DASHBOARD PRINCIPAL
   // ====================================================
 
+  const modulos = obtenerModulos();
+
   return (
     <SafeAreaView style={styles.dashboardPage}>
       <StatusBar
@@ -643,21 +1320,30 @@ export default function Index() {
       />
 
       <ScrollView
-        contentContainerStyle={styles.dashboardScroll}
+        contentContainerStyle={
+          styles.dashboardScroll
+        }
         showsVerticalScrollIndicator={false}
       >
+        {/* =========================================== */}
         {/* ENCABEZADO */}
+        {/* =========================================== */}
 
         <View
           style={[
             styles.hero,
-            { backgroundColor: colorPrimario },
+            {
+              backgroundColor: colorPrimario,
+            },
           ]}
         >
           <View
             style={[
               styles.heroDecoration,
-              { backgroundColor: colorSecundario },
+              {
+                backgroundColor:
+                  colorSecundario,
+              },
             ]}
           />
 
@@ -694,21 +1380,26 @@ export default function Index() {
           </View>
         </View>
 
+        {/* =========================================== */}
         {/* PERFIL */}
+        {/* =========================================== */}
 
         <View style={styles.profileCard}>
           <View
             style={[
               styles.profileAvatar,
               {
-                backgroundColor: `${colorPrimario}18`,
+                backgroundColor:
+                  `${colorPrimario}18`,
               },
             ]}
           >
             <Text
               style={[
                 styles.profileLetter,
-                { color: colorPrimario },
+                {
+                  color: colorPrimario,
+                },
               ]}
             >
               {(usuario.nombre || "U")
@@ -729,7 +1420,9 @@ export default function Index() {
             <Text
               style={[
                 styles.profileRole,
-                { color: colorPrimario },
+                {
+                  color: colorPrimario,
+                },
               ]}
             >
               {nombreRol(usuario.rol)}
@@ -737,13 +1430,17 @@ export default function Index() {
           </View>
         </View>
 
+        {/* =========================================== */}
         {/* TÍTULO */}
+        {/* =========================================== */}
 
         <View style={styles.sectionHeader}>
           <Text
             style={[
               styles.sectionEyebrow,
-              { color: colorPrimario },
+              {
+                color: colorPrimario,
+              },
             ]}
           >
             ÁREA DE TRABAJO
@@ -753,297 +1450,59 @@ export default function Index() {
             Módulos disponibles
           </Text>
 
-          <Text style={styles.sectionDescription}>
-            Accede a las funciones autorizadas para tu cuenta.
+          <Text
+            style={styles.sectionDescription}
+          >
+            Accede a las funciones
+            autorizadas para tu cuenta.
           </Text>
         </View>
 
-        {/* ============================================= */}
+        {/* =========================================== */}
         {/* MÓDULOS */}
-        {/* ============================================= */}
+        {/* =========================================== */}
 
         <View style={styles.modules}>
-
-          {/* SUPERADMIN - LABORATORIOS */}
-
-          {usuario.rol === "super_admin" &&
-            tieneAlgunPermiso([
-              "laboratorios.crear",
-              "laboratorios.ver",
-              "laboratorios.editar",
-              "laboratorios.desactivar",
-            ]) && (
-              <Modulo
-                icono="🏥"
-                titulo="Laboratorios"
-                descripcion="Administra los laboratorios registrados."
-                color="#1D4ED8"
-                fondo="#DBEAFE"
-                onPress={() =>
-                  abrirModulo("/laboratorios")
-                }
-              />
-            )}
-
-          {/* SUPERADMIN - PERSONALIZACIÓN */}
-
-          {usuario.rol === "super_admin" &&
-            tienePermiso("laboratorios.editar") && (
-              <Modulo
-                icono="🎨"
-                titulo="Personalización"
-                descripcion="Configura la identidad visual de los laboratorios."
-                color="#6D28D9"
-                fondo="#EDE9FE"
-                onPress={() =>
-                  abrirModulo("/personalizacion")
-                }
-              />
-            )}
-
-          {/* SUPERADMIN - ADMINISTRADORES */}
-
-          {usuario.rol === "super_admin" &&
-            tieneAlgunPermiso([
-              "administradores.crear",
-              "administradores.ver",
-              "administradores.editar",
-              "administradores.desactivar",
-            ]) && (
-              <Modulo
-                icono="👤"
-                titulo="Administradores"
-                descripcion="Gestiona responsables de laboratorio."
-                color="#7E22CE"
-                fondo="#F3E8FF"
-                onPress={() =>
-                  abrirModulo("/administradores")
-                }
-              />
-            )}
-
-          {/* SUPERADMIN - ROLES */}
-
-          {usuario.rol === "super_admin" &&
-            tienePermiso("roles.ver") && (
-              <Modulo
-                icono="🛡️"
-                titulo="Roles"
-                descripcion="Consulta los roles y permisos del sistema."
-                color="#4338CA"
-                fondo="#E0E7FF"
-                onPress={() =>
-                  abrirModulo("/roles")
-                }
-              />
-            )}
-
-          {/* ADMINISTRADOR - CONFIGURACIÓN */}
-
-          {usuario.rol === "administrador" &&
-            tienePermiso("configuracion.editar") && (
-              <Modulo
-                icono="⚙️"
-                titulo="Configuración"
-                descripcion="Actualiza los datos generales de tu laboratorio."
-                color="#0369A1"
-                fondo="#E0F2FE"
-                onPress={() =>
-                  abrirModulo("/configuracion")
-                }
-              />
-            )}
-
-          {/* ADMINISTRADOR - ROLES */}
-
-          {usuario.rol === "administrador" &&
-            tienePermiso("roles.asignar") && (
-              <Modulo
-                icono="🛡️"
-                titulo="Roles y permisos"
-                descripcion="Gestiona los roles del personal."
-                color="#4338CA"
-                fondo="#E0E7FF"
-                onPress={() =>
-                  abrirModulo("/roles")
-                }
-              />
-            )}
-
-          {/* ADMINISTRADOR - PERSONAL */}
-
-          {usuario.rol === "administrador" &&
-            tieneAlgunPermiso([
-              "empleados.crear",
-              "empleados.ver",
-              "empleados.editar",
-              "empleados.desactivar",
-            ]) && (
-              <Modulo
-                icono="👥"
-                titulo="Personal"
-                descripcion="Administra Recepcionistas y Bioquímicos."
-                color="#0F766E"
-                fondo="#CCFBF1"
-                onPress={() =>
-                  abrirModulo("/personal")
-                }
-              />
-            )}
-
-          {/* PACIENTES */}
-
-          {tieneAlgunPermiso([
-            "pacientes.crear",
-            "pacientes.editar",
-            "pacientes.ver",
-          ]) && (
+          {modulos.map((modulo) => (
             <Modulo
-              icono="🧑‍⚕️"
-              titulo="Pacientes"
-              descripcion="Registra, consulta y administra pacientes."
-              color="#15803D"
-              fondo="#DCFCE7"
+              key={modulo.ruta}
+              icono={modulo.icono}
+              titulo={modulo.titulo}
+              descripcion={modulo.descripcion}
+              fondo={modulo.fondo}
+              color={modulo.color}
               onPress={() =>
-                abrirModulo("/pacientes")
+                abrirModulo(modulo.ruta)
               }
             />
-          )}
+          ))}
 
-          {/* ANÁLISIS CLÍNICOS */}
+          {modulos.length === 0 && (
+            <View style={styles.sinModulos}>
+              <Text
+                style={styles.sinModulosTitulo}
+              >
+                No hay módulos disponibles
+              </Text>
 
-          {tieneAlgunPermiso([
-            "analisis.crear",
-            "analisis.editar",
-            "analisis.ver",
-          ]) && (
-            <Modulo
-              icono="🔬"
-              titulo="Análisis clínicos"
-              descripcion="Gestiona los análisis disponibles."
-              color="#0E7490"
-              fondo="#CFFAFE"
-              onPress={() =>
-                abrirModulo("/analisis")
-              }
-            />
-          )}
-
-          {/* ============================================= */}
-          {/* SOLICITUDES DE ANÁLISIS - CORREGIDO */}
-          {/* ============================================= */}
-
-          {(usuario.rol === "administrador" ||
-            usuario.rol === "recepcionista") &&
-            tieneAlgunPermiso([
-              "solicitudes.ver",
-              "solicitudes.crear",
-            ]) && (
-              <Modulo
-                icono="📋"
-                titulo="Solicitudes de análisis"
-                descripcion="Busca pacientes, registra solicitudes y genera PDF."
-                color="#0369A1"
-                fondo="#E0F2FE"
-                onPress={() =>
-                  abrirModulo("/solicitudes")
-                }
-              />
-            )}
-
-          {/* ============================================= */}
-          {/* VENTAS - CORREGIDO */}
-          {/* ============================================= */}
-
-          {(usuario.rol === "administrador" ||
-            usuario.rol === "recepcionista") &&
-            tieneAlgunPermiso([
-              "ventas.ver",
-              "ventas.crear",
-            ]) && (
-              <Modulo
-                icono="💳"
-                titulo="Ventas"
-                descripcion={
-                  usuario.rol === "recepcionista"
-                    ? "Registra pagos, genera órdenes y comprobantes PDF."
-                    : "Consulta ventas y genera comprobantes PDF."
-                }
-                color="#A16207"
-                fondo="#FEF3C7"
-                onPress={() =>
-                  abrirModulo("/ventas")
-                }
-              />
-            )}
-
-          {/* BIOQUÍMICO - MUESTRAS */}
-
-          {usuario.rol === "bioquimico" && (
-            <Modulo
-              icono="🧪"
-              titulo="Muestras"
-              descripcion="Registra y consulta las muestras del laboratorio."
-              color="#7C3AED"
-              fondo="#EDE9FE"
-              onPress={() =>
-                abrirModulo("/muestras")
-              }
-            />
-          )}
-
-          {/* RESULTADOS */}
-
-          {tienePermiso("resultados.ver") && (
-            <Modulo
-              icono="📋"
-              titulo="Resultados"
-              descripcion="Consulta resultados clínicos."
-              color="#1D4ED8"
-              fondo="#DBEAFE"
-              onPress={() =>
-                abrirModulo("/resultados")
-              }
-            />
-          )}
-
-          {/* REPORTES */}
-
-          {tienePermiso("reportes.ver") && (
-            <Modulo
-              icono="📊"
-              titulo="Reportes"
-              descripcion="Consulta reportes del laboratorio."
-              color="#7C3AED"
-              fondo="#EDE9FE"
-              onPress={() =>
-                abrirModulo("/sprint3-admin")
-              }
-            />
-          )}
-
-          {/* AUDITORÍA GLOBAL */}
-
-          {tienePermiso("auditoria.ver_global") && (
-            <Modulo
-              icono="📜"
-              titulo="Auditoría global"
-              descripcion="Consulta operaciones importantes del sistema."
-              color="#475569"
-              fondo="#E2E8F0"
-              onPress={() =>
-                abrirModulo("/auditoria-global")
-              }
-            />
+              <Text
+                style={styles.sinModulosTexto}
+              >
+                Tu cuenta inició sesión,
+                pero no se pudieron cargar
+                los permisos necesarios
+                para mostrar los módulos.
+              </Text>
+            </View>
           )}
         </View>
 
-        {/* ============================================= */}
+        {/* =========================================== */}
         {/* SESIÓN ACTIVA */}
-        {/* ============================================= */}
+        {/* =========================================== */}
 
         <View style={styles.sessionCard}>
-          <View>
+          <View style={{ flex: 1 }}>
             <Text style={styles.sessionTitle}>
               ● Sesión activa
             </Text>
@@ -1056,7 +1515,8 @@ export default function Index() {
           <Pressable
             style={[
               styles.logoutButton,
-              procesando && styles.buttonDisabled,
+              procesando &&
+                styles.buttonDisabled,
             ]}
             onPress={() =>
               setMostrarCerrarSesion(true)
@@ -1094,7 +1554,9 @@ export default function Index() {
               Cerrar sesión
             </Text>
 
-            <Text style={styles.logoutDescription}>
+            <Text
+              style={styles.logoutDescription}
+            >
               ¿Deseas cerrar tu sesión actual?
             </Text>
 
@@ -1106,26 +1568,26 @@ export default function Index() {
                 }
                 disabled={procesando}
               >
-                <Text style={styles.cancelLogoutText}>
+                <Text
+                  style={styles.cancelLogoutText}
+                >
                   Cancelar
                 </Text>
               </Pressable>
 
               <Pressable
-                style={[
-                  styles.confirmLogout,
-                  procesando && styles.buttonDisabled,
-                ]}
+                style={styles.confirmLogout}
                 onPress={ejecutarCerrarSesion}
                 disabled={procesando}
               >
                 {procesando ? (
                   <ActivityIndicator
                     color="#FFFFFF"
-                    size="small"
                   />
                 ) : (
-                  <Text style={styles.confirmLogoutText}>
+                  <Text
+                    style={styles.confirmLogoutText}
+                  >
                     Cerrar sesión
                   </Text>
                 )}
@@ -1139,108 +1601,39 @@ export default function Index() {
 }
 
 // ======================================================
-// COMPONENTE MÓDULO
-// ======================================================
-
-function Modulo({
-  icono,
-  titulo,
-  descripcion,
-  fondo,
-  color,
-  onPress,
-}: ModuloProps) {
-  return (
-    <Pressable
-      style={({ pressed }) => [
-        styles.module,
-        pressed && { opacity: 0.7 },
-      ]}
-      onPress={onPress}
-    >
-      <View
-        style={[
-          styles.moduleIcon,
-          { backgroundColor: fondo },
-        ]}
-      >
-        <Text style={styles.moduleEmoji}>
-          {icono}
-        </Text>
-      </View>
-
-      <View style={{ flex: 1 }}>
-        <Text style={styles.moduleTitle}>
-          {titulo}
-        </Text>
-
-        <Text style={styles.moduleDescription}>
-          {descripcion}
-        </Text>
-      </View>
-
-      <Text
-        style={[
-          styles.moduleArrow,
-          { color },
-        ]}
-      >
-        ›
-      </Text>
-    </Pressable>
-  );
-}
-
-// ======================================================
-// NOMBRES DE ROLES
-// ======================================================
-
-function nombreRol(rol: string): string {
-  switch (rol) {
-    case "super_admin":
-      return "Super Administrador";
-
-    case "administrador":
-      return "Administrador";
-
-    case "recepcionista":
-      return "Recepcionista";
-
-    case "bioquimico":
-      return "Bioquímico";
-
-    case "paciente":
-      return "Paciente";
-
-    default:
-      return rol || "Sin rol";
-  }
-}
-
-// ======================================================
-// ESTILOS COMPLETOS
+// ESTILOS
 // ======================================================
 
 const styles = StyleSheet.create({
+  // ====================================================
+  // CARGA
+  // ====================================================
+
   loadingPage: {
     flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
     backgroundColor: "#F8FAFC",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 24,
   },
 
   loadingTitle: {
-    marginTop: 15,
+    marginTop: 20,
+    fontSize: 23,
+    fontWeight: "800",
     color: "#0F172A",
-    fontSize: 20,
-    fontWeight: "900",
   },
 
   loadingText: {
-    marginTop: 5,
+    marginTop: 8,
+    fontSize: 14,
     color: "#64748B",
-    fontSize: 10,
+    textAlign: "center",
   },
+
+  // ====================================================
+  // LOGIN
+  // ====================================================
 
   loginPage: {
     flex: 1,
@@ -1250,120 +1643,158 @@ const styles = StyleSheet.create({
   loginScroll: {
     flexGrow: 1,
     justifyContent: "center",
-    padding: 22,
+    alignItems: "center",
+    paddingHorizontal: 20,
+    paddingVertical: 40,
   },
 
   loginBrand: {
     alignItems: "center",
-    marginBottom: 26,
+    marginBottom: 30,
   },
 
   brandIcon: {
-    width: 78,
-    height: 78,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 14,
+    width: 85,
+    height: 85,
     borderRadius: 24,
     backgroundColor: "#DBEAFE",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 18,
   },
 
   brandEmoji: {
-    fontSize: 37,
+    fontSize: 43,
   },
 
   brandTitle: {
+    fontSize: 27,
+    fontWeight: "800",
     color: "#0F172A",
-    fontSize: 28,
-    fontWeight: "900",
+    textAlign: "center",
   },
 
   brandSubtitle: {
-    marginTop: 5,
+    fontSize: 14,
     color: "#64748B",
-    fontSize: 11,
+    marginTop: 8,
+    textAlign: "center",
   },
 
   loginCard: {
     width: "100%",
-    maxWidth: 500,
-    alignSelf: "center",
-    padding: 22,
+    maxWidth: 430,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 20,
+    padding: 26,
     borderWidth: 1,
     borderColor: "#E2E8F0",
-    borderRadius: 20,
-    backgroundColor: "#FFFFFF",
+    elevation: 3,
+    shadowColor: "#000000",
+    shadowOffset: {
+      width: 0,
+      height: 5,
+    },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
   },
 
   loginTitle: {
+    fontSize: 24,
+    fontWeight: "800",
     color: "#0F172A",
-    fontSize: 23,
-    fontWeight: "900",
+    textAlign: "center",
   },
 
   loginDescription: {
-    marginTop: 5,
-    marginBottom: 21,
+    fontSize: 14,
     color: "#64748B",
-    fontSize: 11,
+    textAlign: "center",
+    marginTop: 8,
+    marginBottom: 28,
+    lineHeight: 21,
   },
 
   label: {
-    marginTop: 12,
-    marginBottom: 6,
+    fontSize: 14,
+    fontWeight: "700",
     color: "#334155",
-    fontSize: 10,
-    fontWeight: "800",
+    marginBottom: 9,
   },
 
   input: {
-    minHeight: 51,
-    paddingHorizontal: 13,
+    height: 51,
     borderWidth: 1,
     borderColor: "#CBD5E1",
-    borderRadius: 11,
+    borderRadius: 10,
+    paddingHorizontal: 15,
+    fontSize: 15,
     color: "#0F172A",
+    backgroundColor: "#FFFFFF",
+    marginBottom: 20,
   },
 
   passwordRow: {
-    minHeight: 51,
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 13,
+    height: 51,
     borderWidth: 1,
     borderColor: "#CBD5E1",
-    borderRadius: 11,
+    borderRadius: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 14,
+    marginBottom: 23,
   },
 
   passwordInput: {
     flex: 1,
+    fontSize: 15,
     color: "#0F172A",
+    height: "100%",
   },
 
   showText: {
     color: "#2563EB",
-    fontSize: 9,
-    fontWeight: "900",
+    fontSize: 13,
+    fontWeight: "700",
+    marginLeft: 10,
   },
 
   loginButton: {
-    minHeight: 51,
+    backgroundColor: "#2563EB",
+    height: 53,
+    borderRadius: 11,
     alignItems: "center",
     justifyContent: "center",
-    marginTop: 20,
-    borderRadius: 11,
-    backgroundColor: "#2563EB",
   },
 
   loginButtonText: {
     color: "#FFFFFF",
-    fontSize: 11,
-    fontWeight: "900",
+    fontSize: 16,
+    fontWeight: "800",
   },
 
   buttonDisabled: {
-    opacity: 0.55,
+    opacity: 0.6,
   },
+
+  errorBox: {
+    padding: 12,
+    backgroundColor: "#FEF2F2",
+    borderWidth: 1,
+    borderColor: "#FECACA",
+    borderRadius: 9,
+    marginBottom: 18,
+  },
+
+  errorText: {
+    color: "#B91C1C",
+    fontSize: 13,
+    lineHeight: 19,
+  },
+
+  // ====================================================
+  // DASHBOARD
+  // ====================================================
 
   dashboardPage: {
     flex: 1,
@@ -1371,26 +1802,26 @@ const styles = StyleSheet.create({
   },
 
   dashboardScroll: {
-    paddingBottom: 40,
+    paddingBottom: 35,
   },
 
   hero: {
-    position: "relative",
+    minHeight: 175,
+    paddingHorizontal: 23,
+    paddingTop: 35,
+    paddingBottom: 40,
     overflow: "hidden",
-    minHeight: 205,
-    justifyContent: "flex-end",
-    padding: 22,
-    paddingBottom: 30,
+    justifyContent: "center",
   },
 
   heroDecoration: {
     position: "absolute",
-    width: 210,
-    height: 210,
-    right: -70,
-    top: -90,
-    borderRadius: 105,
-    opacity: 0.45,
+    width: 240,
+    height: 240,
+    borderRadius: 120,
+    right: -90,
+    top: -110,
+    opacity: 0.3,
   },
 
   heroContent: {
@@ -1399,270 +1830,341 @@ const styles = StyleSheet.create({
   },
 
   heroLogo: {
-    width: 68,
-    height: 68,
-    alignItems: "center",
+    width: 65,
+    height: 65,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 17,
     justifyContent: "center",
+    alignItems: "center",
+    marginRight: 15,
     overflow: "hidden",
-    marginRight: 14,
-    borderRadius: 20,
-    backgroundColor: "rgba(255,255,255,.92)",
   },
 
   heroLogoImage: {
-    width: 60,
-    height: 60,
+    width: 56,
+    height: 56,
   },
 
   heroEmoji: {
-    fontSize: 32,
+    fontSize: 33,
   },
 
   heroSmall: {
-    marginBottom: 4,
-    color: "rgba(255,255,255,.78)",
-    fontSize: 9,
-    fontWeight: "900",
-    letterSpacing: 0.5,
+    color: "#DBEAFE",
+    fontSize: 13,
+    fontWeight: "600",
+    marginBottom: 5,
   },
 
   heroTitle: {
     color: "#FFFFFF",
-    fontSize: 26,
-    fontWeight: "900",
+    fontSize: 25,
+    fontWeight: "800",
   },
 
   heroSubtitle: {
-    marginTop: 4,
-    color: "rgba(255,255,255,.82)",
-    fontSize: 10,
+    color: "#E0F2FE",
+    fontSize: 14,
+    marginTop: 6,
+    fontWeight: "600",
   },
 
+  // ====================================================
+  // PERFIL
+  // ====================================================
+
   profileCard: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    padding: 18,
+    marginHorizontal: 18,
+    marginTop: -17,
     flexDirection: "row",
     alignItems: "center",
-    marginHorizontal: 16,
-    marginTop: -15,
-    padding: 16,
     borderWidth: 1,
     borderColor: "#E2E8F0",
-    borderRadius: 17,
-    backgroundColor: "#FFFFFF",
+    elevation: 2,
+    shadowColor: "#000000",
+    shadowOffset: {
+      width: 0,
+      height: 3,
+    },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
   },
 
   profileAvatar: {
-    width: 53,
-    height: 53,
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: 12,
+    width: 54,
+    height: 54,
     borderRadius: 15,
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 14,
   },
 
   profileLetter: {
-    fontSize: 20,
-    fontWeight: "900",
+    fontSize: 25,
+    fontWeight: "800",
   },
 
   profileName: {
+    fontSize: 16,
+    fontWeight: "800",
     color: "#0F172A",
-    fontSize: 14,
-    fontWeight: "900",
   },
 
   profileEmail: {
-    marginTop: 3,
+    fontSize: 12,
     color: "#64748B",
-    fontSize: 9,
+    marginTop: 4,
   },
 
   profileRole: {
+    fontSize: 12,
+    fontWeight: "700",
     marginTop: 6,
-    fontSize: 9,
-    fontWeight: "900",
   },
 
+  // ====================================================
+  // SECCIÓN
+  // ====================================================
+
   sectionHeader: {
-    marginHorizontal: 18,
-    marginTop: 27,
-    marginBottom: 13,
+    paddingHorizontal: 21,
+    paddingTop: 30,
+    paddingBottom: 18,
   },
 
   sectionEyebrow: {
-    fontSize: 8,
-    fontWeight: "900",
-    letterSpacing: 1,
+    fontSize: 11,
+    fontWeight: "800",
+    letterSpacing: 1.5,
+    marginBottom: 7,
   },
 
   sectionTitle: {
-    marginTop: 4,
+    fontSize: 23,
+    fontWeight: "800",
     color: "#0F172A",
-    fontSize: 20,
-    fontWeight: "900",
   },
 
   sectionDescription: {
-    marginTop: 4,
+    fontSize: 13,
     color: "#64748B",
-    fontSize: 9,
+    marginTop: 7,
+    lineHeight: 20,
   },
+
+  // ====================================================
+  // MÓDULOS
+  // ====================================================
 
   modules: {
-    paddingHorizontal: 16,
+    paddingHorizontal: 18,
   },
 
-  module: {
-    minHeight: 86,
+  modulo: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 15,
+    padding: 17,
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 9,
-    padding: 13,
+    marginBottom: 12,
     borderWidth: 1,
     borderColor: "#E2E8F0",
-    borderRadius: 15,
-    backgroundColor: "#FFFFFF",
+    elevation: 1,
+    shadowColor: "#000000",
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.04,
+    shadowRadius: 5,
   },
 
-  moduleIcon: {
-    width: 51,
-    height: 51,
+  moduloPresionado: {
+    opacity: 0.75,
+  },
+
+  moduloIcono: {
+    width: 53,
+    height: 53,
+    borderRadius: 13,
     alignItems: "center",
     justifyContent: "center",
-    marginRight: 11,
-    borderRadius: 14,
+    marginRight: 14,
   },
 
-  moduleEmoji: {
-    fontSize: 22,
+  moduloEmoji: {
+    fontSize: 25,
   },
 
-  moduleTitle: {
+  moduloContenido: {
+    flex: 1,
+  },
+
+  moduloTitulo: {
+    fontSize: 15,
+    fontWeight: "800",
     color: "#0F172A",
+    marginBottom: 5,
+  },
+
+  moduloDescripcion: {
     fontSize: 12,
-    fontWeight: "900",
-  },
-
-  moduleDescription: {
-    marginTop: 4,
     color: "#64748B",
-    fontSize: 8,
-    lineHeight: 12,
+    lineHeight: 18,
   },
 
-  moduleArrow: {
-    fontSize: 27,
+  moduloFlecha: {
+    fontSize: 29,
+    fontWeight: "500",
+    marginLeft: 8,
   },
+
+  sinModulos: {
+    padding: 25,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    alignItems: "center",
+  },
+
+  sinModulosTitulo: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: "#334155",
+    textAlign: "center",
+  },
+
+  sinModulosTexto: {
+    fontSize: 13,
+    color: "#64748B",
+    textAlign: "center",
+    marginTop: 10,
+    lineHeight: 20,
+  },
+
+  // ====================================================
+  // SESIÓN
+  // ====================================================
 
   sessionCard: {
-    margin: 16,
-    marginTop: 25,
-    padding: 16,
-    borderRadius: 15,
     backgroundColor: "#FFFFFF",
+    marginHorizontal: 18,
+    marginTop: 22,
+    padding: 18,
+    borderRadius: 15,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    flexDirection: "row",
+    alignItems: "center",
   },
 
   sessionTitle: {
-    color: "#15803D",
-    fontSize: 10,
-    fontWeight: "900",
+    fontSize: 14,
+    fontWeight: "800",
+    color: "#16A34A",
   },
 
   sessionEmail: {
-    marginTop: 3,
+    fontSize: 12,
     color: "#64748B",
-    fontSize: 8,
+    marginTop: 6,
   },
 
   logoutButton: {
-    minHeight: 44,
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: 13,
-    borderRadius: 10,
-    backgroundColor: "#FFF1F2",
+    backgroundColor: "#FEE2E2",
+    paddingHorizontal: 15,
+    paddingVertical: 12,
+    borderRadius: 9,
+    marginLeft: 10,
   },
 
   logoutText: {
-    color: "#DC2626",
-    fontSize: 9,
-    fontWeight: "900",
+    fontSize: 12,
+    fontWeight: "800",
+    color: "#B91C1C",
   },
+
+  // ====================================================
+  // MODAL CERRAR SESIÓN
+  // ====================================================
 
   logoutOverlay: {
     flex: 1,
-    alignItems: "center",
+    backgroundColor: "rgba(15,23,42,0.55)",
     justifyContent: "center",
-    padding: 20,
-    backgroundColor: "rgba(15,23,42,.7)",
+    alignItems: "center",
+    padding: 22,
   },
 
   logoutModal: {
     width: "100%",
-    maxWidth: 420,
-    padding: 22,
-    borderRadius: 20,
+    maxWidth: 390,
     backgroundColor: "#FFFFFF",
+    borderRadius: 20,
+    padding: 25,
+    alignItems: "center",
   },
 
   logoutIcon: {
-    width: 60,
-    height: 60,
-    alignSelf: "center",
+    width: 65,
+    height: 65,
+    borderRadius: 33,
+    backgroundColor: "#FEE2E2",
     alignItems: "center",
     justifyContent: "center",
-    borderRadius: 18,
-    backgroundColor: "#FEE2E2",
+    marginBottom: 16,
   },
 
   logoutTitle: {
-    marginTop: 13,
+    fontSize: 22,
+    fontWeight: "800",
     color: "#0F172A",
-    fontSize: 19,
-    fontWeight: "900",
-    textAlign: "center",
   },
 
   logoutDescription: {
-    marginTop: 5,
+    fontSize: 14,
     color: "#64748B",
-    fontSize: 9,
     textAlign: "center",
+    marginTop: 10,
+    marginBottom: 25,
   },
 
   logoutActions: {
     flexDirection: "row",
-    marginTop: 20,
+    width: "100%",
   },
 
   cancelLogout: {
-    minHeight: 45,
     flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: 8,
-    borderWidth: 1,
-    borderColor: "#CBD5E1",
+    paddingVertical: 14,
+    backgroundColor: "#F1F5F9",
     borderRadius: 10,
+    alignItems: "center",
+    marginRight: 8,
   },
 
   cancelLogoutText: {
+    fontSize: 14,
+    fontWeight: "800",
     color: "#475569",
-    fontSize: 9,
-    fontWeight: "900",
   },
 
   confirmLogout: {
-    minHeight: 45,
     flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: 10,
+    paddingVertical: 14,
     backgroundColor: "#DC2626",
+    borderRadius: 10,
+    alignItems: "center",
+    marginLeft: 8,
   },
 
   confirmLogoutText: {
+    fontSize: 14,
+    fontWeight: "800",
     color: "#FFFFFF",
-    fontSize: 9,
-    fontWeight: "900",
   },
 });

@@ -215,12 +215,6 @@ export default function ValidacionResultados() {
       if (!snap.exists()) throw new Error("El resultado ya no existe.");
       if (str(snap.data().laboratorioId) !== u.laboratorioId) throw new Error("Resultado de otro laboratorio.");
       const actual = mapResultado(snap.id, snap.data());
-      const [cfg, vs] = await Promise.all([
-        parametrosConfigurados(actual.analisisId, u.laboratorioId),
-        getDocs(collection(db, "resultados", actual.id, "valores")),
-      ]);
-      const guardados = vs.docs.map((x) => ({ ...param(x.id, x.data()), registrado: true }));
-      const unidos = unir(cfg, guardados);
       let validador = actual.validadoPorNombre;
       if (!validador && actual.validadoPor) {
         try {
@@ -231,8 +225,6 @@ export default function ValidacionResultados() {
       }
       setUsuario(u);
       setSeleccionado(actual);
-      setConfigurados(cfg);
-      setParametros(unidos);
       setNombreValidador(validador || "No registrado");
       setModalVisible(true);
     } catch (e) { aviso("No se pudo abrir el resultado", errorTexto(e)); }
@@ -255,17 +247,10 @@ export default function ValidacionResultados() {
       if (u.uid !== usuario.uid || u.laboratorioId !== usuario.laboratorioId)
         throw new Error("La sesión cambió. Actualiza la pantalla.");
       const ref = doc(db, "resultados", seleccionado.id);
-      const valoresSnap = await getDocs(collection(db, "resultados", seleccionado.id, "valores"));
-      const guardados = valoresSnap.docs.map((x) => ({ ...param(x.id, x.data()), registrado: true }));
-      const unidos = unir(configurados, guardados);
-      const faltantes = configurados.filter((p) => {
-        const g = guardados.find((v) => v.id === p.id || normal(v.nombre) === normal(p.nombre));
-        return !g || !g.valor.trim();
-      });
-      if (faltantes.length) throw new Error(`Faltan ${faltantes.length} parámetros por registrar: ${faltantes.map((x) => x.nombre).join(", ")}.`);
-      if (!configurados.length && !guardados.some((x) => x.valor.trim()) && !seleccionado.valorResultado.trim())
-        throw new Error("No hay ningún valor registrado para validar.");
-      if (guardados.some((x) => !x.valor.trim())) throw new Error("Hay parámetros guardados sin valor.");
+      // La validación utiliza el resultado principal registrado.
+      // No requiere completar parámetros individuales.
+      if (!seleccionado.valorResultado.trim())
+        throw new Error("El resultado no tiene un valor principal registrado.");
       await runTransaction(db, async (tx) => {
         const rs = await tx.get(ref);
         if (!rs.exists()) throw new Error("El resultado ya no existe.");
@@ -274,14 +259,7 @@ export default function ValidacionResultados() {
         if (d.validado === true || normal(d.estado) === "validado") throw new Error("Este resultado ya fue validado.");
         if (normal(d.estado) !== "borrador") throw new Error("Solo se pueden validar resultados en borrador.");
         if (str(d.analisisId) !== seleccionado.analisisId) throw new Error("El análisis cambió. Actualiza la pantalla.");
-        if (!unidos.length && !str(d.valorResultado)) throw new Error("No existe un valor principal registrado.");
-        const documentos = [];
-        for (const v of valoresSnap.docs) documentos.push(await tx.get(v.ref));
-        for (let i = 0; i < documentos.length; i++) {
-          const documento = documentos[i];
-          if (!documento.exists() || str(documento.data().valor) !== str(valoresSnap.docs[i].data().valor))
-            throw new Error("Los valores cambiaron durante la revisión. Vuelve a abrir el resultado.");
-        }
+        if (!str(d.valorResultado)) throw new Error("No existe un valor principal registrado.");
         tx.update(ref, {
           estado: "validado", validado: true, validadoPor: u.uid,
           validadoPorNombre: u.nombre, fechaValidacion: serverTimestamp(),
@@ -306,14 +284,8 @@ export default function ValidacionResultados() {
   }), [resultados, pacientes, filtro, busqueda]);
   const validados = resultados.filter((r) => r.validado).length;
   const pendientes = resultados.length - validados;
-  const completos = parametros.filter((p) => p.registrado && p.valor.trim()).length;
-  const faltantes = configurados.filter((p) => !parametros.some((v) =>
-    (v.id === p.id || normal(v.nombre) === normal(p.nombre)) && v.registrado && v.valor.trim())).length;
-  const tieneValorPrincipal = !!seleccionado?.valorResultado.trim();
-  const tieneValores = parametros.some((p) => p.registrado && p.valor.trim());
-  const puedeValidar = !!seleccionado && !seleccionado.validado && seleccionado.estado === "borrador" &&
-    faltantes === 0 && (tieneValorPrincipal || tieneValores) &&
-    !parametros.some((p) => p.registrado && !p.valor.trim());
+  const puedeValidar = !!seleccionado && !seleccionado.validado &&
+    seleccionado.estado === "borrador" && !!seleccionado.valorResultado.trim();
 
   if (cargando) return <View style={s.cargando}>
     <ActivityIndicator size="large" color={C.azul} />
@@ -415,37 +387,11 @@ export default function ValidacionResultados() {
               <Text style={s.resumenDato}>Orden: {seleccionado.ordenId || "—"}</Text>
               <Text style={s.resumenDato}>Fecha: {fecha(seleccionado.fechaRegistro)}</Text>
             </View>
-            <View style={s.resumenProgreso}>
-              <View style={s.filaSeparada}><Text style={s.seccionTitulo}>Verificación de parámetros</Text>
-                <Text style={s.progresoNumero}>{completos}/{parametros.length}</Text></View>
-              <View style={s.barra}><View style={[s.barraDentro, {
-                width: `${parametros.length ? Math.round(completos * 100 / parametros.length) : 0}%`,
-              }]} /></View>
-              <Text style={s.textoSuave}>{faltantes === 0 ? "No hay parámetros configurados pendientes." :
-                `Faltan ${faltantes} parámetro(s) configurado(s) por registrar.`}</Text>
-            </View>
             <View style={s.bloque}>
               <Text style={s.seccionTitulo}>Resultado principal</Text>
               <Text style={s.dato}><Text style={s.etiqueta}>Valor: </Text>{seleccionado.valorResultado || "Sin valor principal"}</Text>
               <Text style={s.dato}><Text style={s.etiqueta}>Unidad: </Text>{seleccionado.unidad || "—"}</Text>
               <Text style={s.dato}><Text style={s.etiqueta}>Observaciones: </Text>{seleccionado.observaciones || "Sin observaciones"}</Text>
-            </View>
-            <View style={s.bloque}>
-              <Text style={s.seccionTitulo}>Valores por parámetros</Text>
-              {parametros.length === 0 ? <Text style={s.textoSuave}>No hay parámetros configurados ni valores individuales.</Text> :
-                parametros.map((p, i) => <View key={`${p.id}-${i}`} style={s.parametro}>
-                  <View style={s.filaSeparada}><Text style={[s.parametroNombre, { flex: 1 }]}>{i + 1}. {p.nombre}</Text>
-                    <View style={[s.badge, { backgroundColor: p.registrado && p.valor ? C.verdeClaro : C.ambarClaro }]}>
-                      <Text style={[s.badgeTexto, { color: p.registrado && p.valor ? C.verde : C.ambar }]}>
-                        {p.registrado && p.valor ? "Registrado" : "Pendiente"}
-                      </Text>
-                    </View>
-                  </View>
-                  <Text style={s.parametroValor}>{p.registrado && p.valor ? p.valor : "Sin valor"}
-                    {!!p.unidad && <Text style={s.parametroUnidad}> {p.unidad}</Text>}</Text>
-                  {!!p.referencia && <Text style={s.dato}>Referencia: {p.referencia}</Text>}
-                  {!!p.observacion && <Text style={s.dato}>Observación: {p.observacion}</Text>}
-                </View>)}
             </View>
             {seleccionado.validado ? <View style={s.exito}>
               <Text style={s.exitoTitulo}>Resultado validado</Text>
@@ -455,8 +401,8 @@ export default function ValidacionResultados() {
             </View> : <View style={[s.advertencia, puedeValidar && s.avisoListo]}>
               <Text style={s.advertenciaTitulo}>{puedeValidar ? "Listo para validación" : "Validación no disponible"}</Text>
               <Text style={s.textoSuave}>{puedeValidar ?
-                "Revisa cuidadosamente los valores antes de confirmar. La validación bloqueará su edición." :
-                "El resultado debe estar en borrador y tener todos los parámetros configurados con valores registrados, o un valor principal cuando no hay parámetros."}</Text>
+                "Revisa el resultado principal registrado antes de confirmar. La validación bloqueará su edición." :
+                "El resultado debe estar en borrador y tener un valor principal registrado."}</Text>
             </View>}
             <View style={s.acciones}>
               <Pressable onPress={cerrar} disabled={validando} style={s.cancelar}><Text style={s.cancelarTexto}>Cerrar</Text></Pressable>

@@ -1,1677 +1,4561 @@
-import {
+import React, {
+
   useCallback,
+
   useEffect,
+
+  useMemo,
+
   useState,
+
 } from "react";
 
+
+
 import {
+
   ActivityIndicator,
+
   Alert,
+
   Pressable,
-  SafeAreaView,
+
+  RefreshControl,
+
   ScrollView,
-  StatusBar,
+
   StyleSheet,
+
   Text,
+
+  TextInput,
+
   View,
+
 } from "react-native";
 
+
+
 import {
-  useLocalSearchParams,
+
   useRouter,
+
 } from "expo-router";
 
+
+
 import {
+
+  collection,
+
   doc,
+
   getDoc,
+
+  getDocs,
+
+  query,
+
+  where,
+
 } from "firebase/firestore";
 
+
+
 import {
+
+  onAuthStateChanged,
+
+} from "firebase/auth";
+
+
+
+import * as Print from "expo-print";
+
+import * as Sharing from "expo-sharing";
+
+
+
+import {
+
   auth,
+
   db,
+
 } from "../firebase/firebase";
 
-import {
-  obtenerPermisosRol,
-} from "../services/rolesService";
-
-import {
-  obtenerPaciente,
-  type Paciente,
-} from "../services/pacientesService";
-
-import {
-  obtenerHistorialPaciente,
-  type HistorialPaciente,
-  type ResultadoHistorial,
-  type SolicitudHistorial,
-} from "../services/historialPacienteService";
 
 
-type UsuarioActual = {
-  laboratorioId: string;
-  rol: string;
+// =====================================================
+
+// TIPOS
+
+// =====================================================
+
+
+
+type Datos = Record<string, any>;
+
+
+
+type Registro = {
+
+  id: string;
+
+  [key: string]: any;
+
 };
 
 
-const historialInicial:
-  HistorialPaciente = {
-    solicitudes: [],
-    resultados: [],
-    totalAnalisis: 0,
+
+type Paciente = {
+
+  id: string;
+
+  nombreCompleto: string;
+
+  ci: string;
+
+  telefono: string;
+
+  laboratorioId: string;
+
+  datos: Datos;
+
+};
+
+
+
+type Usuario = {
+
+  uid: string;
+
+  rol: string;
+
+  laboratorioId: string;
+
+};
+
+
+
+type Historial = {
+
+  solicitudes: Registro[];
+
+  ventas: Registro[];
+
+  ordenes: Registro[];
+
+  muestras: Registro[];
+
+  resultados: Registro[];
+
+  nuevasTomas: Registro[];
+
+};
+
+
+
+type ClaveHistorial = keyof Historial;
+
+
+
+type EstadoCarga = {
+
+  [K in ClaveHistorial]: string | null;
+
+};
+
+
+
+const HISTORIAL_VACIO: Historial = {
+
+  solicitudes: [],
+
+  ventas: [],
+
+  ordenes: [],
+
+  muestras: [],
+
+  resultados: [],
+
+  nuevasTomas: [],
+
+};
+
+
+
+const ERRORES_VACIOS: EstadoCarga = {
+
+  solicitudes: null,
+
+  ventas: null,
+
+  ordenes: null,
+
+  muestras: null,
+
+  resultados: null,
+
+  nuevasTomas: null,
+
+};
+
+
+
+// =====================================================
+
+// UTILIDADES
+
+// =====================================================
+
+
+
+function cadena(valor: unknown): string {
+
+  if (valor === undefined || valor === null) {
+
+    return "";
+
+  }
+
+
+
+  return String(valor).trim();
+
+}
+
+
+
+function normalizar(valor: unknown): string {
+
+  return cadena(valor)
+
+    .toLowerCase()
+
+    .normalize("NFD")
+
+    .replace(/[\u0300-\u036f]/g, "");
+
+}
+
+
+
+function campo(
+
+  datos: Datos,
+
+  nombres: string[],
+
+  defecto = "No registrado"
+
+): string {
+
+  for (const nombre of nombres) {
+
+    const valor = datos[nombre];
+
+
+
+    if (
+
+      valor !== undefined &&
+
+      valor !== null &&
+
+      cadena(valor) !== ""
+
+    ) {
+
+      if (typeof valor === "object") {
+
+        continue;
+
+      }
+
+
+
+      return cadena(valor);
+
+    }
+
+  }
+
+
+
+  return defecto;
+
+}
+
+
+
+function nombreCompleto(datos: Datos): string {
+
+  const completo = campo(
+
+    datos,
+
+    ["nombreCompleto"],
+
+    ""
+
+  );
+
+
+
+  if (completo) {
+
+    return completo;
+
+  }
+
+
+
+  const nombres = campo(
+
+    datos,
+
+    ["nombres", "nombre"],
+
+    ""
+
+  );
+
+
+
+  const apellidos = campo(
+
+    datos,
+
+    ["apellidos", "apellido"],
+
+    ""
+
+  );
+
+
+
+  return (
+
+    `${nombres} ${apellidos}`.trim() ||
+
+    "Paciente sin nombre"
+
+  );
+
+}
+
+
+
+function convertirFecha(valor: any): Date | null {
+
+  if (!valor) {
+
+    return null;
+
+  }
+
+
+
+  try {
+
+    let resultado: Date;
+
+
+
+    if (
+
+      typeof valor === "object" &&
+
+      typeof valor.toDate === "function"
+
+    ) {
+
+      resultado = valor.toDate();
+
+    } else if (
+
+      typeof valor === "object" &&
+
+      typeof valor.seconds === "number"
+
+    ) {
+
+      resultado = new Date(
+
+        valor.seconds * 1000
+
+      );
+
+    } else {
+
+      resultado = new Date(valor);
+
+    }
+
+
+
+    if (Number.isNaN(resultado.getTime())) {
+
+      return null;
+
+    }
+
+
+
+    return resultado;
+
+  } catch {
+
+    return null;
+
+  }
+
+}
+
+
+
+function fecha(valor: any): string {
+
+  const resultado = convertirFecha(valor);
+
+
+
+  return resultado
+
+    ? resultado.toLocaleString("es-BO")
+
+    : "Sin fecha";
+
+}
+
+
+
+function fechaRegistro(datos: Datos): string {
+
+  return fecha(
+
+    datos.fechaRegistro ||
+
+    datos.fechaSolicitud ||
+
+    datos.fechaVenta ||
+
+    datos.fechaOrden ||
+
+    datos.fechaToma ||
+
+    datos.fechaCreacion ||
+
+    datos.fechaValidacion ||
+
+    datos.fechaRechazo ||
+
+    datos.fecha ||
+
+    datos.createdAt ||
+
+    datos.creadoEn
+
+  );
+
+}
+
+
+
+function escaparHTML(valor: unknown): string {
+
+  return cadena(valor)
+
+    .replace(/&/g, "&amp;")
+
+    .replace(/</g, "&lt;")
+
+    .replace(/>/g, "&gt;")
+
+    .replace(/"/g, "&quot;")
+
+    .replace(/'/g, "&#39;");
+
+}
+
+
+
+function convertirPaciente(
+
+  id: string,
+
+  datos: Datos
+
+): Paciente {
+
+  return {
+
+    id,
+
+    nombreCompleto: nombreCompleto(datos),
+
+    ci: campo(
+
+      datos,
+
+      ["ci", "carnetIdentidad"],
+
+      ""
+
+    ),
+
+    telefono: campo(
+
+      datos,
+
+      ["telefono", "celular"],
+
+      ""
+
+    ),
+
+    laboratorioId: cadena(
+
+      datos.laboratorioId
+
+    ),
+
+    datos,
+
+  };
+
+}
+
+
+
+function tituloAnalisis(datos: Datos): string {
+
+  return campo(
+
+    datos,
+
+    [
+
+      "analisisNombre",
+
+      "nombreAnalisis",
+
+      "nombre",
+
+      "analisis",
+
+      "tipoAnalisis",
+
+    ],
+
+    "Análisis clínico"
+
+  );
+
+}
+
+
+
+function estadoRegistro(datos: Datos): string {
+
+  if (datos.validado === true) {
+
+    return "Validado";
+
+  }
+
+
+
+  return campo(
+
+    datos,
+
+    [
+
+      "estado",
+
+      "estadoResultado",
+
+      "estadoValidacion",
+
+      "estadoSolicitud",
+
+      "estadoPago",
+
+    ]
+
+  );
+
+}
+
+
+
+function valorResultado(datos: Datos): string {
+
+  return campo(
+
+    datos,
+
+    [
+
+      "valorResultado",
+
+      "resultado",
+
+      "valor",
+
+      "resultadoFinal",
+
+    ]
+
+  );
+
+}
+
+
+
+function descripcionAnalisis(
+
+  valor: unknown
+
+): string {
+
+  if (typeof valor === "string") {
+
+    return valor;
+
+  }
+
+
+
+  if (
+
+    valor &&
+
+    typeof valor === "object"
+
+  ) {
+
+    const datos = valor as Datos;
+
+
+
+    return campo(
+
+      datos,
+
+      [
+
+        "nombre",
+
+        "nombreAnalisis",
+
+        "analisisNombre",
+
+        "analisisId",
+
+      ],
+
+      "Análisis"
+
+    );
+
+  }
+
+
+
+  return "";
+
+}
+
+
+
+function listaAnalisis(datos: Datos): string {
+
+  const posibles = [
+
+    datos.analisis,
+
+    datos.analisisSolicitados,
+
+    datos.detalles,
+
+    datos.items,
+
+  ];
+
+
+
+  for (const valor of posibles) {
+
+    if (Array.isArray(valor)) {
+
+      return valor
+
+        .map(descripcionAnalisis)
+
+        .filter(Boolean)
+
+        .join(", ") || "Sin detalle";
+
+    }
+
+  }
+
+
+
+  return tituloAnalisis(datos);
+
+}
+
+
+
+function nombreSeccion(
+
+  clave: ClaveHistorial
+
+): string {
+
+  const nombres: Record<
+
+    ClaveHistorial,
+
+    string
+
+  > = {
+
+    solicitudes: "Solicitudes",
+
+    ventas: "Ventas",
+
+    ordenes: "Órdenes de análisis",
+
+    muestras: "Muestras",
+
+    resultados: "Resultados clínicos",
+
+    nuevasTomas: "Nuevas tomas solicitadas",
+
   };
 
 
-export default function HistorialPacienteScreen() {
-  const router =
-    useRouter();
 
-  const params =
-    useLocalSearchParams<{
-      pacienteId?: string |
-        string[];
-    }>();
+  return nombres[clave];
 
-  const pacienteId =
-    obtenerParametro(
-      params.pacienteId
+}
+
+
+
+function crearHistorialVacio(): Historial {
+
+  return {
+
+    solicitudes: [],
+
+    ventas: [],
+
+    ordenes: [],
+
+    muestras: [],
+
+    resultados: [],
+
+    nuevasTomas: [],
+
+  };
+
+}
+
+
+
+function crearErroresVacios(): EstadoCarga {
+
+  return {
+
+    solicitudes: null,
+
+    ventas: null,
+
+    ordenes: null,
+
+    muestras: null,
+
+    resultados: null,
+
+    nuevasTomas: null,
+
+  };
+
+}
+
+
+
+// =====================================================
+
+// CONSULTAS FIRESTORE
+
+// =====================================================
+
+
+
+// Cada consulta está limitada al laboratorio.
+
+//
+
+// Se consultan las relaciones existentes y luego
+
+// se unen los documentos por sus identificadores.
+
+//
+
+// No se descargan colecciones completas sin filtro.
+
+
+
+async function consultarColeccion(
+
+  nombre: string,
+
+  laboratorioId: string
+
+): Promise<Registro[]> {
+
+  const referencia = collection(db, nombre);
+
+
+
+  const consulta = query(
+
+    referencia,
+
+    where(
+
+      "laboratorioId",
+
+      "==",
+
+      laboratorioId
+
+    )
+
+  );
+
+
+
+  const snapshot = await getDocs(consulta);
+
+
+
+  return snapshot.docs.map((documento) => ({
+
+    ...documento.data(),
+
+    id: documento.id,
+
+  }));
+
+}
+
+
+
+function contieneReferencia(
+
+  valor: unknown,
+
+  identificadores: Set<string>
+
+): boolean {
+
+  if (typeof valor === "string") {
+
+    return identificadores.has(valor);
+
+  }
+
+
+
+  if (Array.isArray(valor)) {
+
+    return valor.some((elemento) =>
+
+      contieneReferencia(
+
+        elemento,
+
+        identificadores
+
+      )
+
     );
+
+  }
+
+
+
+  if (
+
+    valor &&
+
+    typeof valor === "object"
+
+  ) {
+
+    const datos = valor as Datos;
+
+
+
+    return [
+
+      datos.id,
+
+      datos.pacienteId,
+
+      datos.solicitudId,
+
+      datos.ventaId,
+
+      datos.ordenId,
+
+      datos.muestraId,
+
+      datos.resultadoId,
+
+    ].some(
+
+      (elemento) =>
+
+        typeof elemento === "string" &&
+
+        identificadores.has(elemento)
+
+    );
+
+  }
+
+
+
+  return false;
+
+}
+
+
+
+function perteneceA(
+
+  registro: Registro,
+
+  identificadores: Set<string>,
+
+  campos: string[]
+
+): boolean {
+
+  return campos.some((nombre) =>
+
+    contieneReferencia(
+
+      registro[nombre],
+
+      identificadores
+
+    )
+
+  );
+
+}
+
+
+
+function filtrarPorPaciente(
+
+  registros: Registro[],
+
+  pacienteId: string
+
+): Registro[] {
+
+  const ids = new Set([pacienteId]);
+
+
+
+  return registros.filter((registro) =>
+
+    perteneceA(registro, ids, [
+
+      "pacienteId",
+
+      "idPaciente",
+
+      "paciente",
+
+    ])
+
+  );
+
+}
+
+
+
+function filtrarRelacionados(
+
+  registros: Registro[],
+
+  pacienteId: string,
+
+  solicitudes: Registro[],
+
+  ventas: Registro[],
+
+  ordenes: Registro[],
+
+  muestras: Registro[]
+
+): Registro[] {
+
+  const ids = new Set<string>([
+
+    pacienteId,
+
+    ...solicitudes.map((r) => r.id),
+
+    ...ventas.map((r) => r.id),
+
+    ...ordenes.map((r) => r.id),
+
+    ...muestras.map((r) => r.id),
+
+  ]);
+
+
+
+  return registros.filter((registro) =>
+
+    perteneceA(registro, ids, [
+
+      "pacienteId",
+
+      "idPaciente",
+
+      "paciente",
+
+      "solicitudId",
+
+      "idSolicitud",
+
+      "ventaId",
+
+      "idVenta",
+
+      "ordenId",
+
+      "idOrden",
+
+      "muestraId",
+
+      "muestraOriginalId",
+
+    ])
+
+  );
+
+}
+
+
+
+function ordenarRegistros(
+
+  registros: Registro[]
+
+): Registro[] {
+
+  return [...registros].sort((a, b) => {
+
+    const obtenerTiempo = (datos: Datos) => {
+
+      const campos = [
+
+        "fechaRegistro",
+
+        "fechaSolicitud",
+
+        "fechaVenta",
+
+        "fechaOrden",
+
+        "fechaToma",
+
+        "fechaCreacion",
+
+        "fecha",
+
+        "createdAt",
+
+        "creadoEn",
+
+      ];
+
+
+
+      for (const nombre of campos) {
+
+        const valor = convertirFecha(
+
+          datos[nombre]
+
+        );
+
+
+
+        if (valor) {
+
+          return valor.getTime();
+
+        }
+
+      }
+
+
+
+      return 0;
+
+    };
+
+
+
+    return obtenerTiempo(b) - obtenerTiempo(a);
+
+  });
+
+}
+
+
+
+async function obtenerHistorialCompleto(
+
+  laboratorioId: string,
+
+  pacienteId: string
+
+): Promise<{
+
+  historial: Historial;
+
+  errores: EstadoCarga;
+
+}> {
+
+  const claves: ClaveHistorial[] = [
+
+    "solicitudes",
+
+    "ventas",
+
+    "ordenes",
+
+    "muestras",
+
+    "resultados",
+
+    "nuevasTomas",
+
+  ];
+
+
+
+  const colecciones: Record<
+
+    ClaveHistorial,
+
+    string
+
+  > = {
+
+    solicitudes: "solicitudes",
+
+    ventas: "ventas",
+
+    ordenes: "ordenes",
+
+    muestras: "muestras",
+
+    resultados: "resultados",
+
+    nuevasTomas: "solicitudesNuevaToma",
+
+  };
+
+
+
+  const consultas = await Promise.allSettled(
+
+    claves.map((clave) =>
+
+      consultarColeccion(
+
+        colecciones[clave],
+
+        laboratorioId
+
+      )
+
+    )
+
+  );
+
+
+
+  const datos = crearHistorialVacio();
+
+  const errores = crearErroresVacios();
+
+
+
+  consultas.forEach((resultado, indice) => {
+
+    const clave = claves[indice];
+
+
+
+    if (resultado.status === "fulfilled") {
+
+      datos[clave] = resultado.value;
+
+    } else {
+
+      const error = resultado.reason;
+
+
+
+      errores[clave] =
+
+        error instanceof Error
+
+          ? error.message
+
+          : "No se pudo consultar esta colección.";
+
+
+
+      console.error(
+
+        `Error consultando ${colecciones[clave]}:`,
+
+        error
+
+      );
+
+    }
+
+  });
+
+
+
+  // ===================================================
+
+  // RELACIONAR INFORMACIÓN DEL PACIENTE
+
+  // ===================================================
+
+
+
+  const solicitudes = filtrarPorPaciente(
+
+    datos.solicitudes,
+
+    pacienteId
+
+  );
+
+
+
+  const ventas = filtrarRelacionados(
+
+    datos.ventas,
+
+    pacienteId,
+
+    solicitudes,
+
+    [],
+
+    [],
+
+    []
+
+  );
+
+
+
+  const ordenes = filtrarRelacionados(
+
+    datos.ordenes,
+
+    pacienteId,
+
+    solicitudes,
+
+    ventas,
+
+    [],
+
+    []
+
+  );
+
+
+
+  const muestras = filtrarRelacionados(
+
+    datos.muestras,
+
+    pacienteId,
+
+    solicitudes,
+
+    ventas,
+
+    ordenes,
+
+    []
+
+  );
+
+
+
+  const resultados = filtrarRelacionados(
+
+    datos.resultados,
+
+    pacienteId,
+
+    solicitudes,
+
+    ventas,
+
+    ordenes,
+
+    muestras
+
+  );
+
+
+
+  const nuevasTomas = filtrarRelacionados(
+
+    datos.nuevasTomas,
+
+    pacienteId,
+
+    solicitudes,
+
+    ventas,
+
+    ordenes,
+
+    muestras
+
+  );
+
+
+
+  return {
+
+    historial: {
+
+      solicitudes: ordenarRegistros(
+
+        solicitudes
+
+      ),
+
+      ventas: ordenarRegistros(ventas),
+
+      ordenes: ordenarRegistros(ordenes),
+
+      muestras: ordenarRegistros(muestras),
+
+      resultados: ordenarRegistros(
+
+        resultados
+
+      ),
+
+      nuevasTomas: ordenarRegistros(
+
+        nuevasTomas
+
+      ),
+
+    },
+
+    errores,
+
+  };
+
+}
+
+
+
+// =====================================================
+
+// CAMPOS VISIBLES POR SECCIÓN
+
+// =====================================================
+
+
+
+type CampoVisible = {
+
+  etiqueta: string;
+
+  valor: string;
+
+};
+
+
+
+function camposRegistro(
+
+  tipo: ClaveHistorial,
+
+  datos: Registro
+
+): CampoVisible[] {
+
+  const campos: CampoVisible[] = [
+
+    {
+
+      etiqueta: "Fecha",
+
+      valor: fechaRegistro(datos),
+
+    },
+
+    {
+
+      etiqueta: "Estado",
+
+      valor: estadoRegistro(datos),
+
+    },
+
+  ];
+
+
+
+  if (tipo === "solicitudes") {
+
+    campos.push(
+
+      {
+
+        etiqueta: "Código",
+
+        valor: campo(datos, [
+
+          "codigo",
+
+          "codigoSolicitud",
+
+          "numeroSolicitud",
+
+        ]),
+
+      },
+
+      {
+
+        etiqueta: "Análisis solicitados",
+
+        valor: listaAnalisis(datos),
+
+      }
+
+    );
+
+  }
+
+
+
+  if (tipo === "ventas") {
+
+    campos.push(
+
+      {
+
+        etiqueta: "Número de venta",
+
+        valor: campo(datos, [
+
+          "numeroVenta",
+
+          "codigoVenta",
+
+          "codigo",
+
+        ]),
+
+      },
+
+      {
+
+        etiqueta: "Monto total",
+
+        valor: campo(datos, [
+
+          "total",
+
+          "montoTotal",
+
+          "importeTotal",
+
+          "monto",
+
+        ]),
+
+      },
+
+      {
+
+        etiqueta: "Método de pago",
+
+        valor: campo(datos, [
+
+          "metodoPago",
+
+          "formaPago",
+
+          "tipoPago",
+
+        ]),
+
+      }
+
+    );
+
+  }
+
+
+
+  if (tipo === "ordenes") {
+
+    campos.push(
+
+      {
+
+        etiqueta: "Número de orden",
+
+        valor: campo(datos, [
+
+          "codigo",
+
+          "codigoOrden",
+
+          "numeroOrden",
+
+        ]),
+
+      },
+
+      {
+
+        etiqueta: "Análisis",
+
+        valor: listaAnalisis(datos),
+
+      }
+
+    );
+
+  }
+
+
+
+  if (tipo === "muestras") {
+
+    campos.push(
+
+      {
+
+        etiqueta: "Tipo de muestra",
+
+        valor: campo(datos, [
+
+          "tipoMuestra",
+
+          "tipo",
+
+        ]),
+
+      },
+
+      {
+
+        etiqueta: "Análisis",
+
+        valor: tituloAnalisis(datos),
+
+      },
+
+      {
+
+        etiqueta: "Motivo de rechazo",
+
+        valor: campo(datos, [
+
+          "motivoRechazo",
+
+          "observacionRechazo",
+
+          "motivo",
+
+        ]),
+
+      }
+
+    );
+
+  }
+
+
+
+  if (tipo === "resultados") {
+
+    campos.push(
+
+      {
+
+        etiqueta: "Análisis",
+
+        valor: tituloAnalisis(datos),
+
+      },
+
+      {
+
+        etiqueta: "Resultado registrado",
+
+        valor: valorResultado(datos),
+
+      },
+
+      {
+
+        etiqueta: "Unidad",
+
+        valor: campo(datos, [
+
+          "unidad",
+
+          "unidadMedida",
+
+        ]),
+
+      },
+
+      {
+
+        etiqueta: "Observaciones",
+
+        valor: campo(datos, [
+
+          "observaciones",
+
+          "observacion",
+
+        ]),
+
+      }
+
+    );
+
+  }
+
+
+
+  if (tipo === "nuevasTomas") {
+
+    campos.push(
+
+      {
+
+        etiqueta: "Motivo de rechazo",
+
+        valor: campo(datos, [
+
+          "motivoRechazo",
+
+          "motivo",
+
+        ]),
+
+      },
+
+      {
+
+        etiqueta: "Código de muestra",
+
+        valor: campo(datos, [
+
+          "codigoMuestra",
+
+        ]),
+
+      }
+
+    );
+
+  }
+
+
+
+  return campos;
+
+}
+
+
+
+// =====================================================
+
+// GENERAR PDF
+
+// =====================================================
+
+
+
+function generarTablaHTML(
+
+  titulo: string,
+
+  tipo: ClaveHistorial,
+
+  registros: Registro[],
+
+  error: string | null
+
+): string {
+
+  if (error) {
+
+    return `
+
+      <h2>${escaparHTML(titulo)}</h2>
+
+      <p class="advertencia">
+
+        No se pudo consultar esta sección:
+
+        ${escaparHTML(error)}
+
+      </p>
+
+    `;
+
+  }
+
+
+
+  if (registros.length === 0) {
+
+    return `
+
+      <h2>${escaparHTML(titulo)}</h2>
+
+      <p>No hay registros relacionados con este paciente.</p>
+
+    `;
+
+  }
+
+
+
+  const contenido = registros
+
+    .map((registro, indice) => {
+
+      const filas = camposRegistro(
+
+        tipo,
+
+        registro
+
+      )
+
+        .map(
+
+          (item) => `
+
+            <tr>
+
+              <td>${escaparHTML(
+
+                item.etiqueta
+
+              )}</td>
+
+              <td>${escaparHTML(
+
+                item.valor
+
+              )}</td>
+
+            </tr>
+
+          `
+
+        )
+
+        .join("");
+
+
+
+      return `
+
+        <div class="registro">
+
+          <h3>Registro ${indice + 1}</h3>
+
+
+
+          <table>
+
+            <tbody>
+
+              ${filas}
+
+            </tbody>
+
+          </table>
+
+        </div>
+
+      `;
+
+    })
+
+    .join("");
+
+
+
+  return `
+
+    <h2>${escaparHTML(titulo)}</h2>
+
+    ${contenido}
+
+  `;
+
+}
+
+
+
+function generarHTML(
+
+  paciente: Paciente,
+
+  historial: Historial,
+
+  errores: EstadoCarga
+
+): string {
+
+  const secciones: ClaveHistorial[] = [
+
+    "solicitudes",
+
+    "ventas",
+
+    "ordenes",
+
+    "muestras",
+
+    "resultados",
+
+    "nuevasTomas",
+
+  ];
+
+
+
+  const seccionesHTML = secciones
+
+    .map((clave) =>
+
+      generarTablaHTML(
+
+        nombreSeccion(clave),
+
+        clave,
+
+        historial[clave],
+
+        errores[clave]
+
+      )
+
+    )
+
+    .join("");
+
+
+
+  const incompleto = secciones.some(
+
+    (clave) => errores[clave] !== null
+
+  );
+
+
+
+  return `
+
+<!DOCTYPE html>
+
+<html lang="es">
+
+<head>
+
+<meta charset="UTF-8">
+
+
+
+<style>
+
+  @page {
+
+    size: A4;
+
+    margin: 18mm 15mm;
+
+  }
+
+
+
+  body {
+
+    font-family: Arial, sans-serif;
+
+    font-size: 11px;
+
+    color: #334155;
+
+    line-height: 1.5;
+
+  }
+
+
+
+  .encabezado {
+
+    background: #19385F;
+
+    color: #FFFFFF;
+
+    padding: 22px;
+
+    border-radius: 8px;
+
+  }
+
+
+
+  h1 {
+
+    font-size: 22px;
+
+    margin: 0;
+
+  }
+
+
+
+  h2 {
+
+    font-size: 16px;
+
+    color: #19385F;
+
+    border-bottom: 2px solid #2563EB;
+
+    padding-bottom: 7px;
+
+    margin-top: 25px;
+
+  }
+
+
+
+  h3 {
+
+    color: #1D4ED8;
+
+    font-size: 12px;
+
+    margin-bottom: 8px;
+
+  }
+
+
+
+  .paciente {
+
+    background: #F1F5F9;
+
+    padding: 16px;
+
+    border-radius: 8px;
+
+    margin-top: 20px;
+
+  }
+
+
+
+  .paciente p {
+
+    margin: 6px 0;
+
+  }
+
+
+
+  .resumen {
+
+    margin-top: 20px;
+
+    background: #EFF6FF;
+
+    padding: 15px;
+
+    border-radius: 8px;
+
+  }
+
+
+
+  .registro {
+
+    margin-bottom: 15px;
+
+    page-break-inside: avoid;
+
+  }
+
+
+
+  table {
+
+    width: 100%;
+
+    border-collapse: collapse;
+
+  }
+
+
+
+  td {
+
+    border: 1px solid #CBD5E1;
+
+    padding: 8px;
+
+    vertical-align: top;
+
+    overflow-wrap: anywhere;
+
+  }
+
+
+
+  td:first-child {
+
+    width: 35%;
+
+    background: #F8FAFC;
+
+    font-weight: bold;
+
+  }
+
+
+
+  .advertencia {
+
+    background: #FEF2F2;
+
+    border: 1px solid #FECACA;
+
+    padding: 12px;
+
+    color: #991B1B;
+
+  }
+
+
+
+  .pie {
+
+    margin-top: 35px;
+
+    padding-top: 12px;
+
+    border-top: 1px solid #CBD5E1;
+
+    font-size: 9px;
+
+    color: #64748B;
+
+  }
+
+</style>
+
+</head>
+
+
+
+<body>
+
+
+
+<div class="encabezado">
+
+  <h1>LABORATORIO CLÍNICO</h1>
+
+  <p>HISTORIAL DEL PACIENTE</p>
+
+  <p>
+
+    Fecha de generación:
+
+    ${escaparHTML(
+
+      new Date().toLocaleString("es-BO")
+
+    )}
+
+  </p>
+
+</div>
+
+
+
+<div class="paciente">
+
+  <h2>Datos del paciente</h2>
+
+
+
+  <p>
+
+    <strong>Nombre:</strong>
+
+    ${escaparHTML(
+
+      paciente.nombreCompleto
+
+    )}
+
+  </p>
+
+
+
+  <p>
+
+    <strong>CI:</strong>
+
+    ${escaparHTML(
+
+      paciente.ci || "No registrado"
+
+    )}
+
+  </p>
+
+
+
+  <p>
+
+    <strong>Teléfono:</strong>
+
+    ${escaparHTML(
+
+      paciente.telefono || "No registrado"
+
+    )}
+
+  </p>
+
+
+
+  <p>
+
+    <strong>Dirección:</strong>
+
+    ${escaparHTML(
+
+      campo(
+
+        paciente.datos,
+
+        ["direccion"]
+
+      )
+
+    )}
+
+  </p>
+
+
+
+  <p>
+
+    <strong>Fecha de nacimiento:</strong>
+
+    ${escaparHTML(
+
+      fecha(
+
+        paciente.datos.fechaNacimiento
+
+      )
+
+    )}
+
+  </p>
+
+</div>
+
+
+
+<div class="resumen">
+
+  <strong>Resumen de registros</strong>
+
+
+
+  <p>Solicitudes: ${historial.solicitudes.length}</p>
+
+  <p>Ventas: ${historial.ventas.length}</p>
+
+  <p>Órdenes: ${historial.ordenes.length}</p>
+
+  <p>Muestras: ${historial.muestras.length}</p>
+
+  <p>Resultados: ${historial.resultados.length}</p>
+
+  <p>Nuevas tomas: ${historial.nuevasTomas.length}</p>
+
+</div>
+
+
+
+${
+
+  incompleto
+
+    ? `
+
+      <p class="advertencia">
+
+        HISTORIAL PARCIAL:
+
+        No fue posible consultar todas las
+
+        secciones. Este documento no debe
+
+        considerarse completo.
+
+      </p>
+
+    `
+
+    : ""
+
+}
+
+
+
+${seccionesHTML}
+
+
+
+<div class="pie">
+
+  Documento generado por el sistema
+
+  de Laboratorio Clínico.
+
+
+
+  <br>
+
+
+
+  Información confidencial del paciente.
+
+  Su contenido depende de los registros
+
+  disponibles y de las relaciones
+
+  almacenadas en Firestore.
+
+</div>
+
+
+
+</body>
+
+</html>
+
+`;
+
+}
+
+
+
+// =====================================================
+
+// COMPONENTE PARA MOSTRAR REGISTROS
+
+// =====================================================
+
+
+
+function TarjetaRegistro({
+
+  tipo,
+
+  registro,
+
+  indice,
+
+}: {
+
+  tipo: ClaveHistorial;
+
+  registro: Registro;
+
+  indice: number;
+
+}) {
+
+  const campos = camposRegistro(
+
+    tipo,
+
+    registro
+
+  );
+
+
+
+  return (
+
+    <View style={styles.tarjetaRegistro}>
+
+      <Text style={styles.tituloRegistro}>
+
+        {nombreSeccion(tipo)} #{indice + 1}
+
+      </Text>
+
+
+
+      {campos.map((item, posicion) => (
+
+        <View
+
+          key={`${item.etiqueta}-${posicion}`}
+
+          style={styles.filaDato}
+
+        >
+
+          <Text style={styles.etiquetaDato}>
+
+            {item.etiqueta}
+
+          </Text>
+
+
+
+          <Text style={styles.valorDato}>
+
+            {item.valor}
+
+          </Text>
+
+        </View>
+
+      ))}
+
+    </View>
+
+  );
+
+}
+
+
+
+function SeccionHistorial({
+
+  tipo,
+
+  registros,
+
+  error,
+
+}: {
+
+  tipo: ClaveHistorial;
+
+  registros: Registro[];
+
+  error: string | null;
+
+}) {
+
+  return (
+
+    <View style={styles.panel}>
+
+      <View style={styles.encabezadoSeccion}>
+
+        <Text style={styles.tituloSeccion}>
+
+          {nombreSeccion(tipo)}
+
+        </Text>
+
+
+
+        <View style={styles.contador}>
+
+          <Text style={styles.contadorTexto}>
+
+            {registros.length}
+
+          </Text>
+
+        </View>
+
+      </View>
+
+
+
+      {error ? (
+
+        <View style={styles.error}>
+
+          <Text style={styles.errorTexto}>
+
+            No se pudo consultar esta sección.
+
+          </Text>
+
+
+
+          <Text style={styles.errorDetalle}>
+
+            {error}
+
+          </Text>
+
+        </View>
+
+      ) : registros.length === 0 ? (
+
+        <Text style={styles.sinDatos}>
+
+          No hay registros relacionados con
+
+          este paciente.
+
+        </Text>
+
+      ) : (
+
+        registros.map((registro, indice) => (
+
+          <TarjetaRegistro
+
+            key={`${tipo}-${registro.id}`}
+
+            tipo={tipo}
+
+            registro={registro}
+
+            indice={indice}
+
+          />
+
+        ))
+
+      )}
+
+    </View>
+
+  );
+
+}
+
+
+
+// =====================================================
+
+// PANTALLA PRINCIPAL
+
+// =====================================================
+
+
+
+export default function HistorialPaciente() {
+
+  const router = useRouter();
+
+
+
+  const [usuario, setUsuario] =
+
+    useState<Usuario | null>(null);
+
+
+
+  const [pacientes, setPacientes] =
+
+    useState<Paciente[]>([]);
+
 
 
   const [
-    paciente,
-    setPaciente,
-  ] =
-    useState<Paciente | null>(
-      null
+
+    pacienteSeleccionado,
+
+    setPacienteSeleccionado,
+
+  ] = useState<Paciente | null>(null);
+
+
+
+  const [historial, setHistorial] =
+
+    useState<Historial>(
+
+      crearHistorialVacio()
+
     );
 
 
-  const [
-    historial,
-    setHistorial,
-  ] =
-    useState<HistorialPaciente>(
-      historialInicial
+
+  const [errores, setErrores] =
+
+    useState<EstadoCarga>(
+
+      crearErroresVacios()
+
     );
 
 
-  const [
-    cargando,
-    setCargando,
-  ] =
+
+  const [busqueda, setBusqueda] =
+
+    useState("");
+
+
+
+  const [cargando, setCargando] =
+
     useState(true);
 
 
-  const cargarHistorial =
-    useCallback(
-      async () => {
-        try {
-          setCargando(
-            true
-          );
 
-          if (!pacienteId) {
-            throw new Error(
-              "No se recibió el identificador del paciente."
-            );
-          }
+  const [
 
-          const firebaseUser =
-            auth.currentUser;
+    cargandoHistorial,
 
-          if (!firebaseUser) {
-            Alert.alert(
-              "Sesión no disponible",
-              "Debes iniciar sesión nuevamente."
-            );
+    setCargandoHistorial,
 
-            router.replace(
-              "/"
-            );
-
-            return;
-          }
+  ] = useState(false);
 
 
-          const usuarioSnap =
-            await getDoc(
-              doc(
-                db,
-                "usuarios",
-                firebaseUser.uid
-              )
-            );
+
+  const [actualizando, setActualizando] =
+
+    useState(false);
 
 
-          if (
-            !usuarioSnap.exists()
-          ) {
-            throw new Error(
-              "No se encontró el usuario en Firestore."
-            );
-          }
+
+  const [generandoPDF, setGenerandoPDF] =
+
+    useState(false);
 
 
-          const datosUsuario =
-            usuarioSnap.data();
+
+  const [errorGeneral, setErrorGeneral] =
+
+    useState("");
 
 
-          if (
-            datosUsuario.activo !==
-            true
-          ) {
-            throw new Error(
-              "El usuario está inactivo."
-            );
-          }
+
+  // ===================================================
+
+  // CARGAR PACIENTES
+
+  // ===================================================
 
 
-          const usuario:
-            UsuarioActual = {
-              laboratorioId:
-                typeof datosUsuario.laboratorioId ===
-                  "string"
-                  ? datosUsuario.laboratorioId.trim()
-                  : "",
 
-              rol:
-                typeof datosUsuario.rol ===
-                  "string"
-                  ? datosUsuario.rol.trim()
-                  : "",
-            };
+  const cargarPacientes = useCallback(
 
+    async (laboratorioId: string) => {
 
-          if (
-            !usuario.laboratorioId
-          ) {
-            throw new Error(
-              "El usuario no está asociado a un laboratorio."
-            );
-          }
+      const consulta = query(
+
+        collection(db, "pacientes"),
+
+        where(
+
+          "laboratorioId",
+
+          "==",
+
+          laboratorioId
+
+        )
+
+      );
 
 
-          if (!usuario.rol) {
-            throw new Error(
-              "El usuario no tiene un rol asignado."
-            );
-          }
+
+      const snapshot = await getDocs(
+
+        consulta
+
+      );
 
 
-          const permisos =
-            await obtenerPermisosRol(
-              usuario.rol
-            );
+
+      const lista = snapshot.docs.map(
+
+        (documento) =>
+
+          convertirPaciente(
+
+            documento.id,
+
+            documento.data()
+
+          )
+
+      );
 
 
-          if (
-            !Array.isArray(
-              permisos
-            ) ||
-            !permisos.includes(
-              "resultados.ver"
-            )
-          ) {
-            throw new Error(
-              "No tienes permiso para consultar el historial clínico."
-            );
-          }
+
+      lista.sort((a, b) =>
+
+        a.nombreCompleto.localeCompare(
+
+          b.nombreCompleto,
+
+          "es"
+
+        )
+
+      );
 
 
-          const pacienteActual =
-            await obtenerPaciente(
-              pacienteId
-            );
+
+      setPacientes(lista);
 
 
-          if (!pacienteActual) {
-            throw new Error(
-              "El paciente seleccionado no existe."
-            );
-          }
+
+      return lista;
+
+    },
+
+    []
+
+  );
 
 
-          if (
-            pacienteActual.laboratorioId !==
-            usuario.laboratorioId
-          ) {
-            throw new Error(
-              "No puedes consultar pacientes de otro laboratorio."
-            );
-          }
 
+  // ===================================================
 
-          const datosHistorial =
-            await obtenerHistorialPaciente(
-              usuario.laboratorioId,
-              pacienteId
-            );
+  // AUTENTICACIÓN
 
+  // ===================================================
 
-          setPaciente(
-            pacienteActual
-          );
-
-          setHistorial(
-            datosHistorial
-          );
-
-        } catch (error) {
-          console.error(
-            "Error cargando historial:",
-            error
-          );
-
-          Alert.alert(
-            "Error",
-            obtenerMensajeError(
-              error,
-              "No se pudo cargar el historial del paciente."
-            )
-          );
-
-        } finally {
-          setCargando(
-            false
-          );
-        }
-      },
-      [
-        pacienteId,
-        router,
-      ]
-    );
 
 
   useEffect(() => {
-    cargarHistorial();
-  }, [cargarHistorial]);
+
+    let activo = true;
+
+
+
+    const cancelar = onAuthStateChanged(
+
+      auth,
+
+      async (firebaseUser) => {
+
+        if (!activo) {
+
+          return;
+
+        }
+
+
+
+        setCargando(true);
+
+
+
+        if (!firebaseUser) {
+
+          setUsuario(null);
+
+          setPacientes([]);
+
+          setErrorGeneral(
+
+            "Debes iniciar sesión."
+
+          );
+
+          setCargando(false);
+
+          return;
+
+        }
+
+
+
+        try {
+
+          setErrorGeneral("");
+
+
+
+          const usuarioSnap = await getDoc(
+
+            doc(
+
+              db,
+
+              "usuarios",
+
+              firebaseUser.uid
+
+            )
+
+          );
+
+
+
+          if (!usuarioSnap.exists()) {
+
+            throw new Error(
+
+              "No se encontró tu usuario."
+
+            );
+
+          }
+
+
+
+          const datos = usuarioSnap.data();
+
+
+
+          if (datos.activo !== true) {
+
+            throw new Error(
+
+              "Tu cuenta está inactiva."
+
+            );
+
+          }
+
+
+
+          const rol = normalizar(
+
+            datos.rolNombre ||
+
+            datos.rol ||
+
+            datos.role
+
+          );
+
+
+
+          if (
+
+            rol !== "recepcionista" &&
+
+            rol !== "administrador"
+
+          ) {
+
+            throw new Error(
+
+              "Este módulo está disponible para Recepción y Administración."
+
+            );
+
+          }
+
+
+
+          const laboratorioId = cadena(
+
+            datos.laboratorioId
+
+          );
+
+
+
+          if (!laboratorioId) {
+
+            throw new Error(
+
+              "No tienes un laboratorio asignado."
+
+            );
+
+          }
+
+
+
+          if (!activo) {
+
+            return;
+
+          }
+
+
+
+          setUsuario({
+
+            uid: firebaseUser.uid,
+
+            rol,
+
+            laboratorioId,
+
+          });
+
+
+
+          await cargarPacientes(
+
+            laboratorioId
+
+          );
+
+        } catch (error) {
+
+          if (activo) {
+
+            setErrorGeneral(
+
+              error instanceof Error
+
+                ? error.message
+
+                : "No se pudieron cargar los pacientes."
+
+            );
+
+          }
+
+        } finally {
+
+          if (activo) {
+
+            setCargando(false);
+
+          }
+
+        }
+
+      }
+
+    );
+
+
+
+    return () => {
+
+      activo = false;
+
+      cancelar();
+
+    };
+
+  }, [cargarPacientes]);
+
+
+
+  // ===================================================
+
+  // BUSCADOR
+
+  // ===================================================
+
+
+
+  const pacientesFiltrados = useMemo(() => {
+
+    const termino = normalizar(busqueda);
+
+
+
+    if (!termino) {
+
+      return pacientes;
+
+    }
+
+
+
+    return pacientes.filter((paciente) => {
+
+      const contenido = normalizar(
+
+        [
+
+          paciente.nombreCompleto,
+
+          paciente.ci,
+
+          paciente.telefono,
+
+        ].join(" ")
+
+      );
+
+
+
+      return contenido.includes(termino);
+
+    });
+
+  }, [pacientes, busqueda]);
+
+
+
+  // ===================================================
+
+  // CONSULTAR HISTORIAL COMPLETO
+
+  // ===================================================
+
+
+
+  const cargarHistorial = useCallback(
+
+    async (paciente: Paciente) => {
+
+      if (!usuario) {
+
+        return;
+
+      }
+
+
+
+      if (
+
+        paciente.laboratorioId !==
+
+        usuario.laboratorioId
+
+      ) {
+
+        Alert.alert(
+
+          "Acceso denegado",
+
+          "El paciente pertenece a otro laboratorio."
+
+        );
+
+
+
+        return;
+
+      }
+
+
+
+      try {
+
+        setCargandoHistorial(true);
+
+
+
+        setHistorial(
+
+          crearHistorialVacio()
+
+        );
+
+
+
+        setErrores(
+
+          crearErroresVacios()
+
+        );
+
+
+
+        const resultado =
+
+          await obtenerHistorialCompleto(
+
+            usuario.laboratorioId,
+
+            paciente.id
+
+          );
+
+
+
+        setHistorial(
+
+          resultado.historial
+
+        );
+
+
+
+        setErrores(
+
+          resultado.errores
+
+        );
+
+
+
+        setPacienteSeleccionado(
+
+          paciente
+
+        );
+
+      } catch (error) {
+
+        Alert.alert(
+
+          "Error",
+
+          error instanceof Error
+
+            ? error.message
+
+            : "No se pudo cargar el historial."
+
+        );
+
+      } finally {
+
+        setCargandoHistorial(false);
+
+      }
+
+    },
+
+    [usuario]
+
+  );
+
+
+
+  // ===================================================
+
+  // ACTUALIZAR
+
+  // ===================================================
+
+
+
+  const actualizar = async () => {
+
+    if (!usuario) {
+
+      return;
+
+    }
+
+
+
+    try {
+
+      setActualizando(true);
+
+
+
+      await cargarPacientes(
+
+        usuario.laboratorioId
+
+      );
+
+
+
+      if (pacienteSeleccionado) {
+
+        await cargarHistorial(
+
+          pacienteSeleccionado
+
+        );
+
+      }
+
+    } catch (error) {
+
+      Alert.alert(
+
+        "Error",
+
+        error instanceof Error
+
+          ? error.message
+
+          : "No se pudo actualizar."
+
+      );
+
+    } finally {
+
+      setActualizando(false);
+
+    }
+
+  };
+
+
+
+  // ===================================================
+
+  // GENERAR PDF
+
+  // ===================================================
+
+
+
+  const generarPDF = async () => {
+
+    if (
+
+      !usuario ||
+
+      !pacienteSeleccionado
+
+    ) {
+
+      return;
+
+    }
+
+
+
+    try {
+
+      setGenerandoPDF(true);
+
+
+
+      const resultado =
+
+        await obtenerHistorialCompleto(
+
+          usuario.laboratorioId,
+
+          pacienteSeleccionado.id
+
+        );
+
+
+
+      setHistorial(
+
+        resultado.historial
+
+      );
+
+
+
+      setErrores(
+
+        resultado.errores
+
+      );
+
+
+
+      const claves: ClaveHistorial[] = [
+
+        "solicitudes",
+
+        "ventas",
+
+        "ordenes",
+
+        "muestras",
+
+        "resultados",
+
+        "nuevasTomas",
+
+      ];
+
+
+
+      const incompleto = claves.some(
+
+        (clave) =>
+
+          resultado.errores[clave] !== null
+
+      );
+
+
+
+      if (incompleto) {
+
+        Alert.alert(
+
+          "Historial parcial",
+
+          "Algunas secciones no pudieron consultarse. El PDF identificará los datos faltantes."
+
+        );
+
+      }
+
+
+
+      const html = generarHTML(
+
+        pacienteSeleccionado,
+
+        resultado.historial,
+
+        resultado.errores
+
+      );
+
+
+
+      const archivo =
+
+        await Print.printToFileAsync({
+
+          html,
+
+        });
+
+
+
+      const disponible =
+
+        await Sharing.isAvailableAsync();
+
+
+
+      if (!disponible) {
+
+        Alert.alert(
+
+          "PDF generado",
+
+          `Archivo: ${archivo.uri}`
+
+        );
+
+
+
+        return;
+
+      }
+
+
+
+      await Sharing.shareAsync(
+
+        archivo.uri,
+
+        {
+
+          mimeType: "application/pdf",
+
+          dialogTitle:
+
+            "Compartir historial del paciente",
+
+          UTI: "com.adobe.pdf",
+
+        }
+
+      );
+
+    } catch (error) {
+
+      Alert.alert(
+
+        "Error al generar PDF",
+
+        error instanceof Error
+
+          ? error.message
+
+          : "No se pudo generar el PDF."
+
+      );
+
+    } finally {
+
+      setGenerandoPDF(false);
+
+    }
+
+  };
+
+
+
+  // ===================================================
+
+  // VOLVER
+
+  // ===================================================
+
+
+
+  const volver = () => {
+
+    if (pacienteSeleccionado) {
+
+      setPacienteSeleccionado(null);
+
+
+
+      setHistorial(
+
+        crearHistorialVacio()
+
+      );
+
+
+
+      setErrores(
+
+        crearErroresVacios()
+
+      );
+
+
+
+      return;
+
+    }
+
+
+
+    if (router.canGoBack()) {
+
+      router.back();
+
+    } else {
+
+      router.replace("/");
+
+    }
+
+  };
+
+
+
+  // ===================================================
+
+  // PANTALLA DE CARGA
+
+  // ===================================================
+
 
 
   if (cargando) {
+
     return (
-      <SafeAreaView
-        style={
-          styles.loadingPage
-        }
-      >
-        <StatusBar
-          barStyle="dark-content"
-          backgroundColor="#F8FAFC"
-        />
+
+      <View style={styles.cargando}>
 
         <ActivityIndicator
+
           size="large"
+
           color="#2563EB"
+
         />
 
-        <Text
-          style={
-            styles.loadingTitle
-          }
-        >
-          Historial del paciente
+
+
+        <Text style={styles.textoCargando}>
+
+          Cargando pacientes...
+
         </Text>
 
-        <Text
-          style={
-            styles.loadingText
-          }
-        >
-          Consultando solicitudes y resultados...
-        </Text>
-      </SafeAreaView>
+      </View>
+
     );
+
   }
 
 
+
+  // ===================================================
+
+  // RENDERIZADO
+
+  // ===================================================
+
+
+
+  const secciones: ClaveHistorial[] = [
+
+    "solicitudes",
+
+    "ventas",
+
+    "ordenes",
+
+    "muestras",
+
+    "resultados",
+
+    "nuevasTomas",
+
+  ];
+
+
+
+  const historialParcial = secciones.some(
+
+    (clave) => errores[clave] !== null
+
+  );
+
+
+
   return (
-    <SafeAreaView
-      style={
-        styles.page
-      }
-    >
-      <StatusBar
-        barStyle="dark-content"
-        backgroundColor="#F8FAFC"
-      />
+
+    <View style={styles.contenedor}>
 
       <ScrollView
+
         contentContainerStyle={
-          styles.content
+
+          styles.contenido
+
         }
-        showsVerticalScrollIndicator={
-          false
+
+        refreshControl={
+
+          <RefreshControl
+
+            refreshing={actualizando}
+
+            onRefresh={actualizar}
+
+          />
+
         }
+
       >
-        <View
-          style={
-            styles.header
-          }
-        >
+
+        {/* ENCABEZADO */}
+
+
+
+        <View style={styles.encabezado}>
+
           <Pressable
-            style={
-              styles.backButton
-            }
-            onPress={() =>
-              router.back()
-            }
+
+            style={styles.botonVolver}
+
+            onPress={volver}
+
           >
-            <Text
-              style={
-                styles.backText
-              }
-            >
+
+            <Text style={styles.botonVolverTexto}>
+
               ← Volver
+
             </Text>
+
           </Pressable>
 
-          <Text
-            style={
-              styles.eyebrow
-            }
-          >
-            HISTORIAL CLÍNICO
+
+
+          <Text style={styles.titulo}>
+
+            Historial de pacientes
+
           </Text>
 
-          <Text
-            style={
-              styles.title
-            }
-          >
-            Historial del paciente
+
+
+          <Text style={styles.subtitulo}>
+
+            Consulta las atenciones,
+
+            solicitudes, ventas, órdenes,
+
+            muestras y resultados clínicos.
+
           </Text>
 
-          <Text
-            style={
-              styles.subtitle
-            }
-          >
-            Consulta las solicitudes, análisis y resultados anteriores registrados para este paciente.
-          </Text>
         </View>
 
 
-        {paciente ? (
-          <View
-            style={
-              styles.patientCard
-            }
-          >
-            <View
-              style={
-                styles.avatar
-              }
-            >
-              <Text
-                style={
-                  styles.avatarText
-                }
-              >
-                {obtenerIniciales(
-                  paciente
-                )}
-              </Text>
-            </View>
 
-            <View
-              style={
-                styles.patientInfo
-              }
-            >
-              <Text
-                style={
-                  styles.patientName
-                }
-              >
-                {paciente.nombres}{" "}
-                {paciente.apellidos}
-              </Text>
+        {/* ERROR GENERAL */}
 
-              <Text
-                style={
-                  styles.patientMeta
-                }
-              >
-                CI: {paciente.ci}
-              </Text>
 
-              <Text
-                style={
-                  styles.patientMeta
-                }
-              >
-                Nacimiento:{" "}
-                {formatearFechaSimple(
-                  paciente.fechaNacimiento
-                )}
-              </Text>
-            </View>
-          </View>
-        ) : (
-          <View
-            style={
-              styles.emptyCard
-            }
-          >
-            <Text
-              style={
-                styles.emptyTitle
-              }
-            >
-              Paciente no disponible
+
+        {errorGeneral ? (
+
+          <View style={styles.error}>
+
+            <Text style={styles.errorTexto}>
+
+              {errorGeneral}
+
             </Text>
+
           </View>
+
+        ) : null}
+
+
+
+        {/* LISTADO */}
+
+
+
+        {!pacienteSeleccionado ? (
+
+          <View style={styles.panel}>
+
+            <Text style={styles.tituloSeccion}>
+
+              Buscar paciente
+
+            </Text>
+
+
+
+            <TextInput
+
+              style={styles.input}
+
+              placeholder="Nombre, apellido o CI"
+
+              placeholderTextColor="#94A3B8"
+
+              value={busqueda}
+
+              onChangeText={setBusqueda}
+
+            />
+
+
+
+            <Text style={styles.textoContador}>
+
+              Pacientes encontrados:{" "}
+
+              {pacientesFiltrados.length}
+
+            </Text>
+
+
+
+            {pacientesFiltrados.length === 0 ? (
+
+              <Text style={styles.sinDatos}>
+
+                No se encontraron pacientes.
+
+              </Text>
+
+            ) : (
+
+              pacientesFiltrados.map(
+
+                (paciente) => (
+
+                  <View
+
+                    key={paciente.id}
+
+                    style={styles.tarjetaPaciente}
+
+                  >
+
+                    <Text
+
+                      style={styles.nombrePaciente}
+
+                    >
+
+                      {paciente.nombreCompleto}
+
+                    </Text>
+
+
+
+                    <Text style={styles.dato}>
+
+                      CI:{" "}
+
+                      {paciente.ci ||
+
+                        "No registrado"}
+
+                    </Text>
+
+
+
+                    <Text style={styles.dato}>
+
+                      Teléfono:{" "}
+
+                      {paciente.telefono ||
+
+                        "No registrado"}
+
+                    </Text>
+
+
+
+                    <Pressable
+
+                      style={styles.botonPrincipal}
+
+                      onPress={() =>
+
+                        cargarHistorial(paciente)
+
+                      }
+
+                    >
+
+                      <Text
+
+                        style={
+
+                          styles.botonPrincipalTexto
+
+                        }
+
+                      >
+
+                        Ver historial completo
+
+                      </Text>
+
+                    </Pressable>
+
+                  </View>
+
+                )
+
+              )
+
+            )}
+
+          </View>
+
+        ) : (
+
+          <>
+
+            {/* DATOS DEL PACIENTE */}
+
+
+
+            <View style={styles.panel}>
+
+              <Text style={styles.tituloSeccion}>
+
+                Datos del paciente
+
+              </Text>
+
+
+
+              <Text
+
+                style={styles.nombrePacienteGrande}
+
+              >
+
+                {
+
+                  pacienteSeleccionado.nombreCompleto
+
+                }
+
+              </Text>
+
+
+
+              <Text style={styles.dato}>
+
+                CI:{" "}
+
+                {pacienteSeleccionado.ci ||
+
+                  "No registrado"}
+
+              </Text>
+
+
+
+              <Text style={styles.dato}>
+
+                Teléfono:{" "}
+
+                {pacienteSeleccionado.telefono ||
+
+                  "No registrado"}
+
+              </Text>
+
+
+
+              <View style={styles.botones}>
+
+                <Pressable
+
+                  style={styles.botonPrincipal}
+
+                  onPress={generarPDF}
+
+                  disabled={
+
+                    generandoPDF ||
+
+                    cargandoHistorial
+
+                  }
+
+                >
+
+                  {generandoPDF ? (
+
+                    <ActivityIndicator
+
+                      color="#FFFFFF"
+
+                    />
+
+                  ) : (
+
+                    <Text
+
+                      style={
+
+                        styles.botonPrincipalTexto
+
+                      }
+
+                    >
+
+                      Generar PDF del historial
+
+                    </Text>
+
+                  )}
+
+                </Pressable>
+
+
+
+                <Pressable
+
+                  style={styles.botonSecundario}
+
+                  onPress={volver}
+
+                >
+
+                  <Text
+
+                    style={
+
+                      styles.botonSecundarioTexto
+
+                    }
+
+                  >
+
+                    Ver pacientes
+
+                  </Text>
+
+                </Pressable>
+
+              </View>
+
+            </View>
+
+
+
+            {cargandoHistorial ? (
+
+              <View style={styles.panel}>
+
+                <ActivityIndicator
+
+                  size="large"
+
+                  color="#2563EB"
+
+                />
+
+
+
+                <Text
+
+                  style={styles.textoCargando}
+
+                >
+
+                  Consultando el historial...
+
+                </Text>
+
+              </View>
+
+            ) : (
+
+              <>
+
+                {/* ADVERTENCIA */}
+
+
+
+                {historialParcial && (
+
+                  <View style={styles.error}>
+
+                    <Text
+
+                      style={styles.errorTexto}
+
+                    >
+
+                      Historial parcial
+
+                    </Text>
+
+
+
+                    <Text
+
+                      style={styles.errorDetalle}
+
+                    >
+
+                      Algunas colecciones no
+
+                      pudieron consultarse.
+
+                      Revisa los errores que
+
+                      aparecen en cada sección.
+
+                    </Text>
+
+                  </View>
+
+                )}
+
+
+
+                {/* RESUMEN */}
+
+
+
+                <View style={styles.panel}>
+
+                  <Text
+
+                    style={styles.tituloSeccion}
+
+                  >
+
+                    Resumen del historial
+
+                  </Text>
+
+
+
+                  <View
+
+                    style={styles.resumenContenedor}
+
+                  >
+
+                    {secciones.map((clave) => (
+
+                      <View
+
+                        key={clave}
+
+                        style={styles.resumenItem}
+
+                      >
+
+                        <Text
+
+                          style={styles.resumenNumero}
+
+                        >
+
+                          {
+
+                            historial[clave]
+
+                              .length
+
+                          }
+
+                        </Text>
+
+
+
+                        <Text
+
+                          style={styles.resumenTexto}
+
+                        >
+
+                          {nombreSeccion(clave)}
+
+                        </Text>
+
+                      </View>
+
+                    ))}
+
+                  </View>
+
+                </View>
+
+
+
+                {/* HISTORIAL POR SECCIONES */}
+
+
+
+                {secciones.map((clave) => (
+
+                  <SeccionHistorial
+
+                    key={clave}
+
+                    tipo={clave}
+
+                    registros={historial[clave]}
+
+                    error={errores[clave]}
+
+                  />
+
+                ))}
+
+              </>
+
+            )}
+
+          </>
+
         )}
 
-
-        <View
-          style={
-            styles.statsRow
-          }
-        >
-          <Estadistica
-            titulo="SOLICITUDES"
-            valor={
-              historial.solicitudes.length
-            }
-          />
-
-          <Estadistica
-            titulo="ANÁLISIS"
-            valor={
-              historial.totalAnalisis
-            }
-          />
-
-          <Estadistica
-            titulo="RESULTADOS"
-            valor={
-              historial.resultados.length
-            }
-          />
-        </View>
-
-
-        <View
-          style={
-            styles.section
-          }
-        >
-          <View
-            style={
-              styles.sectionHeader
-            }
-          >
-            <View>
-              <Text
-                style={
-                  styles.sectionEyebrow
-                }
-              >
-                SOLICITUDES
-              </Text>
-
-              <Text
-                style={
-                  styles.sectionTitle
-                }
-              >
-                Solicitudes anteriores
-              </Text>
-            </View>
-
-            <Text
-              style={
-                styles.counter
-              }
-            >
-              {historial.solicitudes.length}
-            </Text>
-          </View>
-
-
-          {historial.solicitudes.length ===
-          0 ? (
-            <Vacio
-              icono="🧾"
-              titulo="Sin solicitudes"
-              texto="Todavía no existen solicitudes registradas para este paciente."
-            />
-          ) : (
-            historial.solicitudes.map(
-              (solicitud) => (
-                <SolicitudCard
-                  key={
-                    solicitud.id
-                  }
-                  solicitud={
-                    solicitud
-                  }
-                />
-              )
-            )
-          )}
-        </View>
-
-
-        <View
-          style={
-            styles.section
-          }
-        >
-          <View
-            style={
-              styles.sectionHeader
-            }
-          >
-            <View>
-              <Text
-                style={
-                  styles.sectionEyebrow
-                }
-              >
-                RESULTADOS
-              </Text>
-
-              <Text
-                style={
-                  styles.sectionTitle
-                }
-              >
-                Resultados registrados
-              </Text>
-            </View>
-
-            <Text
-              style={
-                styles.counter
-              }
-            >
-              {historial.resultados.length}
-            </Text>
-          </View>
-
-
-          {historial.resultados.length ===
-          0 ? (
-            <Vacio
-              icono="📋"
-              titulo="Sin resultados"
-              texto="Todavía no existen resultados registrados para este paciente."
-            />
-          ) : (
-            historial.resultados.map(
-              (resultado) => (
-                <ResultadoCard
-                  key={
-                    resultado.id
-                  }
-                  resultado={
-                    resultado
-                  }
-                />
-              )
-            )
-          )}
-        </View>
       </ScrollView>
-    </SafeAreaView>
-  );
-}
 
-
-function Estadistica({
-  titulo,
-  valor,
-}: {
-  titulo: string;
-  valor: number;
-}) {
-  return (
-    <View
-      style={
-        styles.statCard
-      }
-    >
-      <Text
-        style={
-          styles.statLabel
-        }
-      >
-        {titulo}
-      </Text>
-
-      <Text
-        style={
-          styles.statValue
-        }
-      >
-        {valor}
-      </Text>
     </View>
+
   );
+
 }
 
 
-function SolicitudCard({
-  solicitud,
-}: {
-  solicitud:
-    SolicitudHistorial;
-}) {
-  return (
-    <View
-      style={
-        styles.recordCard
-      }
-    >
-      <View
-        style={
-          styles.recordHeader
-        }
-      >
-        <View
-          style={{
-            flex: 1,
-          }}
-        >
-          <Text
-            style={
-              styles.recordTitle
-            }
-          >
-            Solicitud{" "}
-            {recortarId(
-              solicitud.solicitudId
-            )}
-          </Text>
-
-          <Text
-            style={
-              styles.recordDate
-            }
-          >
-            {formatearFecha(
-              solicitud.fecha
-            )}
-          </Text>
-        </View>
-
-        <Estado
-          valor={
-            solicitud.estado
-          }
-        />
-      </View>
-
-
-      <Text
-        style={
-          styles.recordLabel
-        }
-      >
-        ANÁLISIS SOLICITADOS
-      </Text>
-
-
-      {solicitud.analisis.length ===
-      0 ? (
-        <Text
-          style={
-            styles.muted
-          }
-        >
-          Sin detalle de análisis.
-        </Text>
-      ) : (
-        solicitud.analisis.map(
-          (
-            analisis,
-            indice
-          ) => (
-            <View
-              key={
-                analisis.analisisId ||
-                `${solicitud.id}-${indice}`
-              }
-              style={
-                styles.analysisRow
-              }
-            >
-              <View
-                style={
-                  styles.analysisBullet
-                }
-              />
-
-              <View
-                style={{
-                  flex: 1,
-                }}
-              >
-                <Text
-                  style={
-                    styles.analysisName
-                  }
-                >
-                  {analisis.nombre}
-                </Text>
-
-                <Text
-                  style={
-                    styles.analysisMeta
-                  }
-                >
-                  Cantidad:{" "}
-                  {analisis.cantidad}
-                </Text>
-              </View>
-
-              {analisis.subtotal >
-              0 && (
-                <Text
-                  style={
-                    styles.analysisPrice
-                  }
-                >
-                  Bs{" "}
-                  {analisis.subtotal.toFixed(
-                    2
-                  )}
-                </Text>
-              )}
-            </View>
-          )
-        )
-      )}
-
-
-      {solicitud.total >
-      0 && (
-        <View
-          style={
-            styles.totalRow
-          }
-        >
-          <Text
-            style={
-              styles.totalLabel
-            }
-          >
-            Total
-          </Text>
-
-          <Text
-            style={
-              styles.totalValue
-            }
-          >
-            Bs{" "}
-            {solicitud.total.toFixed(
-              2
-            )}
-          </Text>
-        </View>
-      )}
-    </View>
-  );
-}
-
-
-function ResultadoCard({
-  resultado,
-}: {
-  resultado:
-    ResultadoHistorial;
-}) {
-  return (
-    <View
-      style={
-        styles.resultCard
-      }
-    >
-      <View
-        style={
-          styles.recordHeader
-        }
-      >
-        <View
-          style={{
-            flex: 1,
-          }}
-        >
-          <Text
-            style={
-              styles.recordTitle
-            }
-          >
-            {resultado.analisisNombre}
-          </Text>
-
-          <Text
-            style={
-              styles.recordDate
-            }
-          >
-            {formatearFecha(
-              resultado.fechaRegistro
-            )}
-          </Text>
-        </View>
-
-        <Estado
-          valor={
-            resultado.estado
-          }
-        />
-      </View>
-
-
-      {resultado.solicitudId ? (
-        <Text
-          style={
-            styles.referenceText
-          }
-        >
-          Solicitud:{" "}
-          {recortarId(
-            resultado.solicitudId
-          )}
-        </Text>
-      ) : null}
-
-
-      {resultado.valores.length >
-      0 && (
-        <View
-          style={
-            styles.valuesBox
-          }
-        >
-          <Text
-            style={
-              styles.recordLabel
-            }
-          >
-            VALORES REGISTRADOS
-          </Text>
-
-          {resultado.valores.map(
-            (
-              valor,
-              indice
-            ) => (
-              <View
-                key={
-                  valor.parametroId ||
-                  `${resultado.id}-${indice}`
-                }
-                style={
-                  styles.valueRow
-                }
-              >
-                <Text
-                  style={
-                    styles.valueName
-                  }
-                >
-                  {valor.nombre}
-                </Text>
-
-                <Text
-                  style={
-                    styles.valueText
-                  }
-                >
-                  {valor.valor ||
-                    "Sin valor"}
-                  {valor.unidad
-                    ? ` ${valor.unidad}`
-                    : ""}
-                </Text>
-              </View>
-            )
-          )}
-        </View>
-      )}
-
-
-      {resultado.observaciones ? (
-        <View
-          style={
-            styles.observationBox
-          }
-        >
-          <Text
-            style={
-              styles.recordLabel
-            }
-          >
-            OBSERVACIONES
-          </Text>
-
-          <Text
-            style={
-              styles.observationText
-            }
-          >
-            {resultado.observaciones}
-          </Text>
-        </View>
-      ) : null}
-    </View>
-  );
-}
-
-
-function Estado({
-  valor,
-}: {
-  valor: string;
-}) {
-  const normalizado =
-    valor
-      .trim()
-      .toLowerCase();
-
-  const finalizado =
-    [
-      "finalizado",
-      "completado",
-      "entregado",
-      "validado",
-    ].includes(
-      normalizado
-    );
-
-  const pendiente =
-    [
-      "pendiente",
-      "registrado",
-    ].includes(
-      normalizado
-    );
-
-  return (
-    <View
-      style={[
-        styles.status,
-
-        finalizado &&
-          styles.statusSuccess,
-
-        pendiente &&
-          styles.statusPending,
-      ]}
-    >
-      <Text
-        style={[
-          styles.statusText,
-
-          finalizado &&
-            styles.statusSuccessText,
-
-          pendiente &&
-            styles.statusPendingText,
-        ]}
-      >
-        {valor ||
-          "Sin estado"}
-      </Text>
-    </View>
-  );
-}
-
-
-function Vacio({
-  icono,
-  titulo,
-  texto,
-}: {
-  icono: string;
-  titulo: string;
-  texto: string;
-}) {
-  return (
-    <View
-      style={
-        styles.emptyCard
-      }
-    >
-      <Text
-        style={
-          styles.emptyIcon
-        }
-      >
-        {icono}
-      </Text>
-
-      <Text
-        style={
-          styles.emptyTitle
-        }
-      >
-        {titulo}
-      </Text>
-
-      <Text
-        style={
-          styles.emptyText
-        }
-      >
-        {texto}
-      </Text>
-    </View>
-  );
-}
-
-
-function obtenerParametro(
-  valor:
-    | string
-    | string[]
-    | undefined
-): string {
-  if (
-    Array.isArray(
-      valor
-    )
-  ) {
-    return valor[0] ||
-      "";
-  }
-
-  return valor ||
-    "";
-}
-
-
-function obtenerIniciales(
-  paciente: Paciente
-): string {
-  const nombre =
-    paciente.nombres
-      .trim()
-      .charAt(0);
-
-  const apellido =
-    paciente.apellidos
-      .trim()
-      .charAt(0);
-
-  return `${nombre}${apellido}`
-    .toUpperCase() ||
-    "P";
-}
-
-
-function recortarId(
-  valor: string
-): string {
-  if (!valor) {
-    return "-";
-  }
-
-  if (
-    valor.length <=
-    12
-  ) {
-    return valor;
-  }
-
-  return `${valor.slice(
-    0,
-    8
-  )}...`;
-}
-
-
-function formatearFechaSimple(
-  fecha: string
-): string {
-  const partes =
-    fecha.split(
-      "-"
-    );
-
-  if (
-    partes.length ===
-    3
-  ) {
-    return `${partes[2]}/${partes[1]}/${partes[0]}`;
-  }
-
-  return fecha ||
-    "Sin información";
-}
-
-
-function formatearFecha(
-  valor: unknown
-): string {
-  if (!valor) {
-    return "Sin fecha";
-  }
-
-  try {
-    if (
-      typeof valor ===
-        "object" &&
-      valor !== null
-    ) {
-      const objeto =
-        valor as {
-          toDate?: () => Date;
-          seconds?: number;
-        };
-
-      if (
-        typeof objeto.toDate ===
-        "function"
-      ) {
-        return objeto
-          .toDate()
-          .toLocaleString(
-            "es-BO"
-          );
-      }
-
-      if (
-        typeof objeto.seconds ===
-        "number"
-      ) {
-        return new Date(
-          objeto.seconds *
-          1000
-        ).toLocaleString(
-          "es-BO"
-        );
-      }
-    }
-
-    if (
-      typeof valor ===
-      "string"
-    ) {
-      const fecha =
-        new Date(valor);
-
-      if (
-        !Number.isNaN(
-          fecha.getTime()
-        )
-      ) {
-        return fecha.toLocaleString(
-          "es-BO"
-        );
-      }
-
-      return valor;
-    }
-
-    return String(valor);
-
-  } catch {
-    return "Sin fecha";
-  }
-}
-
-
-function obtenerMensajeError(
-  error: unknown,
-  defecto: string
-): string {
-  if (
-    error instanceof
-    Error
-  ) {
-    return error.message;
-  }
-
-  return defecto;
-}
-
-
-const styles =
-  StyleSheet.create({
-    page: {
-      flex: 1,
-      backgroundColor:
-        "#F8FAFC",
-    },
-
-    content: {
-      padding: 16,
-      paddingBottom: 45,
-    },
-
-    loadingPage: {
-      flex: 1,
-      alignItems: "center",
-      justifyContent:
-        "center",
-      backgroundColor:
-        "#F8FAFC",
-      padding: 24,
-    },
-
-    loadingTitle: {
-      marginTop: 14,
-      fontSize: 22,
-      fontWeight: "900",
-      color: "#0F172A",
-    },
-
-    loadingText: {
-      marginTop: 5,
-      fontSize: 12,
-      textAlign: "center",
-      color: "#64748B",
-    },
-
-    header: {
-      padding: 18,
-      borderRadius: 20,
-      backgroundColor:
-        "#EFF6FF",
-      borderWidth: 1,
-      borderColor:
-        "#BFDBFE",
-      marginBottom: 13,
-    },
-
-    backButton: {
-      alignSelf:
-        "flex-start",
-      paddingVertical: 8,
-      paddingHorizontal: 10,
-      borderRadius: 9,
-      backgroundColor:
-        "#FFFFFF",
-      borderWidth: 1,
-      borderColor:
-        "#DBEAFE",
-      marginBottom: 16,
-    },
-
-    backText: {
-      color: "#475569",
-      fontSize: 12,
-      fontWeight: "800",
-    },
-
-    eyebrow: {
-      color: "#2563EB",
-      fontSize: 9,
-      fontWeight: "900",
-      letterSpacing: 1,
-    },
-
-    title: {
-      marginTop: 4,
-      color: "#0F172A",
-      fontSize: 27,
-      fontWeight: "900",
-    },
-
-    subtitle: {
-      marginTop: 6,
-      color: "#64748B",
-      fontSize: 12,
-      lineHeight: 18,
-    },
-
-    patientCard: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 12,
-      padding: 15,
-      borderRadius: 16,
-      backgroundColor:
-        "#FFFFFF",
-      borderWidth: 1,
-      borderColor:
-        "#E2E8F0",
-      marginBottom: 13,
-    },
-
-    avatar: {
-      width: 52,
-      height: 52,
-      borderRadius: 15,
-      backgroundColor:
-        "#DBEAFE",
-      alignItems: "center",
-      justifyContent:
-        "center",
-    },
-
-    avatarText: {
-      color: "#1D4ED8",
-      fontSize: 16,
-      fontWeight: "900",
-    },
-
-    patientInfo: {
-      flex: 1,
-    },
-
-    patientName: {
-      color: "#0F172A",
-      fontSize: 16,
-      fontWeight: "900",
-    },
-
-    patientMeta: {
-      marginTop: 3,
-      color: "#64748B",
-      fontSize: 11,
-    },
-
-    statsRow: {
-      flexDirection: "row",
-      gap: 8,
-      marginBottom: 14,
-    },
-
-    statCard: {
-      flex: 1,
-      minHeight: 82,
-      padding: 12,
-      borderRadius: 14,
-      backgroundColor:
-        "#FFFFFF",
-      borderWidth: 1,
-      borderColor:
-        "#E2E8F0",
-      justifyContent:
-        "center",
-    },
-
-    statLabel: {
-      color: "#64748B",
-      fontSize: 8,
-      fontWeight: "900",
-    },
-
-    statValue: {
-      marginTop: 4,
-      color: "#0F172A",
-      fontSize: 22,
-      fontWeight: "900",
-    },
-
-    section: {
-      marginBottom: 16,
-    },
-
-    sectionHeader: {
-      flexDirection: "row",
-      alignItems: "center",
-      justifyContent:
-        "space-between",
-      gap: 10,
-      marginBottom: 9,
-    },
-
-    sectionEyebrow: {
-      color: "#2563EB",
-      fontSize: 8,
-      fontWeight: "900",
-      letterSpacing: 1,
-    },
-
-    sectionTitle: {
-      marginTop: 2,
-      color: "#0F172A",
-      fontSize: 18,
-      fontWeight: "900",
-    },
-
-    counter: {
-      minWidth: 31,
-      textAlign: "center",
-      paddingVertical: 6,
-      paddingHorizontal: 8,
-      borderRadius: 20,
-      backgroundColor:
-        "#DBEAFE",
-      color: "#1D4ED8",
-      fontSize: 10,
-      fontWeight: "900",
-    },
-
-    recordCard: {
-      padding: 14,
-      borderRadius: 16,
-      backgroundColor:
-        "#FFFFFF",
-      borderWidth: 1,
-      borderColor:
-        "#E2E8F0",
-      marginBottom: 9,
-    },
-
-    resultCard: {
-      padding: 14,
-      borderRadius: 16,
-      backgroundColor:
-        "#FFFFFF",
-      borderWidth: 1,
-      borderColor:
-        "#BFDBFE",
-      marginBottom: 9,
-    },
-
-    recordHeader: {
-      flexDirection: "row",
-      alignItems:
-        "flex-start",
-      gap: 10,
-      marginBottom: 11,
-    },
-
-    recordTitle: {
-      color: "#0F172A",
-      fontSize: 14,
-      fontWeight: "900",
-    },
-
-    recordDate: {
-      marginTop: 3,
-      color: "#64748B",
-      fontSize: 10,
-    },
-
-    recordLabel: {
-      color: "#64748B",
-      fontSize: 8,
-      fontWeight: "900",
-      letterSpacing: .7,
-      marginBottom: 7,
-    },
-
-    status: {
-      paddingVertical: 6,
-      paddingHorizontal: 9,
-      borderRadius: 20,
-      backgroundColor:
-        "#E2E8F0",
-    },
-
-    statusText: {
-      color: "#475569",
-      fontSize: 8,
-      fontWeight: "900",
-      textTransform:
-        "uppercase",
-    },
-
-    statusSuccess: {
-      backgroundColor:
-        "#DCFCE7",
-    },
-
-    statusSuccessText: {
-      color: "#15803D",
-    },
-
-    statusPending: {
-      backgroundColor:
-        "#FEF3C7",
-    },
-
-    statusPendingText: {
-      color: "#A16207",
-    },
-
-    analysisRow: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 9,
-      paddingVertical: 8,
-      borderBottomWidth: 1,
-      borderBottomColor:
-        "#F1F5F9",
-    },
-
-    analysisBullet: {
-      width: 8,
-      height: 8,
-      borderRadius: 4,
-      backgroundColor:
-        "#2563EB",
-    },
-
-    analysisName: {
-      color: "#334155",
-      fontSize: 11,
-      fontWeight: "800",
-    },
-
-    analysisMeta: {
-      marginTop: 2,
-      color: "#94A3B8",
-      fontSize: 9,
-    },
-
-    analysisPrice: {
-      color: "#0F172A",
-      fontSize: 10,
-      fontWeight: "900",
-    },
-
-    totalRow: {
-      flexDirection: "row",
-      justifyContent:
-        "space-between",
-      alignItems: "center",
-      marginTop: 10,
-      paddingTop: 10,
-      borderTopWidth: 1,
-      borderTopColor:
-        "#E2E8F0",
-    },
-
-    totalLabel: {
-      color: "#64748B",
-      fontSize: 10,
-      fontWeight: "800",
-    },
-
-    totalValue: {
-      color: "#15803D",
-      fontSize: 13,
-      fontWeight: "900",
-    },
-
-    referenceText: {
-      marginBottom: 9,
-      color: "#64748B",
-      fontSize: 9,
-      fontWeight: "700",
-    },
-
-    valuesBox: {
-      padding: 11,
-      borderRadius: 11,
-      backgroundColor:
-        "#F8FAFC",
-      marginBottom: 9,
-    },
-
-    valueRow: {
-      flexDirection: "row",
-      justifyContent:
-        "space-between",
-      gap: 12,
-      paddingVertical: 7,
-      borderBottomWidth: 1,
-      borderBottomColor:
-        "#E2E8F0",
-    },
-
-    valueName: {
-      flex: 1,
-      color: "#475569",
-      fontSize: 10,
-      fontWeight: "700",
-    },
-
-    valueText: {
-      color: "#0F172A",
-      fontSize: 10,
-      fontWeight: "900",
-      textAlign: "right",
-    },
-
-    observationBox: {
-      padding: 11,
-      borderRadius: 11,
-      backgroundColor:
-        "#EFF6FF",
-    },
-
-    observationText: {
-      color: "#334155",
-      fontSize: 10,
-      lineHeight: 16,
-    },
-
-    muted: {
-      color: "#94A3B8",
-      fontSize: 10,
-    },
-
-    emptyCard: {
-      padding: 24,
-      borderRadius: 15,
-      backgroundColor:
-        "#FFFFFF",
-      borderWidth: 1,
-      borderColor:
-        "#E2E8F0",
-      alignItems: "center",
-    },
-
-    emptyIcon: {
-      fontSize: 30,
-    },
-
-    emptyTitle: {
-      marginTop: 7,
-      color: "#334155",
-      fontSize: 15,
-      fontWeight: "900",
-    },
-
-    emptyText: {
-      marginTop: 4,
-      color: "#64748B",
-      fontSize: 10,
-      lineHeight: 16,
-      textAlign: "center",
-    },
-  });
+
+// =====================================================
+
+// ESTILOS
+
+// =====================================================
+
+
+
+const styles = StyleSheet.create({
+
+  contenedor: {
+
+    flex: 1,
+
+    backgroundColor: "#F1F5F9",
+
+  },
+
+
+
+  contenido: {
+
+    padding: 16,
+
+    paddingBottom: 45,
+
+  },
+
+
+
+  cargando: {
+
+    flex: 1,
+
+    justifyContent: "center",
+
+    alignItems: "center",
+
+    backgroundColor: "#F1F5F9",
+
+  },
+
+
+
+  textoCargando: {
+
+    color: "#19385F",
+
+    fontSize: 14,
+
+    textAlign: "center",
+
+    marginTop: 12,
+
+  },
+
+
+
+  encabezado: {
+
+    backgroundColor: "#19385F",
+
+    borderRadius: 16,
+
+    padding: 20,
+
+    marginBottom: 16,
+
+  },
+
+
+
+  botonVolver: {
+
+    alignSelf: "flex-start",
+
+    backgroundColor: "#FFFFFF",
+
+    paddingHorizontal: 15,
+
+    paddingVertical: 10,
+
+    borderRadius: 9,
+
+    marginBottom: 15,
+
+  },
+
+
+
+  botonVolverTexto: {
+
+    color: "#19385F",
+
+    fontWeight: "800",
+
+    fontSize: 13,
+
+  },
+
+
+
+  titulo: {
+
+    fontSize: 24,
+
+    fontWeight: "800",
+
+    color: "#FFFFFF",
+
+    marginBottom: 8,
+
+  },
+
+
+
+  subtitulo: {
+
+    fontSize: 13,
+
+    color: "#DBEAFE",
+
+    lineHeight: 20,
+
+  },
+
+
+
+  panel: {
+
+    backgroundColor: "#FFFFFF",
+
+    borderRadius: 14,
+
+    padding: 17,
+
+    marginBottom: 15,
+
+    borderWidth: 1,
+
+    borderColor: "#E2E8F0",
+
+  },
+
+
+
+  tituloSeccion: {
+
+    fontSize: 17,
+
+    fontWeight: "800",
+
+    color: "#19385F",
+
+    marginBottom: 15,
+
+  },
+
+
+
+  encabezadoSeccion: {
+
+    flexDirection: "row",
+
+    justifyContent: "space-between",
+
+    alignItems: "center",
+
+    marginBottom: 10,
+
+  },
+
+
+
+  contador: {
+
+    backgroundColor: "#DBEAFE",
+
+    paddingHorizontal: 12,
+
+    paddingVertical: 5,
+
+    borderRadius: 20,
+
+  },
+
+
+
+  contadorTexto: {
+
+    color: "#1D4ED8",
+
+    fontWeight: "800",
+
+    fontSize: 13,
+
+  },
+
+
+
+  input: {
+
+    backgroundColor: "#F8FAFC",
+
+    borderWidth: 1,
+
+    borderColor: "#CBD5E1",
+
+    borderRadius: 10,
+
+    paddingHorizontal: 14,
+
+    paddingVertical: 13,
+
+    fontSize: 14,
+
+    color: "#19385F",
+
+    marginBottom: 12,
+
+  },
+
+
+
+  textoContador: {
+
+    fontSize: 12,
+
+    color: "#64748B",
+
+    marginBottom: 15,
+
+  },
+
+
+
+  tarjetaPaciente: {
+
+    backgroundColor: "#F8FAFC",
+
+    borderWidth: 1,
+
+    borderColor: "#DBEAFE",
+
+    borderRadius: 12,
+
+    padding: 16,
+
+    marginBottom: 12,
+
+  },
+
+
+
+  nombrePaciente: {
+
+    fontSize: 16,
+
+    fontWeight: "800",
+
+    color: "#19385F",
+
+    marginBottom: 10,
+
+  },
+
+
+
+  nombrePacienteGrande: {
+
+    fontSize: 21,
+
+    fontWeight: "800",
+
+    color: "#19385F",
+
+    marginBottom: 15,
+
+  },
+
+
+
+  dato: {
+
+    fontSize: 13,
+
+    color: "#475569",
+
+    marginBottom: 8,
+
+  },
+
+
+
+  botones: {
+
+    flexDirection: "row",
+
+    flexWrap: "wrap",
+
+    gap: 10,
+
+    marginTop: 12,
+
+  },
+
+
+
+  botonPrincipal: {
+
+    backgroundColor: "#2563EB",
+
+    paddingHorizontal: 17,
+
+    paddingVertical: 13,
+
+    borderRadius: 9,
+
+    alignSelf: "flex-start",
+
+    marginTop: 10,
+
+    alignItems: "center",
+
+  },
+
+
+
+  botonPrincipalTexto: {
+
+    color: "#FFFFFF",
+
+    fontSize: 13,
+
+    fontWeight: "800",
+
+  },
+
+
+
+  botonSecundario: {
+
+    backgroundColor: "#E2E8F0",
+
+    paddingHorizontal: 17,
+
+    paddingVertical: 13,
+
+    borderRadius: 9,
+
+    alignSelf: "flex-start",
+
+    marginTop: 10,
+
+  },
+
+
+
+  botonSecundarioTexto: {
+
+    color: "#19385F",
+
+    fontSize: 13,
+
+    fontWeight: "800",
+
+  },
+
+
+
+  tarjetaRegistro: {
+
+    backgroundColor: "#F8FAFC",
+
+    borderWidth: 1,
+
+    borderColor: "#DBEAFE",
+
+    borderRadius: 11,
+
+    padding: 14,
+
+    marginBottom: 12,
+
+  },
+
+
+
+  tituloRegistro: {
+
+    fontSize: 14,
+
+    fontWeight: "800",
+
+    color: "#1D4ED8",
+
+    marginBottom: 12,
+
+  },
+
+
+
+  filaDato: {
+
+    marginBottom: 9,
+
+    borderBottomWidth: 1,
+
+    borderBottomColor: "#E2E8F0",
+
+    paddingBottom: 7,
+
+  },
+
+
+
+  etiquetaDato: {
+
+    fontSize: 11,
+
+    color: "#64748B",
+
+    fontWeight: "700",
+
+    marginBottom: 4,
+
+  },
+
+
+
+  valorDato: {
+
+    fontSize: 13,
+
+    color: "#19385F",
+
+  },
+
+
+
+  resumenContenedor: {
+
+    flexDirection: "row",
+
+    flexWrap: "wrap",
+
+    gap: 10,
+
+  },
+
+
+
+  resumenItem: {
+
+    backgroundColor: "#EFF6FF",
+
+    borderRadius: 10,
+
+    padding: 13,
+
+    flexBasis: "45%",
+
+    flexGrow: 1,
+
+    alignItems: "center",
+
+  },
+
+
+
+  resumenNumero: {
+
+    fontSize: 23,
+
+    fontWeight: "800",
+
+    color: "#19385F",
+
+  },
+
+
+
+  resumenTexto: {
+
+    fontSize: 11,
+
+    color: "#64748B",
+
+    marginTop: 6,
+
+    textAlign: "center",
+
+  },
+
+
+
+  error: {
+
+    backgroundColor: "#FEF2F2",
+
+    borderWidth: 1,
+
+    borderColor: "#FECACA",
+
+    borderRadius: 11,
+
+    padding: 15,
+
+    marginBottom: 15,
+
+  },
+
+
+
+  errorTexto: {
+
+    color: "#B91C1C",
+
+    fontSize: 14,
+
+    fontWeight: "800",
+
+    marginBottom: 6,
+
+  },
+
+
+
+  errorDetalle: {
+
+    color: "#991B1B",
+
+    fontSize: 12,
+
+    lineHeight: 19,
+
+  },
+
+
+
+  sinDatos: {
+
+    fontSize: 13,
+
+    color: "#64748B",
+
+    textAlign: "center",
+
+    paddingVertical: 18,
+
+  },
+
+});

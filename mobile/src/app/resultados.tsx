@@ -1,5 +1,5 @@
-
 import React, { useEffect, useState } from "react";
+
 import {
   View,
   Text,
@@ -8,7 +8,9 @@ import {
 } from "react-native";
 
 import { Redirect } from "expo-router";
+
 import { onAuthStateChanged } from "firebase/auth";
+
 import { doc, getDoc } from "firebase/firestore";
 
 import { auth, db } from "../firebase/firebase";
@@ -124,7 +126,7 @@ export default function Resultados() {
     );
   }
 
-  // ADMINISTRADOR: CONSULTA DE MUESTRAS
+  // ADMINISTRADOR: CONSULTA DE RESULTADOS
   if (
     rol === "administrador" ||
     rol === "administrador del laboratorio" ||

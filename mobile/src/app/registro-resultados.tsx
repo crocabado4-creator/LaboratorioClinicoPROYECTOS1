@@ -401,14 +401,6 @@ export default function RegistroResultados() {
   ] = useState<Resultado | null>(null);
 
   const [
-    valorResultado,
-    setValorResultado,
-  ] = useState("");
-
-  const [unidad, setUnidad] =
-    useState("");
-
-  const [
     observaciones,
     setObservaciones,
   ] = useState("");
@@ -594,21 +586,11 @@ export default function RegistroResultados() {
         resultadoExistente
       );
 
-      setValorResultado(
-        resultadoExistente.valorResultado
-      );
-
-      setUnidad(
-        resultadoExistente.unidad
-      );
-
       setObservaciones(
         resultadoExistente.observaciones
       );
     } else {
       setResultadoSeleccionado(null);
-      setValorResultado("");
-      setUnidad("");
       setObservaciones("");
     }
 
@@ -618,8 +600,6 @@ export default function RegistroResultados() {
   const limpiarFormulario = (): void => {
     setMuestraSeleccionada(null);
     setResultadoSeleccionado(null);
-    setValorResultado("");
-    setUnidad("");
     setObservaciones("");
   };
 
@@ -646,14 +626,12 @@ export default function RegistroResultados() {
           );
         }
 
+        // La interfaz ya no solicita valores numéricos ni unidades.
+        // Se conserva el campo heredado para compatibilidad con
+        // documentos y reglas existentes de Firestore.
         const valor =
-          valorResultado.trim();
-
-        if (!valor) {
-          throw new Error(
-            "Debes ingresar el valor del resultado."
-          );
-        }
+          resultadoSeleccionado?.valorResultado ||
+          "Resultado registrado";
 
         if (
           muestraSeleccionada.estado !==
@@ -816,7 +794,7 @@ export default function RegistroResultados() {
                   valorResultado: valor,
 
                   unidad:
-                    unidad.trim(),
+                    resultadoSeleccionado?.unidad || "",
 
                   observaciones:
                     observaciones.trim(),
@@ -870,7 +848,7 @@ export default function RegistroResultados() {
                   valorResultado: valor,
 
                   unidad:
-                    unidad.trim(),
+                    resultadoSeleccionado?.unidad || "",
 
                   observaciones:
                     observaciones.trim(),
@@ -1381,34 +1359,6 @@ export default function RegistroResultados() {
           </Text>
 
           <Text style={styles.etiqueta}>
-            Valor del resultado *
-          </Text>
-
-          <TextInput
-            style={styles.input}
-            placeholder="Ejemplo: 12.5"
-            placeholderTextColor="#94A3B8"
-            value={valorResultado}
-            onChangeText={
-              setValorResultado
-            }
-            editable={!guardando}
-          />
-
-          <Text style={styles.etiqueta}>
-            Unidad
-          </Text>
-
-          <TextInput
-            style={styles.input}
-            placeholder="Ejemplo: g/dL"
-            placeholderTextColor="#94A3B8"
-            value={unidad}
-            onChangeText={setUnidad}
-            editable={!guardando}
-          />
-
-          <Text style={styles.etiqueta}>
             Observaciones
           </Text>
 
@@ -1504,23 +1454,6 @@ export default function RegistroResultados() {
                   >
                     CI:{" "}
                     {paciente?.ci ||
-                      "-"}
-                  </Text>
-
-                  <Text
-                    style={styles.dato}
-                  >
-                    Valor:{" "}
-                    {
-                      resultado.valorResultado
-                    }
-                  </Text>
-
-                  <Text
-                    style={styles.dato}
-                  >
-                    Unidad:{" "}
-                    {resultado.unidad ||
                       "-"}
                   </Text>
 

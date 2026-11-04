@@ -770,17 +770,27 @@ export default function AdministradoresScreen() {
         );
 
       } catch (error) {
-        console.error(
-          "Error guardando administrador:",
-          error
-        );
+        const codigo =
+          typeof error === "object" && error !== null && "code" in error
+            ? String(error.code)
+            : "";
+        const mensajeOriginal =
+          error instanceof Error
+            ? error.message
+            : "No se pudo guardar el administrador.";
+        const duplicado =
+          codigo === "auth/email-already-in-use" ||
+          /email-already-in-use|ya existe un usuario registrado|correo ya est[aá] registrado|correo ya est[aá] siendo utilizado/i.test(mensajeOriginal);
 
+        // Un correo duplicado es una validación esperada, no un error de consola.
+        if (!duplicado) {
+          console.warn("No se pudo guardar el administrador:", mensajeOriginal);
+        }
         mostrarMensaje(
           "error",
-          error instanceof
-          Error
-            ? error.message
-            : "No se pudo guardar el administrador."
+          duplicado
+            ? "Correo electrónico ya registrado. Este correo ya está siendo utilizado por otra cuenta. Ingresa un correo diferente."
+            : mensajeOriginal
         );
 
       } finally {
@@ -1826,6 +1836,25 @@ export default function AdministradoresScreen() {
                   cerrarFormulario
                 }
               />
+
+              {mensaje?.tipo === "error" && (
+                <View
+                  style={{
+                    backgroundColor: "#FEF2F2",
+                    borderColor: "#FCA5A5",
+                    borderWidth: 1,
+                    borderRadius: 10,
+                    padding: 14,
+                    marginTop: 12,
+                    marginBottom: 12,
+                  }}
+                >
+                  <Text style={{ color: "#991B1B", fontWeight: "700" }}>
+                    {mensaje.texto}
+                  </Text>
+                </View>
+              )}
+
 
               <Campo
                 titulo="Nombre *"

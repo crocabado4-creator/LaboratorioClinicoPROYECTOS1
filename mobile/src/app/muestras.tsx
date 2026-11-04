@@ -27,7 +27,10 @@ import {
   doc,
   getDoc,
   getDocs,
+  onSnapshot,
   query,
+  serverTimestamp,
+  updateDoc,
   where,
 } from "firebase/firestore";
 
@@ -40,6 +43,10 @@ import {
   type Muestra as MuestraFirestore,
   type OrdenParaMuestra,
 } from "../services/muestrasService";
+
+// =====================================================
+// TIPOS
+// =====================================================
 
 type Orden = {
   id: string;
@@ -71,9 +78,37 @@ type Muestra = {
   registradoPor: string;
 };
 
+type NuevaToma = {
+  id: string;
+  muestraOriginalId: string;
+  laboratorioId: string;
+  pacienteId: string;
+  paciente: string;
+  analisisId: string;
+  analisis: string;
+  ordenId: string;
+  codigoMuestra: string;
+  motivoRechazo: string;
+  estado: string;
+  fechaSolicitud: string;
+};
+
 type Selector = "orden" | "analisis" | "tipo" | null;
 
-type Filtro = "todas" | "pendientes" | "aceptadas" | "rechazadas";
+type Filtro =
+  | "todas"
+  | "pendientes"
+  | "aceptadas"
+  | "rechazadas";
+
+type Sesion = {
+  uid: string;
+  laboratorioId: string;
+};
+
+// =====================================================
+// CONSTANTES
+// =====================================================
 
 const TIPOS_MUESTRA = [
   "Sangre",
@@ -110,6 +145,10 @@ const FILTROS: {
   { id: "aceptadas", nombre: "Aceptadas" },
   { id: "rechazadas", nombre: "Rechazadas" },
 ];
+
+// =====================================================
+// FUNCIONES AUXILIARES
+// =====================================================
 
 function texto(valor: unknown): string {
   return String(valor ?? "").trim();
@@ -154,7 +193,10 @@ function formatearFecha(valor: unknown): string {
   return "No registrada";
 }
 
-function aviso(titulo: string, mensaje: string): void {
+function aviso(
+  titulo: string,
+  mensaje: string
+): void {
   if (Platform.OS === "web") {
     if (typeof window !== "undefined") {
       window.alert(`${titulo}\n\n${mensaje}`);
@@ -177,14 +219,22 @@ function mensajeError(error: unknown): string {
     codigo === "permission-denied" ||
     codigo === "firestore/permission-denied"
   ) {
-    return "No tienes permisos para realizar esta operación en Firestore.";
+    return (
+      "Firestore rechazó la operación. " +
+      "Verifica los permisos del Bioquímico " +
+      "y que los documentos pertenezcan " +
+      "al laboratorio actual."
+    );
   }
 
   if (
     codigo === "unavailable" ||
     codigo === "firestore/unavailable"
   ) {
-    return "No se pudo conectar con Firebase. Comprueba tu conexión a Internet.";
+    return (
+      "No se pudo conectar con Firebase. " +
+      "Comprueba tu conexión a Internet."
+    );
   }
 
   if (error instanceof Error) {
@@ -231,6 +281,7 @@ function estadoLegible(estado: string): string {
     en_proceso: "En proceso",
     procesada: "Procesada",
     validada: "Validada",
+    atendida: "Atendida",
   };
 
   return estados[estado] || estado || "Sin estado";
@@ -247,7 +298,8 @@ function obtenerColorEstado(estado: string) {
   if (
     estado === "aceptada" ||
     estado === "procesada" ||
-    estado === "validada"
+    estado === "validada" ||
+    estado === "atendida"
   ) {
     return {
       fondo: "#DCFCE7",
@@ -275,26 +327,109 @@ function estaPendiente(muestra: Muestra): boolean {
   );
 }
 
+async function obtenerSesion(): Promise<Sesion> {
+  const usuario = getAuth().currentUser;
+
+  if (!usuario) {
+    throw new Error("Debes iniciar sesión.");
+  }
+
+  const usuarioDoc = await getDoc(
+    doc(db, "usuarios", usuario.uid)
+  );
+
+  if (!usuarioDoc.exists()) {
+    throw new Error(
+      "No se encontró tu usuario en Firestore."
+    );
+  }
+
+  const datos = usuarioDoc.data();
+
+  if (datos.activo !== true) {
+    throw new Error("Tu cuenta está inactiva.");
+  }
+
+  const rol = texto(datos.rol).toLowerCase();
+
+  if (
+    rol !== "bioquimico" &&
+    rol !== "bioquímico"
+  ) {
+    throw new Error(
+      "Solo el Bioquímico puede gestionar muestras."
+    );
+  }
+
+  const laboratorioId = texto(datos.laboratorioId);
+
+  if (!laboratorioId) {
+    throw new Error(
+      "No tienes un laboratorio asignado."
+    );
+  }
+
+  return {
+    uid: usuario.uid,
+    laboratorioId,
+  };
+}
+
+// =====================================================
+// PANTALLA PRINCIPAL
+// =====================================================
+
 export default function GestionMuestrasScreen() {
   const [ordenes, setOrdenes] = useState<Orden[]>([]);
   const [analisis, setAnalisis] = useState<Analisis[]>([]);
   const [muestras, setMuestras] = useState<Muestra[]>([]);
 
+  const [nuevasTomas, setNuevasTomas] = useState<
+    NuevaToma[]
+  >([]);
+
+  const [sesion, setSesion] = useState<Sesion | null>(
+    null
+  );
+
   const [ordenId, setOrdenId] = useState("");
   const [analisisId, setAnalisisId] = useState("");
   const [tipoMuestra, setTipoMuestra] = useState("");
 
-  const [selector, setSelector] = useState<Selector>(null);
-  const [detalle, setDetalle] = useState<Muestra | null>(null);
+  const [selector, setSelector] = useState<Selector>(
+    null
+  );
+
+  const [detalle, setDetalle] = useState<Muestra | null>(
+    null
+  );
 
   const [busqueda, setBusqueda] = useState("");
-  const [filtro, setFiltro] = useState<Filtro>("todas");
+  const [busquedaNuevas, setBusquedaNuevas] =
+    useState("");
+
+  const [filtro, setFiltro] = useState<Filtro>(
+    "todas"
+  );
 
   const [cargando, setCargando] = useState(true);
-  const [actualizando, setActualizando] = useState(false);
+  const [cargandoNuevas, setCargandoNuevas] =
+    useState(true);
+
+  const [actualizando, setActualizando] =
+    useState(false);
+
   const [guardando, setGuardando] = useState(false);
 
+  const [solicitudSeleccionada, setSolicitudSeleccionada] =
+    useState<NuevaToma | null>(null);
+
   const [error, setError] = useState("");
+  const [errorNuevas, setErrorNuevas] = useState("");
+
+  // =====================================================
+  // CARGAR ÓRDENES, ANÁLISIS Y MUESTRAS
+  // =====================================================
 
   const cargarDatos = useCallback(
     async (mostrarCarga = true) => {
@@ -305,52 +440,12 @@ export default function GestionMuestrasScreen() {
 
         setError("");
 
-        const usuario = getAuth().currentUser;
+        const sesionActual = await obtenerSesion();
 
-        if (!usuario) {
-          throw new Error("Debes iniciar sesión.");
-        }
+        setSesion(sesionActual);
 
-        const usuarioDoc = await getDoc(
-          doc(db, "usuarios", usuario.uid)
-        );
-
-        if (!usuarioDoc.exists()) {
-          throw new Error(
-            "No se encontró tu usuario en Firestore."
-          );
-        }
-
-        const datosUsuario = usuarioDoc.data();
-
-        if (datosUsuario.activo !== true) {
-          throw new Error(
-            "Tu cuenta está inactiva."
-          );
-        }
-
-        const rol = texto(
-          datosUsuario.rol
-        ).toLowerCase();
-
-        if (
-          rol !== "bioquimico" &&
-          rol !== "bioquímico"
-        ) {
-          throw new Error(
-            "Solo el Bioquímico puede gestionar muestras."
-          );
-        }
-
-        const laboratorioId = texto(
-          datosUsuario.laboratorioId
-        );
-
-        if (!laboratorioId) {
-          throw new Error(
-            "No tienes un laboratorio asignado."
-          );
-        }
+        const laboratorioId =
+          sesionActual.laboratorioId;
 
         const [
           ordenesFirestore,
@@ -436,13 +531,11 @@ export default function GestionMuestrasScreen() {
             }
 
             const nombres = texto(
-              paciente.nombres ||
-                paciente.nombre
+              paciente.nombres || paciente.nombre
             );
 
             const apellidos = texto(
-              paciente.apellidos ||
-                paciente.apellido
+              paciente.apellidos || paciente.apellido
             );
 
             const nombreCompleto =
@@ -483,19 +576,16 @@ export default function GestionMuestrasScreen() {
                     )
                   );
 
-                const ids = extraerIds(
-                  datos.analisis ||
-                    datos.analisisIds ||
+                const ids = [
+                  ...extraerIds(datos.analisis),
+                  ...extraerIds(datos.analisisIds),
+                  ...extraerIds(
                     datos.analisisSolicitados
-                );
+                  ),
+                ];
 
-                if (
-                  ids.length === 0 &&
-                  texto(datos.analisisId)
-                ) {
-                  ids.push(
-                    texto(datos.analisisId)
-                  );
+                if (texto(datos.analisisId)) {
+                  ids.push(texto(datos.analisisId));
                 }
 
                 return {
@@ -507,7 +597,9 @@ export default function GestionMuestrasScreen() {
                     ) || orden.id,
                   pacienteId,
                   paciente,
-                  analisisIds: ids,
+                  analisisIds: Array.from(
+                    new Set(ids)
+                  ),
                 };
               }
             )
@@ -531,9 +623,7 @@ export default function GestionMuestrasScreen() {
                     Record<string, any>;
 
                 const orden =
-                  ordenesPorId.get(
-                    muestra.ordenId
-                  );
+                  ordenesPorId.get(muestra.ordenId);
 
                 const pacienteId = texto(
                   muestra.pacienteId ||
@@ -559,9 +649,7 @@ export default function GestionMuestrasScreen() {
                     datos.analisisNombre ||
                       datos.nombreAnalisis
                   ) ||
-                  mapaAnalisis.get(
-                    idAnalisis
-                  ) ||
+                  mapaAnalisis.get(idAnalisis) ||
                   idAnalisis ||
                   "Sin análisis";
 
@@ -572,34 +660,29 @@ export default function GestionMuestrasScreen() {
                       datos.codigo ||
                         datos.codigoMuestra
                     ) || muestra.id,
-                  ordenId: texto(
-                    muestra.ordenId
-                  ),
+                  ordenId: texto(muestra.ordenId),
                   pacienteId,
                   paciente,
                   analisisId: idAnalisis,
                   analisis: nombreAnalisis,
                   tipoMuestra:
-                    texto(
-                      muestra.tipoMuestra
-                    ) || "No especificado",
+                    texto(muestra.tipoMuestra) ||
+                    "No especificado",
                   estado:
                     texto(muestra.estado) ||
                     "tomada",
                   estadoValidacion:
-                    texto(
-                      muestra.estadoValidacion
-                    ) || "pendiente",
+                    texto(muestra.estadoValidacion) ||
+                    "pendiente",
                   aceptada:
                     muestra.aceptada === true,
                   motivoRechazo: texto(
                     muestra.motivoRechazo
                   ),
-                  fechaToma:
-                    formatearFecha(
-                      datos.fechaToma ||
-                        datos.fechaRegistro
-                    ),
+                  fechaToma: formatearFecha(
+                    datos.fechaToma ||
+                      datos.fechaRegistro
+                  ),
                   registradoPor: texto(
                     muestra.registradoPor
                   ),
@@ -619,8 +702,7 @@ export default function GestionMuestrasScreen() {
 
           return (
             listaMuestras.find(
-              (item) =>
-                item.id === anterior.id
+              (item) => item.id === anterior.id
             ) || null
           );
         });
@@ -634,17 +716,228 @@ export default function GestionMuestrasScreen() {
     []
   );
 
+  // =====================================================
+  // CARGAR NUEVAS TOMAS
+  // =====================================================
+
+  const cargarNuevasTomas = useCallback(
+    async (laboratorioId: string) => {
+      try {
+        setErrorNuevas("");
+
+        const solicitudesSnapshot = await getDocs(
+          query(
+            collection(
+              db,
+              "solicitudesNuevaToma"
+            ),
+            where(
+              "laboratorioId",
+              "==",
+              laboratorioId
+            )
+          )
+        );
+
+        const solicitudesPendientes =
+          solicitudesSnapshot.docs.filter(
+            (documento) =>
+              texto(documento.data().estado) ===
+              "pendiente"
+          );
+
+        const lista = await Promise.all(
+          solicitudesPendientes.map(
+            async (documento): Promise<NuevaToma> => {
+              const datos = documento.data();
+
+              const pacienteId = texto(
+                datos.pacienteId
+              );
+
+              const analisisId = texto(
+                datos.analisisId
+              );
+
+              let paciente =
+                texto(datos.pacienteNombre) ||
+                "Paciente no disponible";
+
+              let nombreAnalisis =
+                texto(datos.analisisNombre) ||
+                "Análisis no disponible";
+
+              if (pacienteId) {
+                try {
+                  const pacienteDoc = await getDoc(
+                    doc(
+                      db,
+                      "pacientes",
+                      pacienteId
+                    )
+                  );
+
+                  if (pacienteDoc.exists()) {
+                    const datosPaciente =
+                      pacienteDoc.data();
+
+                    if (
+                      texto(
+                        datosPaciente.laboratorioId
+                      ) === laboratorioId
+                    ) {
+                      const nombres = texto(
+                        datosPaciente.nombres ||
+                          datosPaciente.nombre
+                      );
+
+                      const apellidos = texto(
+                        datosPaciente.apellidos ||
+                          datosPaciente.apellido
+                      );
+
+                      paciente =
+                        `${nombres} ${apellidos}`.trim() ||
+                        pacienteId;
+                    }
+                  }
+                } catch {
+                  paciente = pacienteId;
+                }
+              }
+
+              if (analisisId) {
+                try {
+                  const analisisDoc = await getDoc(
+                    doc(
+                      db,
+                      "analisis",
+                      analisisId
+                    )
+                  );
+
+                  if (analisisDoc.exists()) {
+                    const datosAnalisis =
+                      analisisDoc.data();
+
+                    if (
+                      texto(
+                        datosAnalisis.laboratorioId
+                      ) === laboratorioId
+                    ) {
+                      nombreAnalisis =
+                        texto(
+                          datosAnalisis.nombre ||
+                            datosAnalisis.nombreAnalisis
+                        ) || analisisId;
+                    }
+                  }
+                } catch {
+                  nombreAnalisis = analisisId;
+                }
+              }
+
+              return {
+                id: documento.id,
+                muestraOriginalId: texto(
+                  datos.muestraOriginalId
+                ),
+                laboratorioId: texto(
+                  datos.laboratorioId
+                ),
+                pacienteId,
+                paciente,
+                analisisId,
+                analisis: nombreAnalisis,
+                ordenId: texto(datos.ordenId),
+                codigoMuestra: texto(
+                  datos.codigoMuestra
+                ),
+                motivoRechazo: texto(
+                  datos.motivoRechazo
+                ),
+                estado: texto(datos.estado),
+                fechaSolicitud: formatearFecha(
+                  datos.fechaSolicitud
+                ),
+              };
+            }
+          )
+        );
+
+        setNuevasTomas(lista);
+      } catch (e: unknown) {
+        setErrorNuevas(mensajeError(e));
+      } finally {
+        setCargandoNuevas(false);
+      }
+    },
+    []
+  );
+
+  // =====================================================
+  // EFECTOS
+  // =====================================================
+
   useEffect(() => {
     void cargarDatos();
   }, [cargarDatos]);
 
-  const actualizar = useCallback(
-    async () => {
-      setActualizando(true);
-      await cargarDatos(false);
-    },
-    [cargarDatos]
-  );
+  useEffect(() => {
+    if (!sesion?.laboratorioId) {
+      return;
+    }
+
+    const laboratorioId = sesion.laboratorioId;
+
+    setCargandoNuevas(true);
+
+    const consulta = query(
+      collection(db, "solicitudesNuevaToma"),
+      where(
+        "laboratorioId",
+        "==",
+        laboratorioId
+      )
+    );
+
+    const cancelar = onSnapshot(
+      consulta,
+      () => {
+        void cargarNuevasTomas(laboratorioId);
+      },
+      (e) => {
+        setErrorNuevas(mensajeError(e));
+        setCargandoNuevas(false);
+      }
+    );
+
+    return () => cancelar();
+  }, [sesion?.laboratorioId, cargarNuevasTomas]);
+
+  // =====================================================
+  // ACTUALIZAR
+  // =====================================================
+
+  const actualizar = useCallback(async () => {
+    setActualizando(true);
+
+    await cargarDatos(false);
+
+    if (sesion?.laboratorioId) {
+      await cargarNuevasTomas(
+        sesion.laboratorioId
+      );
+    }
+  }, [
+    cargarDatos,
+    cargarNuevasTomas,
+    sesion?.laboratorioId,
+  ]);
+
+  // =====================================================
+  // SELECCIONES
+  // =====================================================
 
   const ordenSeleccionada = useMemo(
     () =>
@@ -673,6 +966,10 @@ export default function GestionMuestrasScreen() {
       ),
     [analisis, analisisId]
   );
+
+  // =====================================================
+  // ÓRDENES PENDIENTES
+  // =====================================================
 
   const ordenesPendientes = useMemo(() => {
     return ordenes.filter((orden) =>
@@ -712,6 +1009,10 @@ export default function GestionMuestrasScreen() {
       ).length,
     [muestras]
   );
+
+  // =====================================================
+  // FILTROS DE MUESTRAS
+  // =====================================================
 
   const muestrasFiltradas = useMemo(() => {
     const termino = busqueda
@@ -765,6 +1066,40 @@ export default function GestionMuestrasScreen() {
     });
   }, [muestras, filtro, busqueda]);
 
+  // =====================================================
+  // FILTROS DE NUEVAS TOMAS
+  // =====================================================
+
+  const nuevasTomasFiltradas = useMemo(() => {
+    const termino = busquedaNuevas
+      .trim()
+      .toLowerCase();
+
+    return nuevasTomas.filter((item) => {
+      if (!termino) {
+        return true;
+      }
+
+      const contenido = [
+        item.paciente,
+        item.pacienteId,
+        item.analisis,
+        item.analisisId,
+        item.ordenId,
+        item.codigoMuestra,
+        item.motivoRechazo,
+      ]
+        .join(" ")
+        .toLowerCase();
+
+      return contenido.includes(termino);
+    });
+  }, [nuevasTomas, busquedaNuevas]);
+
+  // =====================================================
+  // ÓRDENES DISPONIBLES
+  // =====================================================
+
   const ordenesDisponibles = useMemo(() => {
     return ordenes.filter((orden) =>
       orden.analisisIds.some(
@@ -799,6 +1134,72 @@ export default function GestionMuestrasScreen() {
     muestras,
     ordenSeleccionada,
   ]);
+
+  // =====================================================
+  // SELECCIONAR NUEVA TOMA
+  // =====================================================
+
+  const seleccionarNuevaToma = (
+    solicitud: NuevaToma
+  ) => {
+    if (guardando) {
+      return;
+    }
+
+    const orden = ordenes.find(
+      (item) => item.id === solicitud.ordenId
+    );
+
+    if (!orden) {
+      aviso(
+        "Orden no disponible",
+        "No se encontró la orden vinculada a esta solicitud."
+      );
+      return;
+    }
+
+    if (
+      !orden.analisisIds.includes(
+        solicitud.analisisId
+      )
+    ) {
+      aviso(
+        "Análisis no disponible",
+        "El análisis solicitado no está registrado en esta orden."
+      );
+      return;
+    }
+
+    const muestraActiva = muestras.some(
+      (muestra) =>
+        muestra.ordenId === solicitud.ordenId &&
+        muestra.analisisId === solicitud.analisisId &&
+        muestra.estado !== "rechazada"
+    );
+
+    if (muestraActiva) {
+      aviso(
+        "Muestra existente",
+        "Este análisis ya tiene una muestra activa."
+      );
+      return;
+    }
+
+    setSolicitudSeleccionada(solicitud);
+
+    setOrdenId(solicitud.ordenId);
+    setAnalisisId(solicitud.analisisId);
+    setTipoMuestra("");
+
+    aviso(
+      "Nueva toma seleccionada",
+      "Selecciona el tipo de muestra y presiona Registrar muestra."
+    );
+  };
+
+  // =====================================================
+  // REGISTRAR MUESTRA
+  // =====================================================
 
   const registrar = async () => {
     if (guardando) {
@@ -855,17 +1256,97 @@ export default function GestionMuestrasScreen() {
     try {
       setGuardando(true);
 
+      const sesionActual = await obtenerSesion();
+
+      if (solicitudSeleccionada) {
+        const solicitudDoc = await getDoc(
+          doc(
+            db,
+            "solicitudesNuevaToma",
+            solicitudSeleccionada.id
+          )
+        );
+
+        if (!solicitudDoc.exists()) {
+          throw new Error(
+            "La solicitud de nueva toma ya no existe."
+          );
+        }
+
+        const datosSolicitud =
+          solicitudDoc.data();
+
+        if (
+          texto(datosSolicitud.laboratorioId) !==
+            sesionActual.laboratorioId ||
+          texto(datosSolicitud.estado) !==
+            "pendiente" ||
+          texto(datosSolicitud.ordenId) !==
+            ordenId ||
+          texto(datosSolicitud.analisisId) !==
+            analisisId
+        ) {
+          throw new Error(
+            "La solicitud cambió de estado o no corresponde a esta muestra."
+          );
+        }
+      }
+
+      // Registrar primero la muestra.
       await registrarMuestra({
         ordenId,
         analisisId,
         tipoMuestra,
       });
 
+      // Solo después de registrar correctamente,
+      // marcar la solicitud como atendida.
+      if (solicitudSeleccionada) {
+        try {
+          await updateDoc(
+            doc(
+              db,
+              "solicitudesNuevaToma",
+              solicitudSeleccionada.id
+            ),
+            {
+              estado: "atendida",
+              atendidoPor: sesionActual.uid,
+              fechaAtencion: serverTimestamp(),
+            }
+          );
+        } catch (errorActualizacion) {
+          await cargarDatos(false);
+
+          await cargarNuevasTomas(
+            sesionActual.laboratorioId
+          );
+
+          aviso(
+            "Muestra registrada",
+            "La muestra se registró, pero no se pudo marcar la solicitud como atendida. " +
+              mensajeError(errorActualizacion)
+          );
+
+          setSolicitudSeleccionada(null);
+          setOrdenId("");
+          setAnalisisId("");
+          setTipoMuestra("");
+
+          return;
+        }
+      }
+
+      setSolicitudSeleccionada(null);
       setOrdenId("");
       setAnalisisId("");
       setTipoMuestra("");
 
       await cargarDatos(false);
+
+      await cargarNuevasTomas(
+        sesionActual.laboratorioId
+      );
 
       aviso(
         "Registro exitoso",
@@ -881,21 +1362,38 @@ export default function GestionMuestrasScreen() {
     }
   };
 
+  // =====================================================
+  // CANCELAR NUEVA TOMA SELECCIONADA
+  // =====================================================
+
+  const cancelarSeleccion = () => {
+    setSolicitudSeleccionada(null);
+    setOrdenId("");
+    setAnalisisId("");
+    setTipoMuestra("");
+  };
+
+  // =====================================================
+  // NAVEGACIÓN
+  // =====================================================
+
   const navegar = (ruta: string) => {
     router.push(ruta as any);
   };
 
+  // =====================================================
+  // ESTADOS
+  // =====================================================
+
   const renderEstado = (estado: string) => {
-    const colores =
-      obtenerColorEstado(estado);
+    const colores = obtenerColorEstado(estado);
 
     return (
       <View
         style={[
           styles.estadoBadge,
           {
-            backgroundColor:
-              colores.fondo,
+            backgroundColor: colores.fondo,
           },
         ]}
       >
@@ -913,8 +1411,14 @@ export default function GestionMuestrasScreen() {
     );
   };
 
+  // =====================================================
+  // INTERFAZ
+  // =====================================================
+
   return (
     <View style={styles.contenedor}>
+      {/* NAVEGACIÓN */}
+
       <View style={styles.barraNavegacion}>
         <ScrollView
           horizontal
@@ -955,9 +1459,7 @@ export default function GestionMuestrasScreen() {
       </View>
 
       <ScrollView
-        contentContainerStyle={
-          styles.contenido
-        }
+        contentContainerStyle={styles.contenido}
         keyboardShouldPersistTaps="handled"
         refreshControl={
           <RefreshControl
@@ -968,6 +1470,8 @@ export default function GestionMuestrasScreen() {
           />
         }
       >
+        {/* ENCABEZADO */}
+
         <View style={styles.encabezado}>
           <Pressable
             style={styles.botonVolver}
@@ -978,9 +1482,7 @@ export default function GestionMuestrasScreen() {
             </Text>
           </Pressable>
 
-          <Text
-            style={styles.etiquetaSuperior}
-          >
+          <Text style={styles.etiquetaSuperior}>
             LABORATORIO · BIOQUÍMICO
           </Text>
 
@@ -989,55 +1491,47 @@ export default function GestionMuestrasScreen() {
           </Text>
 
           <Text style={styles.subtitulo}>
-            Registra las muestras de los
-            pacientes y consulta su estado
-            durante el procesamiento.
+            Registra las muestras de los pacientes,
+            consulta sus estados y atiende las
+            nuevas tomas solicitadas por Recepción.
           </Text>
         </View>
 
+        {/* CONTADORES */}
+
         <View style={styles.contadores}>
           <View style={styles.contador}>
-            <Text
-              style={styles.contadorTitulo}
-            >
+            <Text style={styles.contadorTitulo}>
               ÓRDENES
             </Text>
 
-            <Text
-              style={styles.contadorNumero}
-            >
+            <Text style={styles.contadorNumero}>
               {ordenes.length}
             </Text>
           </View>
 
           <View style={styles.contador}>
-            <Text
-              style={styles.contadorTitulo}
-            >
+            <Text style={styles.contadorTitulo}>
               MUESTRAS
             </Text>
 
-            <Text
-              style={styles.contadorNumero}
-            >
+            <Text style={styles.contadorNumero}>
               {muestras.length}
             </Text>
           </View>
 
           <View style={styles.contador}>
-            <Text
-              style={styles.contadorTitulo}
-            >
+            <Text style={styles.contadorTitulo}>
               POR REGISTRAR
             </Text>
 
-            <Text
-              style={styles.contadorNumero}
-            >
+            <Text style={styles.contadorNumero}>
               {ordenesPendientes.length}
             </Text>
           </View>
         </View>
+
+        {/* RESUMEN */}
 
         <View style={styles.resumenEstados}>
           <View style={styles.resumenEstado}>
@@ -1050,9 +1544,7 @@ export default function GestionMuestrasScreen() {
               {pendientesValidacion}
             </Text>
 
-            <Text
-              style={styles.resumenEtiqueta}
-            >
+            <Text style={styles.resumenEtiqueta}>
               Pendientes
             </Text>
           </View>
@@ -1067,9 +1559,7 @@ export default function GestionMuestrasScreen() {
               {aceptadas}
             </Text>
 
-            <Text
-              style={styles.resumenEtiqueta}
-            >
+            <Text style={styles.resumenEtiqueta}>
               Aceptadas
             </Text>
           </View>
@@ -1084,60 +1574,243 @@ export default function GestionMuestrasScreen() {
               {rechazadas}
             </Text>
 
-            <Text
-              style={styles.resumenEtiqueta}
-            >
+            <Text style={styles.resumenEtiqueta}>
               Rechazadas
             </Text>
           </View>
         </View>
 
+        {/* ERRORES */}
+
         {error !== "" && (
-          <View
-            style={styles.errorContenedor}
-          >
+          <View style={styles.errorContenedor}>
             <Text style={styles.error}>
               {error}
             </Text>
 
             <Pressable
-              onPress={() =>
-                cargarDatos()
-              }
+              onPress={() => cargarDatos()}
             >
-              <Text
-                style={styles.reintentar}
-              >
+              <Text style={styles.reintentar}>
                 Reintentar
               </Text>
             </Pressable>
           </View>
         )}
 
+        {/* =================================================
+            NUEVAS TOMAS SOLICITADAS
+        ================================================= */}
+
+        <View style={styles.panel}>
+          <View style={styles.tituloFila}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.panelTitulo}>
+                Nuevas tomas solicitadas
+              </Text>
+
+              <Text style={styles.panelDescripcion}>
+                Muestras rechazadas que Recepción
+                ha reanudado y enviado al
+                Bioquímico para una nueva toma.
+              </Text>
+            </View>
+
+            <View style={styles.contadorNuevas}>
+              <Text style={styles.contadorNuevasTexto}>
+                {nuevasTomas.length}
+              </Text>
+            </View>
+          </View>
+
+          <TextInput
+            style={styles.buscador}
+            placeholder="Buscar paciente, análisis o motivo..."
+            placeholderTextColor="#94A3B8"
+            value={busquedaNuevas}
+            onChangeText={setBusquedaNuevas}
+          />
+
+          {errorNuevas !== "" && (
+            <View style={styles.errorContenedor}>
+              <Text style={styles.error}>
+                {errorNuevas}
+              </Text>
+
+              <Pressable
+                onPress={() => {
+                  if (sesion?.laboratorioId) {
+                    setCargandoNuevas(true);
+
+                    void cargarNuevasTomas(
+                      sesion.laboratorioId
+                    );
+                  }
+                }}
+              >
+                <Text style={styles.reintentar}>
+                  Reintentar
+                </Text>
+              </Pressable>
+            </View>
+          )}
+
+          {cargandoNuevas ? (
+            <ActivityIndicator
+              size="large"
+              color="#7C3AED"
+              style={{ marginVertical: 25 }}
+            />
+          ) : nuevasTomasFiltradas.length === 0 ? (
+            <View style={styles.vacio}>
+              <Text style={styles.vacioTitulo}>
+                No hay nuevas tomas pendientes
+              </Text>
+
+              <Text style={styles.vacioDescripcion}>
+                Aquí aparecerán las muestras
+                rechazadas que hayan sido
+                reanudadas por Recepción.
+              </Text>
+            </View>
+          ) : (
+            nuevasTomasFiltradas.map((solicitud) => (
+              <View
+                key={solicitud.id}
+                style={styles.tarjetaNuevaToma}
+              >
+                <View style={styles.tituloFila}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.nombreNuevaToma}>
+                      {solicitud.paciente}
+                    </Text>
+
+                    <Text
+                      style={styles.descripcionNuevaToma}
+                    >
+                      {solicitud.analisis}
+                    </Text>
+                  </View>
+
+                  {renderEstado(solicitud.estado)}
+                </View>
+
+                <View style={styles.separador} />
+
+                <Text style={styles.datoTitulo}>
+                  FECHA DE SOLICITUD
+                </Text>
+
+                <Text style={styles.datoValor}>
+                  {solicitud.fechaSolicitud}
+                </Text>
+
+                <Text style={styles.datoTitulo}>
+                  MOTIVO DEL RECHAZO
+                </Text>
+
+                <View style={styles.rechazoContenedor}>
+                  <Text style={styles.rechazoTexto}>
+                    {solicitud.motivoRechazo ||
+                      "No se especificó el motivo."}
+                  </Text>
+                </View>
+
+                <Pressable
+                  style={[
+                    styles.botonNuevaToma,
+                    guardando &&
+                      styles.botonDeshabilitado,
+                  ]}
+                  disabled={guardando}
+                  onPress={() =>
+                    seleccionarNuevaToma(solicitud)
+                  }
+                >
+                  <Text
+                    style={styles.botonNuevaTomaTexto}
+                  >
+                    Nueva muestra
+                  </Text>
+                </Pressable>
+              </View>
+            ))
+          )}
+        </View>
+
+        {/* =================================================
+            REGISTRAR TOMA DE MUESTRA
+        ================================================= */}
+
         <View style={styles.panel}>
           <Text style={styles.panelTitulo}>
             Registrar toma de muestra
           </Text>
 
-          <Text
-            style={styles.panelDescripcion}
-          >
-            Selecciona una orden, el
-            análisis solicitado y el tipo
-            de muestra recolectada.
+          <Text style={styles.panelDescripcion}>
+            Selecciona una orden, el análisis
+            solicitado y el tipo de muestra
+            recolectada.
           </Text>
+
+          {solicitudSeleccionada && (
+            <View style={styles.solicitudActiva}>
+              <Text
+                style={styles.solicitudActivaTitulo}
+              >
+                Nueva toma solicitada
+              </Text>
+
+              <Text
+                style={styles.solicitudActivaTexto}
+              >
+                Paciente:{" "}
+                {solicitudSeleccionada.paciente}
+              </Text>
+
+              <Text
+                style={styles.solicitudActivaTexto}
+              >
+                Análisis:{" "}
+                {solicitudSeleccionada.analisis}
+              </Text>
+
+              <Text
+                style={styles.solicitudActivaTexto}
+              >
+                Motivo:{" "}
+                {solicitudSeleccionada.motivoRechazo ||
+                  "No especificado"}
+              </Text>
+
+              <Pressable
+                onPress={cancelarSeleccion}
+                disabled={guardando}
+              >
+                <Text
+                  style={styles.cancelarSeleccion}
+                >
+                  Cancelar selección
+                </Text>
+              </Pressable>
+            </View>
+          )}
 
           <Text style={styles.label}>
             Orden de análisis *
           </Text>
 
           <Pressable
-            style={styles.selector}
-            onPress={() =>
-              setSelector("orden")
-            }
+            style={[
+              styles.selector,
+              solicitudSeleccionada &&
+                styles.selectorDeshabilitado,
+            ]}
+            onPress={() => setSelector("orden")}
             disabled={
-              cargando || guardando
+              cargando ||
+              guardando ||
+              solicitudSeleccionada !== null
             }
           >
             <Text
@@ -1149,8 +1822,8 @@ export default function GestionMuestrasScreen() {
               numberOfLines={2}
             >
               {ordenSeleccionada
-                ? `${ordenSeleccionada.codigo} - ${ordenSeleccionada.paciente}`
-                : "Seleccionar orden"}
+                ? ordenSeleccionada.paciente
+                : "Seleccionar paciente"}
             </Text>
 
             <Text style={styles.flecha}>
@@ -1165,13 +1838,15 @@ export default function GestionMuestrasScreen() {
           <Pressable
             style={[
               styles.selector,
-              !ordenId &&
+              (!ordenId ||
+                solicitudSeleccionada) &&
                 styles.selectorDeshabilitado,
             ]}
             disabled={
               !ordenId ||
               cargando ||
-              guardando
+              guardando ||
+              solicitudSeleccionada !== null
             }
             onPress={() =>
               setSelector("analisis")
@@ -1206,9 +1881,7 @@ export default function GestionMuestrasScreen() {
             onPress={() =>
               setSelector("tipo")
             }
-            disabled={
-              cargando || guardando
-            }
+            disabled={cargando || guardando}
           >
             <Text
               style={
@@ -1228,45 +1901,29 @@ export default function GestionMuestrasScreen() {
 
           {ordenSeleccionada &&
             analisisSeleccionado && (
-              <View
-                style={
-                  styles.resumenRegistro
-                }
-              >
+              <View style={styles.resumenRegistro}>
                 <Text
-                  style={
-                    styles.resumenRegistroTitulo
-                  }
+                  style={styles.resumenRegistroTitulo}
                 >
                   Resumen del registro
                 </Text>
 
                 <Text
-                  style={
-                    styles.resumenRegistroTexto
-                  }
+                  style={styles.resumenRegistroTexto}
                 >
                   Paciente:{" "}
-                  {
-                    ordenSeleccionada.paciente
-                  }
+                  {ordenSeleccionada.paciente}
                 </Text>
 
                 <Text
-                  style={
-                    styles.resumenRegistroTexto
-                  }
+                  style={styles.resumenRegistroTexto}
                 >
                   Análisis:{" "}
-                  {
-                    analisisSeleccionado.nombre
-                  }
+                  {analisisSeleccionado.nombre}
                 </Text>
 
                 <Text
-                  style={
-                    styles.resumenRegistroTexto
-                  }
+                  style={styles.resumenRegistroTexto}
                 >
                   Muestra:{" "}
                   {tipoMuestra ||
@@ -1281,9 +1938,7 @@ export default function GestionMuestrasScreen() {
               (guardando || cargando) &&
                 styles.botonDeshabilitado,
             ]}
-            disabled={
-              guardando || cargando
-            }
+            disabled={guardando || cargando}
             onPress={registrar}
           >
             {guardando ? (
@@ -1292,70 +1947,57 @@ export default function GestionMuestrasScreen() {
               />
             ) : (
               <Text
-                style={
-                  styles.botonRegistrarTexto
-                }
+                style={styles.botonRegistrarTexto}
               >
-                Registrar muestra
+                {solicitudSeleccionada
+                  ? "Registrar nueva muestra"
+                  : "Registrar muestra"}
               </Text>
             )}
           </Pressable>
 
           <Pressable
-            style={
-              styles.botonSecundario
-            }
+            style={styles.botonSecundario}
             onPress={() =>
-              navegar(
-                "/validar-muestras"
-              )
+              navegar("/validar-muestras")
             }
           >
             <Text
-              style={
-                styles.botonSecundarioTexto
-              }
+              style={styles.botonSecundarioTexto}
             >
               Ir a recepción y validación
             </Text>
           </Pressable>
         </View>
 
+        {/* =================================================
+            MUESTRAS REGISTRADAS
+        ================================================= */}
+
         <View style={styles.panel}>
-          <View
-            style={styles.tituloFila}
-          >
+          <View style={styles.tituloFila}>
             <View style={{ flex: 1 }}>
-              <Text
-                style={styles.panelTitulo}
-              >
+              <Text style={styles.panelTitulo}>
                 Muestras registradas
               </Text>
 
               <Text
-                style={
-                  styles.panelDescripcion
-                }
+                style={styles.panelDescripcion}
               >
-                Consulta las muestras y
-                sus estados de validación.
+                Consulta las muestras y sus
+                estados de validación.
               </Text>
             </View>
 
             <Pressable
-              style={
-                styles.botonActualizar
-              }
+              style={styles.botonActualizar}
               disabled={
-                actualizando ||
-                guardando
+                actualizando || guardando
               }
               onPress={actualizar}
             >
               <Text
-                style={
-                  styles.textoActualizar
-                }
+                style={styles.textoActualizar}
               >
                 Actualizar
               </Text>
@@ -1364,7 +2006,7 @@ export default function GestionMuestrasScreen() {
 
           <TextInput
             style={styles.buscador}
-            placeholder="Buscar por paciente, código, análisis u orden..."
+            placeholder="Buscar por paciente, análisis u orden..."
             placeholderTextColor="#94A3B8"
             value={busqueda}
             onChangeText={setBusqueda}
@@ -1373,12 +2015,8 @@ export default function GestionMuestrasScreen() {
 
           <ScrollView
             horizontal
-            showsHorizontalScrollIndicator={
-              false
-            }
-            contentContainerStyle={
-              styles.filtros
-            }
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.filtros}
           >
             {FILTROS.map((item) => (
               <Pressable
@@ -1406,41 +2044,26 @@ export default function GestionMuestrasScreen() {
           </ScrollView>
 
           <Text
-            style={
-              styles.cantidadResultados
-            }
+            style={styles.cantidadResultados}
           >
-            {
-              muestrasFiltradas.length
-            }{" "}
-            muestra(s) encontrada(s)
+            {muestrasFiltradas.length} muestra(s)
+            encontrada(s)
           </Text>
 
           {cargando ? (
             <ActivityIndicator
               size="large"
               color="#7C3AED"
-              style={{
-                marginVertical: 30,
-              }}
+              style={{ marginVertical: 30 }}
             />
-          ) : muestrasFiltradas.length ===
-            0 ? (
-            <View
-              style={styles.vacio}
-            >
-              <Text
-                style={
-                  styles.vacioTitulo
-                }
-              >
+          ) : muestrasFiltradas.length === 0 ? (
+            <View style={styles.vacio}>
+              <Text style={styles.vacioTitulo}>
                 No se encontraron muestras
               </Text>
 
               <Text
-                style={
-                  styles.vacioDescripcion
-                }
+                style={styles.vacioDescripcion}
               >
                 {busqueda
                   ? "Prueba con otro término de búsqueda."
@@ -1448,174 +2071,134 @@ export default function GestionMuestrasScreen() {
               </Text>
             </View>
           ) : (
-            muestrasFiltradas.map(
-              (muestra) => (
-                <Pressable
-                  key={muestra.id}
-                  style={
-                    styles.tarjetaMuestra
-                  }
-                  onPress={() =>
-                    setDetalle(muestra)
-                  }
+            muestrasFiltradas.map((muestra) => (
+              <Pressable
+                key={muestra.id}
+                style={styles.tarjetaMuestra}
+                onPress={() =>
+                  setDetalle(muestra)
+                }
+              >
+                <View
+                  style={styles.muestraEncabezado}
                 >
                   <View
-                    style={
-                      styles.muestraEncabezado
-                    }
+                    style={styles.iconoMuestra}
                   >
-                    <View
-                      style={
-                        styles.iconoMuestra
-                      }
-                    >
-                      <Text
-                        style={
-                          styles.iconoTexto
-                        }
-                      >
-                        M
-                      </Text>
-                    </View>
-
-                    <View
-                      style={
-                        styles.muestraInfo
-                      }
-                    >
-                      <Text
-                        style={
-                          styles.codigoMuestra
-                        }
-                      >
-                        {muestra.codigo}
-                      </Text>
-
-                      <Text
-                        style={
-                          styles.nombrePaciente
-                        }
-                      >
-                        {muestra.paciente}
-                      </Text>
-                    </View>
-
                     <Text
-                      style={
-                        styles.flecha
-                      }
+                      style={styles.iconoTexto}
                     >
-                      ›
+                      M
                     </Text>
                   </View>
 
                   <View
-                    style={
-                      styles.separador
-                    }
-                  />
-
-                  <Text
-                    style={
-                      styles.datoTitulo
-                    }
+                    style={styles.muestraInfo}
                   >
-                    ANÁLISIS
+                    <Text
+                      style={styles.codigoMuestra}
+                    >
+                      {muestra.codigo}
+                    </Text>
+
+                    <Text
+                      style={styles.nombrePaciente}
+                    >
+                      {muestra.paciente}
+                    </Text>
+                  </View>
+
+                  <Text style={styles.flecha}>
+                    ›
                   </Text>
+                </View>
 
-                  <Text
-                    style={
-                      styles.datoValor
-                    }
-                  >
-                    {muestra.analisis}
-                  </Text>
+                <View
+                  style={styles.separador}
+                />
 
-                  <Text
-                    style={
-                      styles.datoTitulo
-                    }
-                  >
-                    TIPO DE MUESTRA
-                  </Text>
+                <Text
+                  style={styles.datoTitulo}
+                >
+                  ANÁLISIS
+                </Text>
 
-                  <Text
-                    style={
-                      styles.datoValor
-                    }
-                  >
-                    {
-                      muestra.tipoMuestra
-                    }
-                  </Text>
+                <Text
+                  style={styles.datoValor}
+                >
+                  {muestra.analisis}
+                </Text>
 
-                  <Text
-                    style={
-                      styles.datoTitulo
-                    }
-                  >
-                    ESTADO
-                  </Text>
+                <Text
+                  style={styles.datoTitulo}
+                >
+                  TIPO DE MUESTRA
+                </Text>
 
-                  {renderEstado(
-                    muestra.estado
-                  )}
+                <Text
+                  style={styles.datoValor}
+                >
+                  {muestra.tipoMuestra}
+                </Text>
 
-                  <Text
-                    style={
-                      styles.datoTitulo
-                    }
-                  >
-                    VALIDACIÓN
-                  </Text>
+                <Text
+                  style={styles.datoTitulo}
+                >
+                  ESTADO
+                </Text>
 
-                  {renderEstado(
-                    muestra.estadoValidacion
-                  )}
+                {renderEstado(muestra.estado)}
 
-                  <Text
-                    style={
-                      styles.datoTitulo
-                    }
-                  >
-                    FECHA DE TOMA
-                  </Text>
+                <Text
+                  style={styles.datoTitulo}
+                >
+                  VALIDACIÓN
+                </Text>
 
-                  <Text
-                    style={
-                      styles.datoValor
-                    }
-                  >
-                    {muestra.fechaToma}
-                  </Text>
+                {renderEstado(
+                  muestra.estadoValidacion
+                )}
 
-                  {muestra.estadoValidacion ===
-                    "rechazada" &&
-                    muestra.motivoRechazo !==
-                      "" && (
-                      <View
+                <Text
+                  style={styles.datoTitulo}
+                >
+                  FECHA DE TOMA
+                </Text>
+
+                <Text
+                  style={styles.datoValor}
+                >
+                  {muestra.fechaToma}
+                </Text>
+
+                {muestra.estadoValidacion ===
+                  "rechazada" &&
+                  muestra.motivoRechazo !==
+                    "" && (
+                    <View
+                      style={
+                        styles.rechazoContenedor
+                      }
+                    >
+                      <Text
                         style={
-                          styles.rechazoContenedor
+                          styles.rechazoTexto
                         }
                       >
-                        <Text
-                          style={
-                            styles.rechazoTexto
-                          }
-                        >
-                          Motivo:{" "}
-                          {
-                            muestra.motivoRechazo
-                          }
-                        </Text>
-                      </View>
-                    )}
-                </Pressable>
-              )
-            )
+                        Motivo:{" "}
+                        {muestra.motivoRechazo}
+                      </Text>
+                    </View>
+                  )}
+              </Pressable>
+            ))
           )}
         </View>
       </ScrollView>
+
+      {/* =================================================
+          MODAL DE SELECTORES
+      ================================================= */}
 
       <Modal
         visible={selector !== null}
@@ -1625,27 +2208,18 @@ export default function GestionMuestrasScreen() {
           setSelector(null)
         }
       >
-        <View
-          style={styles.fondoModal}
-        >
+        <View style={styles.fondoModal}>
           <View style={styles.modal}>
-            <Text
-              style={
-                styles.modalTitulo
-              }
-            >
+            <Text style={styles.modalTitulo}>
               {selector === "orden"
                 ? "Seleccionar orden"
-                : selector ===
-                  "analisis"
+                : selector === "analisis"
                 ? "Seleccionar análisis"
                 : "Seleccionar tipo de muestra"}
             </Text>
 
             <ScrollView
-              style={
-                styles.listaOpciones
-              }
+              style={styles.listaOpciones}
               keyboardShouldPersistTaps="handled"
             >
               {selector === "orden" &&
@@ -1653,33 +2227,15 @@ export default function GestionMuestrasScreen() {
                   (orden) => (
                     <Pressable
                       key={orden.id}
-                      style={
-                        styles.opcion
-                      }
+                      style={styles.opcion}
                       onPress={() => {
-                        setOrdenId(
-                          orden.id
-                        );
-                        setAnalisisId(
-                          ""
-                        );
-                        setSelector(
-                          null
-                        );
+                        setOrdenId(orden.id);
+                        setAnalisisId("");
+                        setSelector(null);
                       }}
                     >
                       <Text
-                        style={
-                          styles.opcionTitulo
-                        }
-                      >
-                        {orden.codigo}
-                      </Text>
-
-                      <Text
-                        style={
-                          styles.opcionDescripcion
-                        }
+                        style={styles.opcionTitulo}
                       >
                         {orden.paciente}
                       </Text>
@@ -1687,22 +2243,15 @@ export default function GestionMuestrasScreen() {
                   )
                 )}
 
-              {selector ===
-                "analisis" &&
+              {selector === "analisis" &&
                 analisisSinMuestra.map(
                   (item) => (
                     <Pressable
                       key={item.id}
-                      style={
-                        styles.opcion
-                      }
+                      style={styles.opcion}
                       onPress={() => {
-                        setAnalisisId(
-                          item.id
-                        );
-                        setSelector(
-                          null
-                        );
+                        setAnalisisId(item.id);
+                        setSelector(null);
                       }}
                     >
                       <Text
@@ -1721,16 +2270,10 @@ export default function GestionMuestrasScreen() {
                   (tipo) => (
                     <Pressable
                       key={tipo}
-                      style={
-                        styles.opcion
-                      }
+                      style={styles.opcion}
                       onPress={() => {
-                        setTipoMuestra(
-                          tipo
-                        );
-                        setSelector(
-                          null
-                        );
+                        setTipoMuestra(tipo);
+                        setSelector(null);
                       }}
                     >
                       <Text
@@ -1748,44 +2291,33 @@ export default function GestionMuestrasScreen() {
                 ordenesDisponibles.length ===
                   0 && (
                   <Text
-                    style={
-                      styles.sinDatos
-                    }
+                    style={styles.sinDatos}
                   >
-                    No hay órdenes con
-                    análisis pendientes de
-                    registrar.
+                    No hay órdenes con análisis
+                    pendientes de registrar.
                   </Text>
                 )}
 
-              {selector ===
-                "analisis" &&
+              {selector === "analisis" &&
                 analisisSinMuestra.length ===
                   0 && (
                   <Text
-                    style={
-                      styles.sinDatos
-                    }
+                    style={styles.sinDatos}
                   >
-                    No hay análisis
-                    disponibles para esta
-                    orden.
+                    No hay análisis disponibles
+                    para esta orden.
                   </Text>
                 )}
             </ScrollView>
 
             <Pressable
-              style={
-                styles.botonCerrar
-              }
+              style={styles.botonCerrar}
               onPress={() =>
                 setSelector(null)
               }
             >
               <Text
-                style={
-                  styles.textoCerrar
-                }
+                style={styles.textoCerrar}
               >
                 Cerrar
               </Text>
@@ -1793,6 +2325,10 @@ export default function GestionMuestrasScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* =================================================
+          MODAL DETALLE DE MUESTRA
+      ================================================= */}
 
       <Modal
         visible={detalle !== null}
@@ -1802,107 +2338,77 @@ export default function GestionMuestrasScreen() {
           setDetalle(null)
         }
       >
-        <View
-          style={styles.fondoModal}
-        >
+        <View style={styles.fondoModal}>
           <View style={styles.modal}>
             <ScrollView>
-              <Text
-                style={
-                  styles.modalTitulo
-                }
-              >
+              <Text style={styles.modalTitulo}>
                 Detalle de muestra
               </Text>
 
               {detalle && (
                 <>
                   <Text
-                    style={
-                      styles.detalleTitulo
-                    }
+                    style={styles.detalleTitulo}
                   >
                     Código
                   </Text>
 
                   <Text
-                    style={
-                      styles.detalleValor
-                    }
+                    style={styles.detalleValor}
                   >
                     {detalle.codigo}
                   </Text>
 
                   <Text
-                    style={
-                      styles.detalleTitulo
-                    }
+                    style={styles.detalleTitulo}
                   >
                     Paciente
                   </Text>
 
                   <Text
-                    style={
-                      styles.detalleValor
-                    }
+                    style={styles.detalleValor}
                   >
                     {detalle.paciente}
                   </Text>
 
                   <Text
-                    style={
-                      styles.detalleTitulo
-                    }
+                    style={styles.detalleTitulo}
                   >
                     Orden
                   </Text>
 
                   <Text
-                    style={
-                      styles.detalleValor
-                    }
+                    style={styles.detalleValor}
                   >
                     {detalle.ordenId}
                   </Text>
 
                   <Text
-                    style={
-                      styles.detalleTitulo
-                    }
+                    style={styles.detalleTitulo}
                   >
                     Análisis
                   </Text>
 
                   <Text
-                    style={
-                      styles.detalleValor
-                    }
+                    style={styles.detalleValor}
                   >
                     {detalle.analisis}
                   </Text>
 
                   <Text
-                    style={
-                      styles.detalleTitulo
-                    }
+                    style={styles.detalleTitulo}
                   >
                     Tipo de muestra
                   </Text>
 
                   <Text
-                    style={
-                      styles.detalleValor
-                    }
+                    style={styles.detalleValor}
                   >
-                    {
-                      detalle.tipoMuestra
-                    }
+                    {detalle.tipoMuestra}
                   </Text>
 
                   <Text
-                    style={
-                      styles.detalleTitulo
-                    }
+                    style={styles.detalleTitulo}
                   >
                     Estado de la muestra
                   </Text>
@@ -1912,9 +2418,7 @@ export default function GestionMuestrasScreen() {
                   )}
 
                   <Text
-                    style={
-                      styles.detalleTitulo
-                    }
+                    style={styles.detalleTitulo}
                   >
                     Estado de validación
                   </Text>
@@ -1924,17 +2428,13 @@ export default function GestionMuestrasScreen() {
                   )}
 
                   <Text
-                    style={
-                      styles.detalleTitulo
-                    }
+                    style={styles.detalleTitulo}
                   >
                     Fecha de toma
                   </Text>
 
                   <Text
-                    style={
-                      styles.detalleValor
-                    }
+                    style={styles.detalleValor}
                   >
                     {detalle.fechaToma}
                   </Text>
@@ -1954,16 +2454,12 @@ export default function GestionMuestrasScreen() {
                           styles.detalleValor
                         }
                       >
-                        {
-                          detalle.motivoRechazo
-                        }
+                        {detalle.motivoRechazo}
                       </Text>
                     </>
                   ) : null}
 
-                  {estaPendiente(
-                    detalle
-                  ) && (
+                  {estaPendiente(detalle) && (
                     <Pressable
                       style={
                         styles.botonValidacion
@@ -1989,17 +2485,13 @@ export default function GestionMuestrasScreen() {
               )}
 
               <Pressable
-                style={
-                  styles.botonCerrar
-                }
+                style={styles.botonCerrar}
                 onPress={() =>
                   setDetalle(null)
                 }
               >
                 <Text
-                  style={
-                    styles.textoCerrar
-                  }
+                  style={styles.textoCerrar}
                 >
                   Cerrar
                 </Text>
@@ -2011,6 +2503,10 @@ export default function GestionMuestrasScreen() {
     </View>
   );
 }
+
+// =====================================================
+// ESTILOS
+// =====================================================
 
 const styles = StyleSheet.create({
   contenedor: {
@@ -2184,6 +2680,85 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "flex-start",
     gap: 8,
+  },
+
+  contadorNuevas: {
+    backgroundColor: "#EDE9FE",
+    borderRadius: 10,
+    minWidth: 38,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    alignItems: "center",
+  },
+
+  contadorNuevasTexto: {
+    color: "#6D28D9",
+    fontWeight: "900",
+    fontSize: 17,
+  },
+
+  tarjetaNuevaToma: {
+    backgroundColor: "#FAF5FF",
+    borderWidth: 1,
+    borderColor: "#DDD6FE",
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 12,
+  },
+
+  nombreNuevaToma: {
+    color: "#0F172A",
+    fontSize: 15,
+    fontWeight: "900",
+  },
+
+  descripcionNuevaToma: {
+    color: "#64748B",
+    fontSize: 12,
+    marginTop: 5,
+  },
+
+  botonNuevaToma: {
+    backgroundColor: "#7C3AED",
+    borderRadius: 9,
+    paddingVertical: 14,
+    alignItems: "center",
+    marginTop: 15,
+  },
+
+  botonNuevaTomaTexto: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontWeight: "900",
+  },
+
+  solicitudActiva: {
+    backgroundColor: "#F5F3FF",
+    borderRadius: 10,
+    padding: 14,
+    marginBottom: 15,
+    borderWidth: 1,
+    borderColor: "#C4B5FD",
+  },
+
+  solicitudActivaTitulo: {
+    color: "#6D28D9",
+    fontSize: 14,
+    fontWeight: "900",
+    marginBottom: 10,
+  },
+
+  solicitudActivaTexto: {
+    color: "#334155",
+    fontSize: 12,
+    marginBottom: 7,
+  },
+
+  cancelarSeleccion: {
+    color: "#DC2626",
+    fontSize: 12,
+    fontWeight: "800",
+    marginTop: 10,
   },
 
   label: {

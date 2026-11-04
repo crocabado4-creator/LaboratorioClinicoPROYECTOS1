@@ -1,4 +1,4 @@
-import {
+import React, {
   useCallback,
   useEffect,
   useMemo,
@@ -33,12 +33,26 @@ import {
   type PersonalizacionLaboratorio,
 } from "../services/personalizacionService";
 
+// ======================================================
+// TIPOS
+// ======================================================
+
 type FiltroEstado =
   | "todos"
   | "activos"
   | "inactivos";
 
-const PALETAS = [
+type Paleta = {
+  nombre: string;
+  primario: string;
+  secundario: string;
+};
+
+// ======================================================
+// PALETAS
+// ======================================================
+
+const PALETAS: Paleta[] = [
   {
     nombre: "Clínico",
     primario: "#2563EB",
@@ -61,589 +75,710 @@ const PALETAS = [
   },
 ];
 
+// ======================================================
+// FUNCIONES AUXILIARES
+// ======================================================
+
+function obtenerMensajeError(
+  error: unknown,
+  mensaje: string
+): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return mensaje;
+}
+
+function mostrarMensaje(
+  titulo: string,
+  mensaje: string
+) {
+  if (Platform.OS === "web") {
+    if (typeof window !== "undefined") {
+      window.alert(`${titulo}\n\n${mensaje}`);
+    }
+    return;
+  }
+
+  Alert.alert(titulo, mensaje);
+}
+
+function validarColor(color: string): boolean {
+  return /^#[0-9A-Fa-f]{6}$/.test(color);
+}
+
+// ======================================================
+// CONVERTIR IMAGEN A BASE64 EN WEB
+// ======================================================
+
+async function convertirImagenWeb(
+  uri: string
+): Promise<string> {
+  const respuesta = await fetch(uri);
+
+  if (!respuesta.ok) {
+    throw new Error(
+      "No se pudo leer la imagen seleccionada."
+    );
+  }
+
+  const blob = await respuesta.blob();
+
+  return new Promise((resolve, reject) => {
+    const lector = new FileReader();
+
+    lector.onload = () => {
+      if (typeof lector.result === "string") {
+        resolve(lector.result);
+      } else {
+        reject(
+          new Error(
+            "No se pudo convertir la imagen."
+          )
+        );
+      }
+    };
+
+    lector.onerror = () => {
+      reject(
+        new Error(
+          "Error leyendo el archivo."
+        )
+      );
+    };
+
+    lector.readAsDataURL(blob);
+  });
+}
+
+// ======================================================
+// COMPRIMIR IMAGEN WEB
+// ======================================================
+
+async function comprimirImagenWeb(
+  dataUrl: string
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const imagen = new window.Image();
+
+    imagen.onload = () => {
+      try {
+        const maximo = 500;
+
+        const proporcion = Math.min(
+          1,
+          maximo / Math.max(
+            imagen.width,
+            imagen.height
+          )
+        );
+
+        const ancho = Math.max(
+          1,
+          Math.round(imagen.width * proporcion)
+        );
+
+        const alto = Math.max(
+          1,
+          Math.round(imagen.height * proporcion)
+        );
+
+        const canvas =
+          document.createElement("canvas");
+
+        canvas.width = ancho;
+        canvas.height = alto;
+
+        const contexto =
+          canvas.getContext("2d");
+
+        if (!contexto) {
+          throw new Error(
+            "No se pudo procesar la imagen."
+          );
+        }
+
+        contexto.fillStyle = "#FFFFFF";
+
+        contexto.fillRect(
+          0,
+          0,
+          ancho,
+          alto
+        );
+
+        contexto.drawImage(
+          imagen,
+          0,
+          0,
+          ancho,
+          alto
+        );
+
+        let resultado = "";
+
+        const calidades = [
+          0.75,
+          0.6,
+          0.45,
+          0.3,
+        ];
+
+        for (const calidad of calidades) {
+          resultado = canvas.toDataURL(
+            "image/jpeg",
+            calidad
+          );
+
+          if (resultado.length <= 600000) {
+            break;
+          }
+        }
+
+        if (resultado.length > 600000) {
+          throw new Error(
+            "La imagen es demasiado grande. Selecciona otra imagen."
+          );
+        }
+
+        resolve(resultado);
+      } catch (error) {
+        reject(error);
+      }
+    };
+
+    imagen.onerror = () => {
+      reject(
+        new Error(
+          "No se pudo cargar la imagen."
+        )
+      );
+    };
+
+    imagen.src = dataUrl;
+  });
+}
+
+// ======================================================
+// PANTALLA PRINCIPAL
+// ======================================================
+
 export default function Personalizacion() {
-  const router =
-    useRouter();
+  const router = useRouter();
+
+  // ====================================================
+  // ESTADOS
+  // ====================================================
 
   const [
     laboratorios,
     setLaboratorios,
-  ] =
-    useState<
-      PersonalizacionLaboratorio[]
-    >([]);
+  ] = useState<PersonalizacionLaboratorio[]>([]);
 
   const [
     seleccionado,
     setSeleccionado,
-  ] =
-    useState<
-      PersonalizacionLaboratorio |
-      null
-    >(null);
+  ] = useState<PersonalizacionLaboratorio | null>(
+    null
+  );
 
   const [
     busqueda,
     setBusqueda,
-  ] =
-    useState("");
+  ] = useState("");
 
   const [
     filtro,
     setFiltro,
-  ] =
-    useState<FiltroEstado>(
-      "todos"
-    );
+  ] = useState<FiltroEstado>("todos");
 
   const [
     nombreVisible,
     setNombreVisible,
-  ] =
-    useState("");
+  ] = useState("");
 
   const [
     logoUrl,
     setLogoUrl,
-  ] =
-    useState("");
+  ] = useState("");
 
   const [
     nombreArchivo,
     setNombreArchivo,
-  ] =
-    useState("");
+  ] = useState("");
 
   const [
     colorPrimario,
     setColorPrimario,
-  ] =
-    useState(
-      PERSONALIZACION_DEFAULT
-        .colorPrimario
-    );
+  ] = useState(
+    PERSONALIZACION_DEFAULT.colorPrimario
+  );
 
   const [
     colorSecundario,
     setColorSecundario,
-  ] =
-    useState(
-      PERSONALIZACION_DEFAULT
-        .colorSecundario
-    );
+  ] = useState(
+    PERSONALIZACION_DEFAULT.colorSecundario
+  );
 
   const [
     cargando,
     setCargando,
-  ] =
-    useState(true);
+  ] = useState(true);
 
   const [
     guardando,
     setGuardando,
-  ] =
-    useState(false);
+  ] = useState(false);
 
   const [
     procesandoImagen,
     setProcesandoImagen,
-  ] =
-    useState(false);
+  ] = useState(false);
 
   const [
     modalVisible,
     setModalVisible,
-  ] =
-    useState(false);
+  ] = useState(false);
 
-  // =====================================================
+  // ====================================================
   // CARGAR LABORATORIOS
-  // =====================================================
+  // ====================================================
 
-  const cargarLaboratorios =
-    useCallback(
-      async () => {
-        try {
-          setCargando(true);
+  const cargarLaboratorios = useCallback(
+    async () => {
+      try {
+        setCargando(true);
 
-          const resultado =
-            await obtenerLaboratoriosPersonalizacion();
+        const resultado =
+          await obtenerLaboratoriosPersonalizacion();
 
-          setLaboratorios(
-            resultado
-          );
+        setLaboratorios(resultado);
+      } catch (error) {
+        console.error(
+          "Error cargando laboratorios:",
+          error
+        );
 
-        } catch (error) {
-          console.error(
-            "Error cargando laboratorios:",
-            error
-          );
-
-          Alert.alert(
-            "Error",
-            obtenerMensajeError(
-              error,
-              "No se pudieron cargar los laboratorios."
-            )
-          );
-
-        } finally {
-          setCargando(false);
-        }
-      },
-      []
-    );
+        mostrarMensaje(
+          "Error",
+          obtenerMensajeError(
+            error,
+            "No se pudieron cargar los laboratorios."
+          )
+        );
+      } finally {
+        setCargando(false);
+      }
+    },
+    []
+  );
 
   useEffect(() => {
     void cargarLaboratorios();
   }, [cargarLaboratorios]);
 
-  // =====================================================
-  // FILTRAR
-  // =====================================================
+  // ====================================================
+  // FILTRAR LABORATORIOS
+  // ====================================================
 
-  const laboratoriosFiltrados =
-    useMemo(() => {
-      const texto =
-        busqueda
-          .trim()
-          .toLowerCase();
+  const laboratoriosFiltrados = useMemo(() => {
+    const texto = busqueda
+      .trim()
+      .toLowerCase();
 
-      return laboratorios.filter(
-        (laboratorio) => {
-          const coincideTexto =
-            !texto ||
-            laboratorio.nombre
-              .toLowerCase()
-              .includes(texto) ||
-            laboratorio.nombreVisible
-              .toLowerCase()
-              .includes(texto) ||
-            laboratorio.email
-              .toLowerCase()
-              .includes(texto);
-
-          const coincideEstado =
-            filtro === "todos" ||
-            (
-              filtro ===
-                "activos" &&
-              laboratorio.activo
-            ) ||
-            (
-              filtro ===
-                "inactivos" &&
-              !laboratorio.activo
-            );
-
-          return (
-            coincideTexto &&
-            coincideEstado
-          );
-        }
-      );
-    }, [
-      laboratorios,
-      busqueda,
-      filtro,
-    ]);
-
-  // =====================================================
-  // ESTADÍSTICAS
-  // =====================================================
-
-  const total =
-    laboratorios.length;
-
-  const personalizados =
-    laboratorios.filter(
-      (laboratorio) =>
-        Boolean(
-          laboratorio.nombreVisible ||
-          laboratorio.logoUrl
-        )
-    ).length;
-
-  const pendientes =
-    total -
-    personalizados;
-
-  // =====================================================
-  // ABRIR EDITOR
-  // =====================================================
-
-  const abrirEditor =
-    (
-      laboratorio:
-        PersonalizacionLaboratorio
-    ) => {
-      setSeleccionado(
-        laboratorio
-      );
-
-      setNombreVisible(
-        laboratorio.nombreVisible ||
+    return laboratorios.filter((laboratorio) => {
+      const coincideTexto =
+        !texto ||
         laboratorio.nombre
-      );
+          .toLowerCase()
+          .includes(texto) ||
+        laboratorio.nombreVisible
+          .toLowerCase()
+          .includes(texto) ||
+        laboratorio.email
+          .toLowerCase()
+          .includes(texto);
 
-      setLogoUrl(
-        laboratorio.logoUrl ||
-        ""
-      );
+      const coincideEstado =
+        filtro === "todos" ||
+        (
+          filtro === "activos" &&
+          laboratorio.activo
+        ) ||
+        (
+          filtro === "inactivos" &&
+          !laboratorio.activo
+        );
 
-      setNombreArchivo(
-        ""
-      );
+      return coincideTexto && coincideEstado;
+    });
+  }, [
+    laboratorios,
+    busqueda,
+    filtro,
+  ]);
 
-      setColorPrimario(
-        laboratorio.colorPrimario ||
-        PERSONALIZACION_DEFAULT
-          .colorPrimario
-      );
+  // ====================================================
+  // ESTADÍSTICAS
+  // ====================================================
 
-      setColorSecundario(
-        laboratorio.colorSecundario ||
-        PERSONALIZACION_DEFAULT
-          .colorSecundario
-      );
+  const total = laboratorios.length;
 
-      setModalVisible(
-        true
-      );
-    };
+  const personalizados = laboratorios.filter(
+    (laboratorio) =>
+      Boolean(
+        laboratorio.nombreVisible ||
+        laboratorio.logoUrl
+      )
+  ).length;
 
-  // =====================================================
+  const pendientes = total - personalizados;
+
+  // ====================================================
+  // ABRIR EDITOR
+  // ====================================================
+
+  const abrirEditor = (
+    laboratorio: PersonalizacionLaboratorio
+  ) => {
+    setSeleccionado(laboratorio);
+
+    setNombreVisible(
+      laboratorio.nombreVisible ||
+      laboratorio.nombre
+    );
+
+    setLogoUrl(
+      laboratorio.logoUrl || ""
+    );
+
+    setNombreArchivo("");
+
+    setColorPrimario(
+      laboratorio.colorPrimario ||
+      PERSONALIZACION_DEFAULT.colorPrimario
+    );
+
+    setColorSecundario(
+      laboratorio.colorSecundario ||
+      PERSONALIZACION_DEFAULT.colorSecundario
+    );
+
+    setModalVisible(true);
+  };
+
+  // ====================================================
   // CERRAR EDITOR
-  // =====================================================
+  // ====================================================
 
-  const cerrarEditor =
-    () => {
+  const cerrarEditor = () => {
+    if (guardando || procesandoImagen) {
+      return;
+    }
+
+    setModalVisible(false);
+
+    setSeleccionado(null);
+
+    setNombreArchivo("");
+  };
+
+  // ====================================================
+  // SELECCIONAR LOGO
+  // ====================================================
+
+  const seleccionarLogo = async () => {
+    if (procesandoImagen || guardando) {
+      return;
+    }
+
+    try {
+      setProcesandoImagen(true);
+
+      // ================================================
+      // PERMISOS EN ANDROID / IOS
+      // ================================================
+
+      if (Platform.OS !== "web") {
+        const permiso =
+          await ImagePicker
+            .requestMediaLibraryPermissionsAsync();
+
+        if (!permiso.granted) {
+          mostrarMensaje(
+            "Permiso requerido",
+            "Debes permitir el acceso a tus imágenes."
+          );
+
+          return;
+        }
+      }
+
+      // ================================================
+      // ABRIR GALERÍA
+      // ================================================
+
+      const resultado =
+        await ImagePicker.launchImageLibraryAsync({
+          mediaTypes: ["images"],
+
+          allowsEditing: Platform.OS !== "web",
+
+          aspect: [1, 1],
+
+          quality: 0.5,
+
+          base64: true,
+        });
+
       if (
-        guardando ||
-        procesandoImagen
+        resultado.canceled ||
+        !resultado.assets ||
+        resultado.assets.length === 0
       ) {
         return;
       }
 
-      setModalVisible(
-        false
-      );
+      const archivo = resultado.assets[0];
 
-      setSeleccionado(
-        null
-      );
+      // ================================================
+      // OBTENER IMAGEN
+      // ================================================
 
-      setNombreArchivo(
-        ""
-      );
-    };
+      let imagenDataUrl = "";
 
-  // =====================================================
-  // SELECCIONAR LOGO
-  // =====================================================
+      if (Platform.OS === "web") {
+        // En web puede no existir archivo.base64.
 
-  const seleccionarLogo =
-    async () => {
-      try {
-        setProcesandoImagen(
-          true
-        );
+        if (archivo.base64) {
+          imagenDataUrl =
+            `data:image/jpeg;base64,${archivo.base64}`;
+        } else {
+          imagenDataUrl =
+            await convertirImagenWeb(archivo.uri);
+        }
 
+        // Comprimir antes de guardar.
+
+        imagenDataUrl =
+          await comprimirImagenWeb(imagenDataUrl);
+      } else {
         // Android / iOS
-        if (
-          Platform.OS !==
-          "web"
-        ) {
-          const permiso =
-            await ImagePicker
-              .requestMediaLibraryPermissionsAsync();
-
-          if (!permiso.granted) {
-            Alert.alert(
-              "Permiso requerido",
-              "Debes permitir acceso a tus imágenes para seleccionar el logo."
-            );
-
-            return;
-          }
-        }
-
-        const resultado =
-          await ImagePicker
-            .launchImageLibraryAsync({
-              mediaTypes: [
-                "images",
-              ],
-
-              allowsEditing:
-                true,
-
-              aspect: [
-                1,
-                1,
-              ],
-
-              quality:
-                0.2,
-
-              base64:
-                true,
-            });
-
-        if (
-          resultado.canceled ||
-          !resultado.assets ||
-          resultado.assets.length ===
-            0
-        ) {
-          return;
-        }
-
-        const archivo =
-          resultado.assets[0];
 
         if (!archivo.base64) {
           throw new Error(
-            "No se pudo convertir la imagen seleccionada a Base64."
+            "No se pudo convertir la imagen a Base64."
           );
         }
 
-        const dataUrl =
+        imagenDataUrl =
           `data:image/jpeg;base64,${archivo.base64}`;
 
-        if (
-          dataUrl.length >
-          650000
-        ) {
+        if (imagenDataUrl.length > 650000) {
           throw new Error(
-            "El logo es demasiado pesado. Selecciona una imagen más pequeña."
+            "La imagen es demasiado grande. Selecciona una imagen más pequeña."
           );
         }
+      }
 
-        setLogoUrl(
-          dataUrl
-        );
+      // ================================================
+      // VALIDAR
+      // ================================================
 
-        setNombreArchivo(
-          archivo.fileName ||
-          "logo-seleccionado.jpg"
-        );
-
-        Alert.alert(
-          "Logo seleccionado",
-          "El logo está listo. Presiona Guardar cambios."
-        );
-
-      } catch (error) {
-        console.error(
-          "Error seleccionando logo:",
-          error
-        );
-
-        Alert.alert(
-          "Error",
-          obtenerMensajeError(
-            error,
-            "No se pudo procesar el logo."
-          )
-        );
-
-      } finally {
-        setProcesandoImagen(
-          false
+      if (!imagenDataUrl) {
+        throw new Error(
+          "La imagen seleccionada está vacía."
         );
       }
-    };
 
-  // =====================================================
-  // QUITAR LOGO
-  // =====================================================
+      if (imagenDataUrl.length > 650000) {
+        throw new Error(
+          "El logo supera el tamaño permitido."
+        );
+      }
 
-  const quitarLogo =
-    () => {
-      setLogoUrl(
-        ""
-      );
+      // ================================================
+      // ACTUALIZAR VISTA PREVIA
+      // ================================================
+
+      setLogoUrl(imagenDataUrl);
 
       setNombreArchivo(
-        ""
-      );
-    };
-
-  // =====================================================
-  // PALETA
-  // =====================================================
-
-  const aplicarPaleta =
-    (
-      primario: string,
-      secundario: string
-    ) => {
-      setColorPrimario(
-        primario
+        archivo.fileName ||
+        "logo-seleccionado.jpg"
       );
 
-      setColorSecundario(
-        secundario
+      console.log(
+        "Logo seleccionado correctamente"
       );
-    };
+    } catch (error) {
+      console.error(
+        "Error seleccionando logo:",
+        error
+      );
 
-  // =====================================================
-  // GUARDAR
-  // =====================================================
-
-  const guardar =
-    async () => {
-      if (!seleccionado) {
-        return;
-      }
-
-      const nombre =
-        nombreVisible
-          .trim();
-
-      const primario =
-        colorPrimario
-          .trim()
-          .toUpperCase();
-
-      const secundario =
-        colorSecundario
-          .trim()
-          .toUpperCase();
-
-      if (
-        nombre.length <
-        2
-      ) {
-        Alert.alert(
-          "Nombre inválido",
-          "Ingresa un nombre visible válido."
-        );
-
-        return;
-      }
-
-      if (
-        !validarColor(
-          primario
+      mostrarMensaje(
+        "Error",
+        obtenerMensajeError(
+          error,
+          "No se pudo procesar el logo."
         )
-      ) {
-        Alert.alert(
-          "Color inválido",
-          "El color principal debe tener formato #RRGGBB."
-        );
+      );
+    } finally {
+      setProcesandoImagen(false);
+    }
+  };
 
-        return;
-      }
+  // ====================================================
+  // QUITAR LOGO
+  // ====================================================
 
-      if (
-        !validarColor(
-          secundario
+  const quitarLogo = () => {
+    if (guardando || procesandoImagen) {
+      return;
+    }
+
+    setLogoUrl("");
+
+    setNombreArchivo("");
+  };
+
+  // ====================================================
+  // APLICAR PALETA
+  // ====================================================
+
+  const aplicarPaleta = (
+    primario: string,
+    secundario: string
+  ) => {
+    setColorPrimario(primario);
+
+    setColorSecundario(secundario);
+  };
+
+  // ====================================================
+  // GUARDAR PERSONALIZACIÓN
+  // ====================================================
+
+  const guardar = async () => {
+    if (!seleccionado) {
+      return;
+    }
+
+    if (guardando || procesandoImagen) {
+      return;
+    }
+
+    const nombre = nombreVisible.trim();
+
+    const primario = colorPrimario
+      .trim()
+      .toUpperCase();
+
+    const secundario = colorSecundario
+      .trim()
+      .toUpperCase();
+
+    if (nombre.length < 2) {
+      mostrarMensaje(
+        "Nombre inválido",
+        "Ingresa un nombre visible válido."
+      );
+
+      return;
+    }
+
+    if (!validarColor(primario)) {
+      mostrarMensaje(
+        "Color inválido",
+        "El color principal debe tener formato #RRGGBB."
+      );
+
+      return;
+    }
+
+    if (!validarColor(secundario)) {
+      mostrarMensaje(
+        "Color inválido",
+        "El color secundario debe tener formato #RRGGBB."
+      );
+
+      return;
+    }
+
+    try {
+      setGuardando(true);
+
+      await actualizarPersonalizacion(
+        seleccionado.id,
+        {
+          nombreVisible: nombre,
+
+          logoUrl,
+
+          colorPrimario: primario,
+
+          colorSecundario: secundario,
+        }
+      );
+
+      // Actualizar lista sin recargar.
+
+      setLaboratorios((actuales) =>
+        actuales.map((laboratorio) =>
+          laboratorio.id === seleccionado.id
+            ? {
+                ...laboratorio,
+
+                nombreVisible: nombre,
+
+                logoUrl,
+
+                colorPrimario: primario,
+
+                colorSecundario: secundario,
+              }
+            : laboratorio
         )
-      ) {
-        Alert.alert(
-          "Color inválido",
-          "El color secundario debe tener formato #RRGGBB."
-        );
+      );
 
-        return;
-      }
+      setModalVisible(false);
 
-      try {
-        setGuardando(
-          true
-        );
+      setSeleccionado(null);
 
-        await actualizarPersonalizacion(
-          seleccionado.id,
-          {
-            nombreVisible:
-              nombre,
+      setNombreArchivo("");
 
-            logoUrl,
+      mostrarMensaje(
+        "Correcto",
+        "La personalización se guardó correctamente."
+      );
+    } catch (error) {
+      console.error(
+        "Error guardando personalización:",
+        error
+      );
 
-            colorPrimario:
-              primario,
+      mostrarMensaje(
+        "Error",
+        obtenerMensajeError(
+          error,
+          "No se pudo guardar la personalización."
+        )
+      );
+    } finally {
+      setGuardando(false);
+    }
+  };
 
-            colorSecundario:
-              secundario,
-          }
-        );
-
-        setLaboratorios(
-          (actuales) =>
-            actuales.map(
-              (laboratorio) =>
-                laboratorio.id ===
-                seleccionado.id
-                  ? {
-                      ...laboratorio,
-
-                      nombreVisible:
-                        nombre,
-
-                      logoUrl,
-
-                      colorPrimario:
-                        primario,
-
-                      colorSecundario:
-                        secundario,
-                    }
-                  : laboratorio
-            )
-        );
-
-        setModalVisible(
-          false
-        );
-
-        setSeleccionado(
-          null
-        );
-
-        setNombreArchivo(
-          ""
-        );
-
-        Alert.alert(
-          "Correcto",
-          "Personalización guardada correctamente."
-        );
-
-      } catch (error) {
-        console.error(
-          "Error guardando personalización:",
-          error
-        );
-
-        Alert.alert(
-          "Error",
-          obtenerMensajeError(
-            error,
-            "No se pudo guardar la personalización."
-          )
-        );
-
-      } finally {
-        setGuardando(
-          false
-        );
-      }
-    };
-
-  // =====================================================
-  // CARGANDO
-  // =====================================================
+  // ====================================================
+  // PANTALLA DE CARGA
+  // ====================================================
 
   if (cargando) {
     return (
-      <SafeAreaView
-        style={
-          styles.loadingPage
-        }
-      >
+      <SafeAreaView style={styles.loadingPage}>
         <StatusBar
           barStyle="dark-content"
           backgroundColor="#F4F7FB"
@@ -654,116 +789,68 @@ export default function Personalizacion() {
           color="#7C3AED"
         />
 
-        <Text
-          style={
-            styles.loadingTitle
-          }
-        >
+        <Text style={styles.loadingTitle}>
           Personalización
         </Text>
 
-        <Text
-          style={
-            styles.loadingText
-          }
-        >
+        <Text style={styles.loadingText}>
           Cargando laboratorios...
         </Text>
       </SafeAreaView>
     );
   }
 
-  // =====================================================
-  // INTERFAZ
-  // =====================================================
+  // ====================================================
+  // INTERFAZ PRINCIPAL
+  // ====================================================
 
   return (
-    <SafeAreaView
-      style={
-        styles.page
-      }
-    >
+    <SafeAreaView style={styles.page}>
       <StatusBar
         barStyle="dark-content"
         backgroundColor="#F4F7FB"
       />
 
       <ScrollView
-        contentContainerStyle={
-          styles.scroll
-        }
-        showsVerticalScrollIndicator={
-          false
-        }
+        contentContainerStyle={styles.scroll}
+        showsVerticalScrollIndicator={false}
       >
+        {/* ENCABEZADO */}
 
-        {/* HEADER */}
-
-        <View
-          style={
-            styles.header
-          }
-        >
+        <View style={styles.header}>
           <Pressable
-  style={styles.backButton}
-  onPress={() => {
-    if (router.canGoBack()) {
-      router.back();
-    } else {
-      router.replace("/");
-    }
-  }}
->
-  <Text style={styles.backText}>
-    ← Volver
-  </Text>
-</Pressable>
-
-          <View
-            style={
-              styles.headerRow
-            }
-          >
-            <View
-              style={
-                styles.headerTextBox
+            style={styles.backButton}
+            onPress={() => {
+              if (router.canGoBack()) {
+                router.back();
+              } else {
+                router.replace("/");
               }
-            >
-              <Text
-                style={
-                  styles.eyebrow
-                }
-              >
+            }}
+          >
+            <Text style={styles.backText}>
+              ← Volver
+            </Text>
+          </Pressable>
+
+          <View style={styles.headerRow}>
+            <View style={styles.headerTextBox}>
+              <Text style={styles.eyebrow}>
                 IDENTIDAD VISUAL
               </Text>
 
-              <Text
-                style={
-                  styles.title
-                }
-              >
+              <Text style={styles.title}>
                 Personalización
               </Text>
 
-              <Text
-                style={
-                  styles.subtitle
-                }
-              >
-                Configura el logo, nombre visible y colores de cada laboratorio.
+              <Text style={styles.subtitle}>
+                Configura el logo, nombre visible
+                y colores de cada laboratorio.
               </Text>
             </View>
 
-            <View
-              style={
-                styles.headerIcon
-              }
-            >
-              <Text
-                style={
-                  styles.headerEmoji
-                }
-              >
+            <View style={styles.headerIcon}>
+              <Text style={{ fontSize: 32 }}>
                 🎨
               </Text>
             </View>
@@ -772,947 +859,461 @@ export default function Personalizacion() {
 
         {/* ESTADÍSTICAS */}
 
-        <View
-          style={
-            styles.stats
-          }
-        >
-          <StatCard
-            icono="🏥"
-            titulo="Laboratorios"
-            valor={total}
-            fondo="#DBEAFE"
-          />
+        <View style={styles.statsRow}>
+          <View style={styles.statCard}>
+            <Text style={styles.statNumber}>
+              {total}
+            </Text>
 
-          <StatCard
-            icono="🎨"
-            titulo="Personalizados"
-            valor={personalizados}
-            fondo="#EDE9FE"
-          />
+            <Text style={styles.statLabel}>
+              Laboratorios
+            </Text>
+          </View>
 
-          <StatCard
-            icono="⏳"
-            titulo="Pendientes"
-            valor={pendientes}
-            fondo="#FEF3C7"
-          />
+          <View style={styles.statCard}>
+            <Text style={styles.statNumber}>
+              {personalizados}
+            </Text>
+
+            <Text style={styles.statLabel}>
+              Personalizados
+            </Text>
+          </View>
+
+          <View style={styles.statCard}>
+            <Text style={styles.statNumber}>
+              {pendientes}
+            </Text>
+
+            <Text style={styles.statLabel}>
+              Pendientes
+            </Text>
+          </View>
         </View>
 
         {/* BUSCADOR */}
 
-        <View
-          style={
-            styles.searchBox
-          }
-        >
-          <Text
-            style={
-              styles.searchEmoji
-            }
-          >
-            🔎
+        <View style={styles.filtersCard}>
+          <Text style={styles.label}>
+            Buscar laboratorio
           </Text>
 
           <TextInput
-            style={
-              styles.searchInput
-            }
-            value={
-              busqueda
-            }
-            onChangeText={
-              setBusqueda
-            }
-            placeholder="Buscar laboratorio..."
+            style={styles.input}
+            placeholder="Nombre o correo..."
             placeholderTextColor="#94A3B8"
-          />
-        </View>
-
-        {/* FILTROS */}
-
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={
-            false
-          }
-          contentContainerStyle={
-            styles.filters
-          }
-        >
-          <FiltroButton
-            texto="Todos"
-            activo={
-              filtro ===
-              "todos"
-            }
-            onPress={() =>
-              setFiltro(
-                "todos"
-              )
-            }
+            value={busqueda}
+            onChangeText={setBusqueda}
           />
 
-          <FiltroButton
-            texto="Activos"
-            activo={
-              filtro ===
-              "activos"
-            }
-            onPress={() =>
-              setFiltro(
-                "activos"
-              )
-            }
-          />
-
-          <FiltroButton
-            texto="Inactivos"
-            activo={
-              filtro ===
-              "inactivos"
-            }
-            onPress={() =>
-              setFiltro(
-                "inactivos"
-              )
-            }
-          />
-        </ScrollView>
-
-        {/* LISTADO */}
-
-        <View
-          style={
-            styles.sectionHeader
-          }
-        >
-          <View
-            style={
-              styles.sectionHeaderText
-            }
-          >
-            <Text
-              style={
-                styles.sectionTitle
-              }
-            >
-              Laboratorios
-            </Text>
-
-            <Text
-              style={
-                styles.sectionSubtitle
-              }
-            >
-              Selecciona el laboratorio que deseas personalizar.
-            </Text>
-          </View>
-
-          <View
-            style={
-              styles.counter
-            }
-          >
-            <Text
-              style={
-                styles.counterText
-              }
-            >
-              {
-                laboratoriosFiltrados
-                  .length
-              }
-            </Text>
+          <View style={styles.filtersRow}>
+            {(
+              [
+                "todos",
+                "activos",
+                "inactivos",
+              ] as FiltroEstado[]
+            ).map((estado) => (
+              <Pressable
+                key={estado}
+                style={[
+                  styles.filterButton,
+                  filtro === estado &&
+                    styles.filterButtonActive,
+                ]}
+                onPress={() => setFiltro(estado)}
+              >
+                <Text
+                  style={[
+                    styles.filterText,
+                    filtro === estado &&
+                      styles.filterTextActive,
+                  ]}
+                >
+                  {estado === "todos"
+                    ? "Todos"
+                    : estado === "activos"
+                    ? "Activos"
+                    : "Inactivos"}
+                </Text>
+              </Pressable>
+            ))}
           </View>
         </View>
 
-        {laboratoriosFiltrados.length ===
-        0 ? (
-          <View
-            style={
-              styles.empty
-            }
+        {/* LISTA */}
+
+        <View style={styles.listHeader}>
+          <Text style={styles.sectionTitle}>
+            Laboratorios registrados
+          </Text>
+
+          <Pressable
+            onPress={() => {
+              void cargarLaboratorios();
+            }}
           >
-            <Text
-              style={
-                styles.emptyIcon
-              }
-            >
-              🔎
+            <Text style={styles.refreshText}>
+              Actualizar
             </Text>
+          </Pressable>
+        </View>
 
-            <Text
-              style={
-                styles.emptyTitle
-              }
-            >
-              Sin resultados
-            </Text>
-
-            <Text
-              style={
-                styles.emptyText
-              }
-            >
+        {laboratoriosFiltrados.length === 0 ? (
+          <View style={styles.emptyCard}>
+            <Text style={styles.emptyText}>
               No se encontraron laboratorios.
             </Text>
           </View>
-
         ) : (
-          laboratoriosFiltrados.map(
-            (laboratorio) => (
-              <Pressable
-                key={
-                  laboratorio.id
-                }
-                style={({
-                  pressed,
-                }) => [
-                  styles.labCard,
-
-                  pressed &&
-                    styles.pressed,
-                ]}
-                onPress={() =>
-                  abrirEditor(
-                    laboratorio
-                  )
-                }
-              >
-                <View
-                  style={
-                    styles.labLogo
-                  }
-                >
+          laboratoriosFiltrados.map((laboratorio) => (
+            <View
+              key={laboratorio.id}
+              style={styles.labCard}
+            >
+              <View style={styles.labRow}>
+                <View style={styles.labLogo}>
                   {laboratorio.logoUrl ? (
                     <Image
                       source={{
-                        uri:
-                          laboratorio.logoUrl,
+                        uri: laboratorio.logoUrl,
                       }}
-                      style={
-                        styles.labLogoImage
-                      }
+                      style={styles.labLogoImage}
                       resizeMode="contain"
                     />
                   ) : (
-                    <Text
-                      style={
-                        styles.labEmoji
-                      }
-                    >
+                    <Text style={{ fontSize: 25 }}>
                       🧪
                     </Text>
                   )}
                 </View>
 
-                <View
-                  style={
-                    styles.labInfo
-                  }
-                >
-                  <Text
-                    style={
-                      styles.labName
-                    }
-                    numberOfLines={1}
-                  >
-                    {
-                      laboratorio.nombre ||
-                      "Sin nombre"
-                    }
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.labName}>
+                    {laboratorio.nombreVisible ||
+                      laboratorio.nombre}
+                  </Text>
+
+                  <Text style={styles.labEmail}>
+                    {laboratorio.email}
                   </Text>
 
                   <Text
-                    style={
-                      styles.labVisibleName
-                    }
-                    numberOfLines={1}
-                  >
-                    {
-                      laboratorio.nombreVisible ||
-                      "Sin personalizar"
-                    }
-                  </Text>
-
-                  <View
-                    style={
-                      styles.labBottom
-                    }
-                  >
-                    <View
-                      style={[
-                        styles.status,
-
-                        laboratorio.activo
-                          ? styles.statusActive
-                          : styles.statusInactive,
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          styles.statusText,
-
-                          {
-                            color:
-                              laboratorio.activo
-                                ? "#15803D"
-                                : "#B91C1C",
-                          },
-                        ]}
-                      >
-                        {
-                          laboratorio.activo
-                            ? "Activo"
-                            : "Inactivo"
-                        }
-                      </Text>
-                    </View>
-
-                    <View
-                      style={
-                        styles.colors
-                      }
-                    >
-                      <View
-                        style={[
-                          styles.colorDot,
-
-                          {
-                            backgroundColor:
-                              laboratorio.colorPrimario,
-                          },
-                        ]}
-                      />
-
-                      <View
-                        style={[
-                          styles.colorDot,
-
-                          {
-                            backgroundColor:
-                              laboratorio.colorSecundario,
-                          },
-                        ]}
-                      />
-                    </View>
-                  </View>
-                </View>
-
-                <Text
-                  style={
-                    styles.arrow
-                  }
-                >
-                  ›
-                </Text>
-              </Pressable>
-            )
-          )
-        )}
-      </ScrollView>
-
-      {/* MODAL */}
-
-      <Modal
-        visible={
-          modalVisible
-        }
-        transparent
-        animationType="slide"
-        onRequestClose={
-          cerrarEditor
-        }
-      >
-        <KeyboardAvoidingView
-          style={
-            styles.modalOverlay
-          }
-          behavior={
-            Platform.OS ===
-            "ios"
-              ? "padding"
-              : undefined
-          }
-        >
-          <View
-            style={
-              styles.modal
-            }
-          >
-            <ScrollView
-              showsVerticalScrollIndicator={
-                false
-              }
-              keyboardShouldPersistTaps="handled"
-            >
-              <View
-                style={
-                  styles.modalHeader
-                }
-              >
-                <View
-                  style={
-                    styles.modalHeaderText
-                  }
-                >
-                  <Text
-                    style={
-                      styles.modalTitle
-                    }
-                  >
-                    Personalizar laboratorio
-                  </Text>
-
-                  <Text
-                    style={
-                      styles.modalSubtitle
-                    }
-                  >
-                    {
-                      seleccionado?.nombre ||
-                      ""
-                    }
-                  </Text>
-                </View>
-
-                <Pressable
-                  style={
-                    styles.closeButton
-                  }
-                  onPress={
-                    cerrarEditor
-                  }
-                  disabled={
-                    guardando ||
-                    procesandoImagen
-                  }
-                >
-                  <Text
-                    style={
-                      styles.closeText
-                    }
-                  >
-                    ×
-                  </Text>
-                </Pressable>
-              </View>
-
-              {/* IDENTIDAD */}
-
-              <View
-                style={
-                  styles.formCard
-                }
-              >
-                <SectionTitle
-                  icono="🏷️"
-                  titulo="Identidad"
-                  texto="Nombre visible del laboratorio."
-                />
-
-                <Text
-                  style={
-                    styles.label
-                  }
-                >
-                  Nombre visible
-                </Text>
-
-                <TextInput
-                  style={
-                    styles.input
-                  }
-                  value={
-                    nombreVisible
-                  }
-                  onChangeText={
-                    setNombreVisible
-                  }
-                  placeholder="Laboratorio Central"
-                  placeholderTextColor="#94A3B8"
-                  maxLength={80}
-                  editable={
-                    !guardando
-                  }
-                />
-              </View>
-
-              {/* LOGO */}
-
-              <View
-                style={
-                  styles.formCard
-                }
-              >
-                <SectionTitle
-                  icono="🖼️"
-                  titulo="Logo"
-                  texto="Selecciona una imagen desde tu dispositivo."
-                  morado
-                />
-
-                <View
-                  style={
-                    styles.logoEditor
-                  }
-                >
-                  <View
-                    style={
-                      styles.logoPreview
-                    }
-                  >
-                    {logoUrl ? (
-                      <Image
-                        source={{
-                          uri:
-                            logoUrl,
-                        }}
-                        style={
-                          styles.logoPreviewImage
-                        }
-                        resizeMode="contain"
-                      />
-                    ) : (
-                      <Text
-                        style={
-                          styles.logoPreviewEmoji
-                        }
-                      >
-                        🧪
-                      </Text>
-                    )}
-                  </View>
-
-                  <View
-                    style={
-                      styles.logoActions
-                    }
-                  >
-                    <Pressable
-                      style={[
-                        styles.uploadButton,
-
-                        (
-                          guardando ||
-                          procesandoImagen
-                        ) &&
-                          styles.disabledButton,
-                      ]}
-                      onPress={
-                        seleccionarLogo
-                      }
-                      disabled={
-                        guardando ||
-                        procesandoImagen
-                      }
-                    >
-                      {procesandoImagen ? (
-                        <ActivityIndicator
-                          color="#FFFFFF"
-                          size="small"
-                        />
-                      ) : (
-                        <Text
-                          style={
-                            styles.uploadButtonText
-                          }
-                        >
-                          📁 Seleccionar logo
-                        </Text>
-                      )}
-                    </Pressable>
-
-                    {logoUrl ? (
-                      <Pressable
-                        style={
-                          styles.removeButton
-                        }
-                        onPress={
-                          quitarLogo
-                        }
-                        disabled={
-                          guardando ||
-                          procesandoImagen
-                        }
-                      >
-                        <Text
-                          style={
-                            styles.removeButtonText
-                          }
-                        >
-                          Quitar logo
-                        </Text>
-                      </Pressable>
-                    ) : null}
-
-                    {nombreArchivo ? (
-                      <Text
-                        style={
-                          styles.fileName
-                        }
-                        numberOfLines={2}
-                      >
-                        {
-                          nombreArchivo
-                        }
-                      </Text>
-                    ) : null}
-                  </View>
-                </View>
-
-                <Text
-                  style={
-                    styles.helpText
-                  }
-                >
-                  El logo se guarda directamente en logoUrl de Firestore. No usa Firebase Storage.
-                </Text>
-              </View>
-
-              {/* COLORES */}
-
-              <View
-                style={
-                  styles.formCard
-                }
-              >
-                <SectionTitle
-                  icono="🎨"
-                  titulo="Colores"
-                  texto="Colores institucionales."
-                  verde
-                />
-
-                <Text
-                  style={
-                    styles.label
-                  }
-                >
-                  Color principal
-                </Text>
-
-                <View
-                  style={
-                    styles.colorInputRow
-                  }
-                >
-                  <View
                     style={[
-                      styles.colorPreview,
-
+                      styles.labStatus,
                       {
-                        backgroundColor:
-                          validarColor(
-                            colorPrimario
-                          )
-                            ? colorPrimario
-                            : PERSONALIZACION_DEFAULT
-                                .colorPrimario,
+                        color: laboratorio.activo
+                          ? "#15803D"
+                          : "#B91C1C",
                       },
                     ]}
-                  />
-
-                  <TextInput
-                    style={
-                      styles.colorTextInput
-                    }
-                    value={
-                      colorPrimario
-                    }
-                    onChangeText={(
-                      texto
-                    ) =>
-                      setColorPrimario(
-                        texto.toUpperCase()
-                      )
-                    }
-                    autoCapitalize="characters"
-                    maxLength={7}
-                    editable={
-                      !guardando
-                    }
-                  />
-                </View>
-
-                <Text
-                  style={
-                    styles.labelSecond
-                  }
-                >
-                  Color secundario
-                </Text>
-
-                <View
-                  style={
-                    styles.colorInputRow
-                  }
-                >
-                  <View
-                    style={[
-                      styles.colorPreview,
-
-                      {
-                        backgroundColor:
-                          validarColor(
-                            colorSecundario
-                          )
-                            ? colorSecundario
-                            : PERSONALIZACION_DEFAULT
-                                .colorSecundario,
-                      },
-                    ]}
-                  />
-
-                  <TextInput
-                    style={
-                      styles.colorTextInput
-                    }
-                    value={
-                      colorSecundario
-                    }
-                    onChangeText={(
-                      texto
-                    ) =>
-                      setColorSecundario(
-                        texto.toUpperCase()
-                      )
-                    }
-                    autoCapitalize="characters"
-                    maxLength={7}
-                    editable={
-                      !guardando
-                    }
-                  />
-                </View>
-
-                <Text
-                  style={
-                    styles.paletteTitle
-                  }
-                >
-                  Paletas rápidas
-                </Text>
-
-                <View
-                  style={
-                    styles.paletteGrid
-                  }
-                >
-                  {PALETAS.map(
-                    (paleta) => (
-                      <Pressable
-                        key={
-                          paleta.nombre
-                        }
-                        style={
-                          styles.paletteCard
-                        }
-                        onPress={() =>
-                          aplicarPaleta(
-                            paleta.primario,
-                            paleta.secundario
-                          )
-                        }
-                        disabled={
-                          guardando
-                        }
-                      >
-                        <View
-                          style={
-                            styles.paletteColors
-                          }
-                        >
-                          <View
-                            style={[
-                              styles.paletteColor,
-
-                              {
-                                backgroundColor:
-                                  paleta.primario,
-                              },
-                            ]}
-                          />
-
-                          <View
-                            style={[
-                              styles.paletteColor,
-
-                              {
-                                backgroundColor:
-                                  paleta.secundario,
-                              },
-                            ]}
-                          />
-                        </View>
-
-                        <Text
-                          style={
-                            styles.paletteName
-                          }
-                        >
-                          {
-                            paleta.nombre
-                          }
-                        </Text>
-                      </Pressable>
-                    )
-                  )}
+                  >
+                    {laboratorio.activo
+                      ? "Activo"
+                      : "Inactivo"}
+                  </Text>
                 </View>
               </View>
 
-              {/* PREVIEW */}
-
-              <View
-                style={
-                  styles.formCard
-                }
-              >
-                <SectionTitle
-                  icono="👁️"
-                  titulo="Vista previa"
-                  texto="Así se verá la identidad del laboratorio."
-                  morado
+              <View style={styles.colorsRow}>
+                <View
+                  style={[
+                    styles.colorDot,
+                    {
+                      backgroundColor:
+                        laboratorio.colorPrimario,
+                    },
+                  ]}
                 />
 
                 <View
                   style={[
-                    styles.brandPreview,
-
+                    styles.colorDot,
                     {
                       backgroundColor:
-                        validarColor(
-                          colorPrimario
-                        )
-                          ? colorPrimario
-                          : PERSONALIZACION_DEFAULT
-                              .colorPrimario,
+                        laboratorio.colorSecundario,
                     },
                   ]}
-                >
-                  <View
-                    style={[
-                      styles.secondaryDecoration,
+                />
 
-                      {
-                        backgroundColor:
-                          validarColor(
-                            colorSecundario
-                          )
-                            ? colorSecundario
-                            : PERSONALIZACION_DEFAULT
-                                .colorSecundario,
-                      },
-                    ]}
+                <Text style={styles.colorDescription}>
+                  Colores configurados
+                </Text>
+              </View>
+
+              <Pressable
+                style={styles.editButton}
+                onPress={() => abrirEditor(laboratorio)}
+              >
+                <Text style={styles.editButtonText}>
+                  Editar personalización
+                </Text>
+              </Pressable>
+            </View>
+          ))
+        )}
+      </ScrollView>
+
+      {/* ================================================= */}
+      {/* MODAL EDITOR */}
+      {/* ================================================= */}
+
+      <Modal
+        visible={modalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={cerrarEditor}
+      >
+        <KeyboardAvoidingView
+          style={styles.modalOverlay}
+          behavior={
+            Platform.OS === "ios"
+              ? "padding"
+              : undefined
+          }
+        >
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.modalTitle}>
+                  Editar personalización
+                </Text>
+
+                <Text style={styles.modalSubtitle}>
+                  {seleccionado?.nombre || ""}
+                </Text>
+              </View>
+
+              <Pressable
+                style={styles.closeButton}
+                onPress={cerrarEditor}
+                disabled={
+                  guardando || procesandoImagen
+                }
+              >
+                <Text style={styles.closeText}>
+                  ×
+                </Text>
+              </Pressable>
+            </View>
+
+            <ScrollView
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={styles.modalScroll}
+            >
+              {/* NOMBRE */}
+
+              <Text style={styles.label}>
+                Nombre visible del laboratorio
+              </Text>
+
+              <TextInput
+                style={styles.input}
+                value={nombreVisible}
+                onChangeText={setNombreVisible}
+                placeholder="Nombre del laboratorio"
+                placeholderTextColor="#94A3B8"
+                editable={!guardando}
+              />
+
+              {/* LOGO */}
+
+              <Text style={styles.label}>
+                Logo del laboratorio
+              </Text>
+
+              <View style={styles.logoPreviewBox}>
+                {logoUrl ? (
+                  <Image
+                    key={logoUrl.substring(0, 80)}
+                    source={{ uri: logoUrl }}
+                    style={styles.logoPreview}
+                    resizeMode="contain"
                   />
+                ) : (
+                  <View style={styles.logoPlaceholder}>
+                    <Text style={{ fontSize: 43 }}>
+                      🧪
+                    </Text>
 
-                  <View
-                    style={
-                      styles.previewTop
+                    <Text style={styles.logoPlaceholderText}>
+                      Sin logo seleccionado
+                    </Text>
+                  </View>
+                )}
+              </View>
+
+              {nombreArchivo !== "" && (
+                <Text style={styles.fileName}>
+                  Archivo: {nombreArchivo}
+                </Text>
+              )}
+
+              <Pressable
+                style={[
+                  styles.selectButton,
+                  procesandoImagen &&
+                    styles.buttonDisabled,
+                ]}
+                onPress={() => {
+                  void seleccionarLogo();
+                }}
+                disabled={
+                  procesandoImagen || guardando
+                }
+              >
+                {procesandoImagen ? (
+                  <ActivityIndicator
+                    color="#FFFFFF"
+                  />
+                ) : (
+                  <Text style={styles.selectButtonText}>
+                    Seleccionar imagen
+                  </Text>
+                )}
+              </Pressable>
+
+              {logoUrl !== "" && (
+                <Pressable
+                  style={styles.removeButton}
+                  onPress={quitarLogo}
+                  disabled={
+                    guardando || procesandoImagen
+                  }
+                >
+                  <Text style={styles.removeButtonText}>
+                    Quitar logo
+                  </Text>
+                </Pressable>
+              )}
+
+              <Text style={styles.helpText}>
+                Selecciona una imagen JPG o PNG.
+                La imagen se procesará antes de
+                guardarse.
+              </Text>
+
+              {/* COLORES */}
+
+              <Text style={styles.sectionLabel}>
+                Colores del laboratorio
+              </Text>
+
+              <Text style={styles.label}>
+                Color principal
+              </Text>
+
+              <View style={styles.colorInputRow}>
+                <View
+                  style={[
+                    styles.colorPreview,
+                    {
+                      backgroundColor: validarColor(
+                        colorPrimario
+                      )
+                        ? colorPrimario
+                        : "#FFFFFF",
+                    },
+                  ]}
+                />
+
+                <TextInput
+                  style={styles.colorInput}
+                  value={colorPrimario}
+                  onChangeText={setColorPrimario}
+                  placeholder="#2563EB"
+                  autoCapitalize="characters"
+                  maxLength={7}
+                />
+              </View>
+
+              <Text style={styles.label}>
+                Color secundario
+              </Text>
+
+              <View style={styles.colorInputRow}>
+                <View
+                  style={[
+                    styles.colorPreview,
+                    {
+                      backgroundColor: validarColor(
+                        colorSecundario
+                      )
+                        ? colorSecundario
+                        : "#FFFFFF",
+                    },
+                  ]}
+                />
+
+                <TextInput
+                  style={styles.colorInput}
+                  value={colorSecundario}
+                  onChangeText={setColorSecundario}
+                  placeholder="#14B8A6"
+                  autoCapitalize="characters"
+                  maxLength={7}
+                />
+              </View>
+
+              {/* PALETAS */}
+
+              <Text style={styles.sectionLabel}>
+                Paletas predeterminadas
+              </Text>
+
+              <View style={styles.paletasContainer}>
+                {PALETAS.map((paleta) => (
+                  <Pressable
+                    key={paleta.nombre}
+                    style={styles.paletaButton}
+                    onPress={() =>
+                      aplicarPaleta(
+                        paleta.primario,
+                        paleta.secundario
+                      )
                     }
                   >
-                    <View
-                      style={
-                        styles.previewLogo
-                      }
-                    >
-                      {logoUrl ? (
-                        <Image
-                          source={{
-                            uri:
-                              logoUrl,
-                          }}
-                          style={
-                            styles.previewLogoImage
-                          }
-                          resizeMode="contain"
-                        />
-                      ) : (
-                        <Text
-                          style={
-                            styles.previewEmoji
-                          }
-                        >
-                          🧪
-                        </Text>
-                      )}
+                    <View style={styles.paletaColors}>
+                      <View
+                        style={[
+                          styles.paletaDot,
+                          {
+                            backgroundColor:
+                              paleta.primario,
+                          },
+                        ]}
+                      />
+
+                      <View
+                        style={[
+                          styles.paletaDot,
+                          {
+                            backgroundColor:
+                              paleta.secundario,
+                          },
+                        ]}
+                      />
                     </View>
 
-                    <View
-                      style={
-                        styles.previewTextBox
-                      }
-                    >
-                      <Text
-                        style={
-                          styles.previewTitle
-                        }
-                      >
-                        {
-                          nombreVisible ||
-                          seleccionado?.nombre ||
-                          "Laboratorio Clínico"
-                        }
-                      </Text>
-
-                      <Text
-                        style={
-                          styles.previewSubtitle
-                        }
-                      >
-                        Sistema de Laboratorio Clínico
-                      </Text>
-                    </View>
-                  </View>
-
-                  <View
-                    style={
-                      styles.previewStats
-                    }
-                  >
-                    <PreviewStat
-                      titulo="Pacientes"
-                      valor="128"
-                    />
-
-                    <PreviewStat
-                      titulo="Solicitudes"
-                      valor="34"
-                    />
-
-                    <PreviewStat
-                      titulo="Resultados"
-                      valor="21"
-                    />
-                  </View>
-                </View>
+                    <Text style={styles.paletaText}>
+                      {paleta.nombre}
+                    </Text>
+                  </Pressable>
+                ))}
               </View>
 
               {/* BOTONES */}
 
-              <View
-                style={
-                  styles.modalActions
-                }
-              >
+              <View style={styles.modalActions}>
                 <Pressable
-                  style={
-                    styles.cancelButton
-                  }
-                  onPress={
-                    cerrarEditor
-                  }
+                  style={styles.cancelButton}
+                  onPress={cerrarEditor}
                   disabled={
-                    guardando ||
-                    procesandoImagen
+                    guardando || procesandoImagen
                   }
                 >
-                  <Text
-                    style={
-                      styles.cancelText
-                    }
-                  >
+                  <Text style={styles.cancelText}>
                     Cancelar
                   </Text>
                 </Pressable>
@@ -1720,16 +1321,14 @@ export default function Personalizacion() {
                 <Pressable
                   style={[
                     styles.saveButton,
-
-                    guardando &&
-                      styles.disabledButton,
+                    (guardando || procesandoImagen) &&
+                      styles.buttonDisabled,
                   ]}
-                  onPress={
-                    guardar
-                  }
+                  onPress={() => {
+                    void guardar();
+                  }}
                   disabled={
-                    guardando ||
-                    procesandoImagen
+                    guardando || procesandoImagen
                   }
                 >
                   {guardando ? (
@@ -1737,11 +1336,7 @@ export default function Personalizacion() {
                       color="#FFFFFF"
                     />
                   ) : (
-                    <Text
-                      style={
-                        styles.saveText
-                      }
-                    >
+                    <Text style={styles.saveText}>
                       Guardar cambios
                     </Text>
                   )}
@@ -1755,970 +1350,528 @@ export default function Personalizacion() {
   );
 }
 
-function StatCard({
-  icono,
-  titulo,
-  valor,
-  fondo,
-}: {
-  icono: string;
-  titulo: string;
-  valor: number;
-  fondo: string;
-}) {
-  return (
-    <View
-      style={
-        styles.statCard
-      }
-    >
-      <View
-        style={[
-          styles.statIcon,
-          {
-            backgroundColor:
-              fondo,
-          },
-        ]}
-      >
-        <Text
-          style={
-            styles.statEmoji
-          }
-        >
-          {icono}
-        </Text>
-      </View>
-
-      <View>
-        <Text
-          style={
-            styles.statTitle
-          }
-        >
-          {titulo}
-        </Text>
-
-        <Text
-          style={
-            styles.statValue
-          }
-        >
-          {valor}
-        </Text>
-      </View>
-    </View>
-  );
-}
-
-function FiltroButton({
-  texto,
-  activo,
-  onPress,
-}: {
-  texto: string;
-  activo: boolean;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable
-      style={[
-        styles.filterButton,
-        activo &&
-          styles.filterButtonActive,
-      ]}
-      onPress={
-        onPress
-      }
-    >
-      <Text
-        style={[
-          styles.filterText,
-          activo &&
-            styles.filterTextActive,
-        ]}
-      >
-        {texto}
-      </Text>
-    </Pressable>
-  );
-}
-
-function SectionTitle({
-  icono,
-  titulo,
-  texto,
-  morado = false,
-  verde = false,
-}: {
-  icono: string;
-  titulo: string;
-  texto: string;
-  morado?: boolean;
-  verde?: boolean;
-}) {
-  return (
-    <View
-      style={
-        styles.formHeader
-      }
-    >
-      <View
-        style={[
-          styles.formIcon,
-
-          morado &&
-            styles.formIconPurple,
-
-          verde &&
-            styles.formIconGreen,
-        ]}
-      >
-        <Text>
-          {icono}
-        </Text>
-      </View>
-
-      <View
-        style={
-          styles.formHeaderText
-        }
-      >
-        <Text
-          style={
-            styles.formTitle
-          }
-        >
-          {titulo}
-        </Text>
-
-        <Text
-          style={
-            styles.formDescription
-          }
-        >
-          {texto}
-        </Text>
-      </View>
-    </View>
-  );
-}
-
-function PreviewStat({
-  titulo,
-  valor,
-}: {
-  titulo: string;
-  valor: string;
-}) {
-  return (
-    <View
-      style={
-        styles.previewStat
-      }
-    >
-      <Text
-        style={
-          styles.previewStatTitle
-        }
-      >
-        {titulo}
-      </Text>
-
-      <Text
-        style={
-          styles.previewStatValue
-        }
-      >
-        {valor}
-      </Text>
-    </View>
-  );
-}
-
-function validarColor(
-  color: string
-): boolean {
-  return /^#[0-9A-Fa-f]{6}$/.test(
-    color
-  );
-}
-
-function obtenerMensajeError(
-  error: unknown,
-  predeterminado: string
-): string {
-  return (
-    error instanceof Error &&
-    error.message
-  )
-    ? error.message
-    : predeterminado;
-}
-
-const styles =
-  StyleSheet.create({
-    page: {
-      flex: 1,
-      backgroundColor:
-        "#F4F7FB",
-    },
-
-    scroll: {
-      padding: 18,
-      paddingBottom: 50,
-    },
-
-    loadingPage: {
-      flex: 1,
-      alignItems: "center",
-      justifyContent: "center",
-      backgroundColor:
-        "#F4F7FB",
-    },
-
-    loadingTitle: {
-      marginTop: 15,
-      color: "#0F172A",
-      fontSize: 20,
-      fontWeight: "900",
-    },
-
-    loadingText: {
-      marginTop: 5,
-      color: "#64748B",
-      fontSize: 11,
-    },
-
-    header: {
-      marginBottom: 20,
-    },
-
-    backButton: {
-      alignSelf: "flex-start",
-      marginBottom: 18,
-      paddingVertical: 8,
-      paddingHorizontal: 12,
-      borderWidth: 1,
-      borderColor: "#E2E8F0",
-      borderRadius: 10,
-      backgroundColor: "#FFFFFF",
-    },
-
-    backText: {
-      color: "#475569",
-      fontSize: 11,
-      fontWeight: "800",
-    },
-
-    headerRow: {
-      flexDirection: "row",
-      alignItems: "center",
-    },
-
-    headerTextBox: {
-      flex: 1,
-      paddingRight: 12,
-    },
-
-    eyebrow: {
-      color: "#7C3AED",
-      fontSize: 9,
-      fontWeight: "900",
-      letterSpacing: 1.2,
-    },
-
-    title: {
-      marginTop: 5,
-      color: "#0F172A",
-      fontSize: 29,
-      fontWeight: "900",
-    },
-
-    subtitle: {
-      marginTop: 7,
-      color: "#64748B",
-      fontSize: 11,
-      lineHeight: 17,
-    },
-
-    headerIcon: {
-      width: 64,
-      height: 64,
-      alignItems: "center",
-      justifyContent: "center",
-      borderRadius: 19,
-      backgroundColor: "#EDE9FE",
-    },
-
-    headerEmoji: {
-      fontSize: 28,
-    },
-
-    stats: {
-      marginBottom: 18,
-    },
-
-    statCard: {
-      flexDirection: "row",
-      alignItems: "center",
-      marginBottom: 10,
-      padding: 15,
-      borderWidth: 1,
-      borderColor: "#E2E8F0",
-      borderRadius: 16,
-      backgroundColor: "#FFFFFF",
-    },
-
-    statIcon: {
-      width: 45,
-      height: 45,
-      alignItems: "center",
-      justifyContent: "center",
-      marginRight: 12,
-      borderRadius: 13,
-    },
-
-    statEmoji: {
-      fontSize: 19,
-    },
-
-    statTitle: {
-      color: "#64748B",
-      fontSize: 9,
-      fontWeight: "800",
-      textTransform: "uppercase",
-    },
-
-    statValue: {
-      marginTop: 2,
-      color: "#0F172A",
-      fontSize: 22,
-      fontWeight: "900",
-    },
-
-    searchBox: {
-      minHeight: 50,
-      flexDirection: "row",
-      alignItems: "center",
-      paddingHorizontal: 14,
-      borderWidth: 1,
-      borderColor: "#E2E8F0",
-      borderRadius: 13,
-      backgroundColor: "#FFFFFF",
-    },
-
-    searchEmoji: {
-      marginRight: 9,
-      fontSize: 18,
-    },
-
-    searchInput: {
-      flex: 1,
-      color: "#0F172A",
-      fontSize: 12,
-    },
-
-    filters: {
-      paddingVertical: 13,
-      paddingRight: 8,
-    },
-
-    filterButton: {
-      marginRight: 8,
-      paddingVertical: 8,
-      paddingHorizontal: 14,
-      borderWidth: 1,
-      borderColor: "#E2E8F0",
-      borderRadius: 20,
-      backgroundColor: "#FFFFFF",
-    },
-
-    filterButtonActive: {
-      borderColor: "#8B5CF6",
-      backgroundColor: "#F5F3FF",
-    },
-
-    filterText: {
-      color: "#64748B",
-      fontSize: 10,
-      fontWeight: "800",
-    },
-
-    filterTextActive: {
-      color: "#6D28D9",
-    },
-
-    sectionHeader: {
-      flexDirection: "row",
-      alignItems: "center",
-      justifyContent:
-        "space-between",
-      marginTop: 5,
-      marginBottom: 12,
-    },
-
-    sectionHeaderText: {
-      flex: 1,
-      paddingRight: 12,
-    },
-
-    sectionTitle: {
-      color: "#0F172A",
-      fontSize: 19,
-      fontWeight: "900",
-    },
-
-    sectionSubtitle: {
-      marginTop: 3,
-      color: "#64748B",
-      fontSize: 9,
-    },
-
-    counter: {
-      minWidth: 34,
-      height: 34,
-      alignItems: "center",
-      justifyContent: "center",
-      borderRadius: 17,
-      backgroundColor: "#EDE9FE",
-    },
-
-    counterText: {
-      color: "#6D28D9",
-      fontSize: 12,
-      fontWeight: "900",
-    },
-
-    labCard: {
-      flexDirection: "row",
-      alignItems: "center",
-      marginBottom: 10,
-      padding: 13,
-      borderWidth: 1,
-      borderColor: "#E2E8F0",
-      borderRadius: 15,
-      backgroundColor: "#FFFFFF",
-    },
-
-    pressed: {
-      opacity: 0.75,
-    },
-
-    labLogo: {
-      width: 55,
-      height: 55,
-      alignItems: "center",
-      justifyContent: "center",
-      overflow: "hidden",
-      marginRight: 11,
-      borderRadius: 14,
-      backgroundColor: "#F8FAFC",
-    },
-
-    labLogoImage: {
-      width: "100%",
-      height: "100%",
-    },
-
-    labEmoji: {
-      fontSize: 25,
-    },
-
-    labInfo: {
-      flex: 1,
-    },
-
-    labName: {
-      color: "#0F172A",
-      fontSize: 12,
-      fontWeight: "900",
-    },
-
-    labVisibleName: {
-      marginTop: 3,
-      color: "#64748B",
-      fontSize: 9,
-    },
-
-    labBottom: {
-      flexDirection: "row",
-      alignItems: "center",
-      marginTop: 8,
-    },
-
-    status: {
-      paddingVertical: 4,
-      paddingHorizontal: 8,
-      borderRadius: 20,
-    },
-
-    statusActive: {
-      backgroundColor: "#DCFCE7",
-    },
-
-    statusInactive: {
-      backgroundColor: "#FEE2E2",
-    },
-
-    statusText: {
-      fontSize: 8,
-      fontWeight: "900",
-    },
-
-    colors: {
-      flexDirection: "row",
-      marginLeft: 9,
-    },
-
-    colorDot: {
-      width: 16,
-      height: 16,
-      marginRight: 4,
-      borderRadius: 5,
-      borderWidth: 1,
-      borderColor: "#E2E8F0",
-    },
-
-    arrow: {
-      marginLeft: 8,
-      color: "#7C3AED",
-      fontSize: 30,
-      fontWeight: "300",
-    },
-
-    empty: {
-      alignItems: "center",
-      justifyContent: "center",
-      padding: 40,
-      borderWidth: 1,
-      borderColor: "#E2E8F0",
-      borderRadius: 16,
-      backgroundColor: "#FFFFFF",
-    },
-
-    emptyIcon: {
-      fontSize: 37,
-    },
-
-    emptyTitle: {
-      marginTop: 10,
-      color: "#334155",
-      fontSize: 15,
-      fontWeight: "900",
-    },
-
-    emptyText: {
-      marginTop: 4,
-      color: "#64748B",
-      fontSize: 10,
-    },
-
-    modalOverlay: {
-      flex: 1,
-      justifyContent: "flex-end",
-      backgroundColor:
-        "rgba(15,23,42,.65)",
-    },
-
-    modal: {
-      maxHeight: "94%",
-      padding: 20,
-      borderTopLeftRadius: 25,
-      borderTopRightRadius: 25,
-      backgroundColor: "#F8FAFC",
-    },
-
-    modalHeader: {
-      flexDirection: "row",
-      alignItems: "flex-start",
-      paddingBottom: 15,
-      marginBottom: 15,
-      borderBottomWidth: 1,
-      borderBottomColor: "#E2E8F0",
-    },
-
-    modalHeaderText: {
-      flex: 1,
-      paddingRight: 12,
-    },
-
-    modalTitle: {
-      color: "#0F172A",
-      fontSize: 20,
-      fontWeight: "900",
-    },
-
-    modalSubtitle: {
-      marginTop: 4,
-      color: "#64748B",
-      fontSize: 10,
-    },
-
-    closeButton: {
-      width: 38,
-      height: 38,
-      alignItems: "center",
-      justifyContent: "center",
-      borderRadius: 10,
-      backgroundColor: "#E2E8F0",
-    },
-
-    closeText: {
-      color: "#475569",
-      fontSize: 23,
-      lineHeight: 25,
-    },
-
-    formCard: {
-      marginBottom: 13,
-      padding: 16,
-      borderWidth: 1,
-      borderColor: "#E2E8F0",
-      borderRadius: 16,
-      backgroundColor: "#FFFFFF",
-    },
-
-    formHeader: {
-      flexDirection: "row",
-      alignItems: "center",
-      marginBottom: 15,
-    },
-
-    formIcon: {
-      width: 40,
-      height: 40,
-      alignItems: "center",
-      justifyContent: "center",
-      marginRight: 10,
-      borderRadius: 11,
-      backgroundColor: "#DBEAFE",
-    },
-
-    formIconPurple: {
-      backgroundColor: "#EDE9FE",
-    },
-
-    formIconGreen: {
-      backgroundColor: "#DCFCE7",
-    },
-
-    formHeaderText: {
-      flex: 1,
-    },
-
-    formTitle: {
-      color: "#0F172A",
-      fontSize: 14,
-      fontWeight: "900",
-    },
-
-    formDescription: {
-      marginTop: 2,
-      color: "#64748B",
-      fontSize: 8,
-    },
-
-    label: {
-      marginBottom: 7,
-      color: "#334155",
-      fontSize: 10,
-      fontWeight: "800",
-    },
-
-    labelSecond: {
-      marginTop: 15,
-      marginBottom: 7,
-      color: "#334155",
-      fontSize: 10,
-      fontWeight: "800",
-    },
-
-    input: {
-      minHeight: 47,
-      paddingHorizontal: 12,
-      borderWidth: 1,
-      borderColor: "#CBD5E1",
-      borderRadius: 10,
-      backgroundColor: "#FFFFFF",
-      color: "#0F172A",
-      fontSize: 11,
-    },
-
-    logoEditor: {
-      flexDirection: "row",
-      alignItems: "center",
-      padding: 13,
-      borderRadius: 13,
-      backgroundColor: "#F8FAFC",
-    },
-
-    logoPreview: {
-      width: 85,
-      height: 85,
-      alignItems: "center",
-      justifyContent: "center",
-      overflow: "hidden",
-      marginRight: 13,
-      borderWidth: 1,
-      borderColor: "#E2E8F0",
-      borderRadius: 16,
-      backgroundColor: "#FFFFFF",
-    },
-
-    logoPreviewImage: {
-      width: "100%",
-      height: "100%",
-    },
-
-    logoPreviewEmoji: {
-      fontSize: 35,
-    },
-
-    logoActions: {
-      flex: 1,
-    },
-
-    uploadButton: {
-      minHeight: 42,
-      alignItems: "center",
-      justifyContent: "center",
-      paddingHorizontal: 12,
-      borderRadius: 10,
-      backgroundColor: "#7C3AED",
-    },
-
-    uploadButtonText: {
-      color: "#FFFFFF",
-      fontSize: 9,
-      fontWeight: "900",
-    },
-
-    removeButton: {
-      alignSelf: "flex-start",
-      marginTop: 7,
-      paddingVertical: 7,
-      paddingHorizontal: 10,
-      borderWidth: 1,
-      borderColor: "#FECACA",
-      borderRadius: 8,
-      backgroundColor: "#FFF1F2",
-    },
-
-    removeButtonText: {
-      color: "#B91C1C",
-      fontSize: 8,
-      fontWeight: "900",
-    },
-
-    fileName: {
-      marginTop: 7,
-      color: "#64748B",
-      fontSize: 8,
-    },
-
-    helpText: {
-      marginTop: 10,
-      color: "#94A3B8",
-      fontSize: 8,
-      lineHeight: 13,
-    },
-
-    colorInputRow: {
-      flexDirection: "row",
-      alignItems: "center",
-    },
-
-    colorPreview: {
-      width: 47,
-      height: 47,
-      marginRight: 8,
-      borderWidth: 1,
-      borderColor: "#CBD5E1",
-      borderRadius: 10,
-    },
-
-    colorTextInput: {
-      flex: 1,
-      minHeight: 47,
-      paddingHorizontal: 12,
-      borderWidth: 1,
-      borderColor: "#CBD5E1",
-      borderRadius: 10,
-      backgroundColor: "#FFFFFF",
-      color: "#0F172A",
-      fontSize: 11,
-    },
-
-    paletteTitle: {
-      marginTop: 18,
-      marginBottom: 9,
-      color: "#475569",
-      fontSize: 9,
-      fontWeight: "900",
-    },
-
-    paletteGrid: {
-      flexDirection: "row",
-      flexWrap: "wrap",
-      justifyContent: "space-between",
-    },
-
-    paletteCard: {
-      width: "48%",
-      marginBottom: 8,
-      padding: 10,
-      borderWidth: 1,
-      borderColor: "#E2E8F0",
-      borderRadius: 10,
-      backgroundColor: "#FFFFFF",
-    },
-
-    paletteColors: {
-      flexDirection: "row",
-      marginBottom: 6,
-    },
-
-    paletteColor: {
-      width: 25,
-      height: 21,
-      marginRight: 4,
-      borderRadius: 6,
-    },
-
-    paletteName: {
-      color: "#334155",
-      fontSize: 8,
-      fontWeight: "800",
-    },
-
-    brandPreview: {
-      position: "relative",
-      overflow: "hidden",
-      marginTop: 13,
-      padding: 18,
-      borderRadius: 17,
-    },
-
-    secondaryDecoration: {
-      position: "absolute",
-      width: 160,
-      height: 160,
-      top: -90,
-      right: -60,
-      borderRadius: 80,
-      opacity: 0.8,
-    },
-
-    previewTop: {
-      flexDirection: "row",
-      alignItems: "center",
-    },
-
-    previewLogo: {
-      width: 65,
-      height: 65,
-      alignItems: "center",
-      justifyContent: "center",
-      overflow: "hidden",
-      marginRight: 12,
-      borderRadius: 15,
-      backgroundColor: "#FFFFFF",
-    },
-
-    previewLogoImage: {
-      width: "100%",
-      height: "100%",
-    },
-
-    previewEmoji: {
-      fontSize: 30,
-    },
-
-    previewTextBox: {
-      flex: 1,
-    },
-
-    previewTitle: {
-      color: "#FFFFFF",
-      fontSize: 17,
-      fontWeight: "900",
-    },
-
-    previewSubtitle: {
-      marginTop: 4,
-      color: "rgba(255,255,255,.8)",
-      fontSize: 8,
-    },
-
-    previewStats: {
-      flexDirection: "row",
-      marginTop: 17,
-    },
-
-    previewStat: {
-      flex: 1,
-      marginRight: 7,
-      padding: 10,
-      borderWidth: 1,
-      borderColor: "rgba(255,255,255,.20)",
-      borderRadius: 10,
-      backgroundColor:
-        "rgba(255,255,255,.12)",
-    },
-
-    previewStatTitle: {
-      color:
-        "rgba(255,255,255,.8)",
-      fontSize: 7,
-    },
-
-    previewStatValue: {
-      marginTop: 3,
-      color: "#FFFFFF",
-      fontSize: 16,
-      fontWeight: "900",
-    },
-
-    modalActions: {
-      flexDirection: "row",
-      paddingBottom: 20,
-    },
-
-    cancelButton: {
-      flex: 1,
-      minHeight: 48,
-      alignItems: "center",
-      justifyContent: "center",
-      marginRight: 9,
-      borderWidth: 1,
-      borderColor: "#CBD5E1",
-      borderRadius: 11,
-      backgroundColor: "#FFFFFF",
-    },
-
-    cancelText: {
-      color: "#475569",
-      fontSize: 10,
-      fontWeight: "900",
-    },
-
-    saveButton: {
-      flex: 1.5,
-      minHeight: 48,
-      alignItems: "center",
-      justifyContent: "center",
-      borderRadius: 11,
-      backgroundColor: "#7C3AED",
-    },
-
-    saveText: {
-      color: "#FFFFFF",
-      fontSize: 10,
-      fontWeight: "900",
-    },
-
-    disabledButton: {
-      opacity: 0.55,
-    },
-  });
+// ======================================================
+// ESTILOS
+// ======================================================
+
+const styles = StyleSheet.create({
+  page: {
+    flex: 1,
+    backgroundColor: "#F4F7FB",
+  },
+
+  scroll: {
+    padding: 20,
+    paddingBottom: 45,
+  },
+
+  loadingPage: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#F4F7FB",
+  },
+
+  loadingTitle: {
+    fontSize: 23,
+    fontWeight: "800",
+    color: "#0F172A",
+    marginTop: 18,
+  },
+
+  loadingText: {
+    fontSize: 14,
+    color: "#64748B",
+    marginTop: 8,
+  },
+
+  header: {
+    backgroundColor: "#FFFFFF",
+    padding: 24,
+    borderRadius: 20,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+  },
+
+  backButton: {
+    alignSelf: "flex-start",
+    marginBottom: 20,
+    paddingVertical: 8,
+  },
+
+  backText: {
+    color: "#2563EB",
+    fontWeight: "700",
+    fontSize: 14,
+  },
+
+  headerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+
+  headerTextBox: {
+    flex: 1,
+  },
+
+  eyebrow: {
+    color: "#7C3AED",
+    fontSize: 11,
+    fontWeight: "800",
+    letterSpacing: 1.5,
+    marginBottom: 8,
+  },
+
+  title: {
+    fontSize: 28,
+    fontWeight: "800",
+    color: "#0F172A",
+  },
+
+  subtitle: {
+    color: "#64748B",
+    fontSize: 14,
+    lineHeight: 21,
+    marginTop: 9,
+  },
+
+  headerIcon: {
+    width: 65,
+    height: 65,
+    borderRadius: 17,
+    backgroundColor: "#F3E8FF",
+    justifyContent: "center",
+    alignItems: "center",
+    marginLeft: 15,
+  },
+
+  statsRow: {
+    flexDirection: "row",
+    marginBottom: 20,
+    gap: 10,
+  },
+
+  statCard: {
+    flex: 1,
+    backgroundColor: "#FFFFFF",
+    padding: 15,
+    borderRadius: 15,
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+  },
+
+  statNumber: {
+    fontSize: 25,
+    fontWeight: "800",
+    color: "#0F172A",
+  },
+
+  statLabel: {
+    color: "#64748B",
+    fontSize: 11,
+    marginTop: 5,
+    textAlign: "center",
+  },
+
+  filtersCard: {
+    backgroundColor: "#FFFFFF",
+    padding: 20,
+    borderRadius: 17,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+  },
+
+  label: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#334155",
+    marginBottom: 9,
+  },
+
+  input: {
+    height: 49,
+    borderWidth: 1,
+    borderColor: "#CBD5E1",
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    backgroundColor: "#FFFFFF",
+    fontSize: 14,
+    color: "#0F172A",
+    marginBottom: 18,
+  },
+
+  filtersRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 9,
+  },
+
+  filterButton: {
+    paddingHorizontal: 17,
+    paddingVertical: 10,
+    borderRadius: 9,
+    backgroundColor: "#F1F5F9",
+  },
+
+  filterButtonActive: {
+    backgroundColor: "#2563EB",
+  },
+
+  filterText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#475569",
+  },
+
+  filterTextActive: {
+    color: "#FFFFFF",
+  },
+
+  listHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 15,
+  },
+
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: "800",
+    color: "#0F172A",
+  },
+
+  refreshText: {
+    color: "#2563EB",
+    fontSize: 13,
+    fontWeight: "700",
+  },
+
+  emptyCard: {
+    padding: 30,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 15,
+    alignItems: "center",
+  },
+
+  emptyText: {
+    color: "#64748B",
+    fontSize: 14,
+  },
+
+  labCard: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 17,
+    padding: 20,
+    marginBottom: 15,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+  },
+
+  labRow: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+
+  labLogo: {
+    width: 65,
+    height: 65,
+    borderRadius: 13,
+    backgroundColor: "#F1F5F9",
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 14,
+    overflow: "hidden",
+  },
+
+  labLogoImage: {
+    width: 58,
+    height: 58,
+  },
+
+  labName: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: "#0F172A",
+  },
+
+  labEmail: {
+    fontSize: 12,
+    color: "#64748B",
+    marginTop: 5,
+  },
+
+  labStatus: {
+    fontSize: 12,
+    fontWeight: "700",
+    marginTop: 6,
+  },
+
+  colorsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 17,
+    marginBottom: 15,
+    gap: 8,
+  },
+
+  colorDot: {
+    width: 17,
+    height: 17,
+    borderRadius: 9,
+    borderWidth: 1,
+    borderColor: "#CBD5E1",
+  },
+
+  colorDescription: {
+    color: "#64748B",
+    fontSize: 12,
+    marginLeft: 5,
+  },
+
+  editButton: {
+    backgroundColor: "#EEF2FF",
+    borderRadius: 10,
+    paddingVertical: 13,
+    alignItems: "center",
+  },
+
+  editButtonText: {
+    color: "#4338CA",
+    fontSize: 13,
+    fontWeight: "800",
+  },
+
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(15,23,42,0.6)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 15,
+  },
+
+  modalCard: {
+    backgroundColor: "#FFFFFF",
+    width: "100%",
+    maxWidth: 600,
+    maxHeight: "92%",
+    borderRadius: 20,
+    overflow: "hidden",
+  },
+
+  modalHeader: {
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: "#E2E8F0",
+    flexDirection: "row",
+    alignItems: "center",
+  },
+
+  modalTitle: {
+    fontSize: 19,
+    fontWeight: "800",
+    color: "#0F172A",
+  },
+
+  modalSubtitle: {
+    fontSize: 13,
+    color: "#64748B",
+    marginTop: 5,
+  },
+
+  closeButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "#F1F5F9",
+    alignItems: "center",
+    justifyContent: "center",
+    marginLeft: 12,
+  },
+
+  closeText: {
+    fontSize: 25,
+    color: "#475569",
+  },
+
+  modalScroll: {
+    padding: 20,
+    paddingBottom: 30,
+  },
+
+  logoPreviewBox: {
+    height: 170,
+    borderRadius: 13,
+    backgroundColor: "#F8FAFC",
+    borderWidth: 1,
+    borderColor: "#CBD5E1",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 12,
+    overflow: "hidden",
+  },
+
+  logoPreview: {
+    width: 145,
+    height: 145,
+  },
+
+  logoPlaceholder: {
+    alignItems: "center",
+  },
+
+  logoPlaceholderText: {
+    fontSize: 12,
+    color: "#94A3B8",
+    marginTop: 9,
+  },
+
+  fileName: {
+    fontSize: 12,
+    color: "#475569",
+    marginBottom: 12,
+  },
+
+  selectButton: {
+    backgroundColor: "#2563EB",
+    paddingVertical: 14,
+    borderRadius: 10,
+    alignItems: "center",
+    marginBottom: 10,
+  },
+
+  selectButtonText: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "800",
+  },
+
+  removeButton: {
+    paddingVertical: 12,
+    alignItems: "center",
+    backgroundColor: "#FEE2E2",
+    borderRadius: 10,
+    marginBottom: 10,
+  },
+
+  removeButtonText: {
+    color: "#B91C1C",
+    fontSize: 13,
+    fontWeight: "700",
+  },
+
+  helpText: {
+    fontSize: 12,
+    color: "#64748B",
+    lineHeight: 19,
+    marginBottom: 24,
+  },
+
+  sectionLabel: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: "#0F172A",
+    marginBottom: 15,
+    marginTop: 8,
+  },
+
+  colorInputRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 18,
+  },
+
+  colorPreview: {
+    width: 43,
+    height: 43,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#CBD5E1",
+    marginRight: 12,
+  },
+
+  colorInput: {
+    flex: 1,
+    height: 47,
+    borderWidth: 1,
+    borderColor: "#CBD5E1",
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    color: "#0F172A",
+    fontSize: 14,
+  },
+
+  paletasContainer: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+    marginBottom: 25,
+  },
+
+  paletaButton: {
+    padding: 12,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    borderRadius: 10,
+    backgroundColor: "#F8FAFC",
+    alignItems: "center",
+    minWidth: 95,
+  },
+
+  paletaColors: {
+    flexDirection: "row",
+    gap: 6,
+    marginBottom: 8,
+  },
+
+  paletaDot: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+  },
+
+  paletaText: {
+    fontSize: 12,
+    color: "#334155",
+    fontWeight: "700",
+  },
+
+  modalActions: {
+    flexDirection: "row",
+    gap: 10,
+  },
+
+  cancelButton: {
+    flex: 1,
+    backgroundColor: "#F1F5F9",
+    paddingVertical: 15,
+    borderRadius: 10,
+    alignItems: "center",
+  },
+
+  cancelText: {
+    color: "#475569",
+    fontWeight: "800",
+    fontSize: 13,
+  },
+
+  saveButton: {
+    flex: 1,
+    backgroundColor: "#16A34A",
+    paddingVertical: 15,
+    borderRadius: 10,
+    alignItems: "center",
+  },
+
+  saveText: {
+    color: "#FFFFFF",
+    fontWeight: "800",
+    fontSize: 13,
+  },
+
+  buttonDisabled: {
+    opacity: 0.5,
+  },
+});
