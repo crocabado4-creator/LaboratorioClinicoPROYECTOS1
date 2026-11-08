@@ -1,19 +1,40 @@
 import { Platform } from "react-native";
+import * as Print from "expo-print";
+import * as Sharing from "expo-sharing";
+
+// =====================================================
+// TIPOS
+// =====================================================
 
 export type AnalisisPDF = {
   nombre?: string;
   tipo?: string;
-  precio?: number | string;
   cantidad?: number | string;
+  precio?: number | string;
 };
 
 export type DatosVentaPDF = {
   codigo?: string;
   fecha?: string;
+
   laboratorio?: string;
+  laboratorioLogo?: string;
+  laboratorioDireccion?: string;
+  laboratorioTelefono?: string;
+  laboratorioCorreo?: string;
+
   paciente?: string;
   ci?: string;
+  edad?: string;
+  sexo?: string;
+  correo?: string;
+
+  ordenId?: string;
+  solicitudId?: string;
+
   metodoPago?: string;
+  estado?: string;
+
   analisis?: AnalisisPDF[];
   total?: number | string;
 };
@@ -21,484 +42,940 @@ export type DatosVentaPDF = {
 export type DatosAnalisisPDF = {
   codigo?: string;
   fecha?: string;
+
   laboratorio?: string;
+  laboratorioLogo?: string;
+  laboratorioDireccion?: string;
+  laboratorioTelefono?: string;
+  laboratorioCorreo?: string;
+
   paciente?: string;
   ci?: string;
   estado?: string;
+
   analisis?: AnalisisPDF[];
 };
 
+// =====================================================
+// UTILIDADES
+// =====================================================
+
+function texto(valor: unknown): string {
+  return String(valor ?? "").trim();
+}
+
+function escapar(valor: unknown): string {
+  return texto(valor)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function mostrar(valor: unknown): string {
+  return escapar(texto(valor) || "-");
+}
+
 function dinero(valor: unknown): string {
   const numero = Number(valor ?? 0);
-  return Number.isFinite(numero) ? numero.toFixed(2) : "0.00";
+
+  if (!Number.isFinite(numero)) {
+    return "0,00";
+  }
+
+  return numero.toFixed(2).replace(".", ",");
 }
 
 function cantidad(valor: unknown): number {
   const numero = Number(valor ?? 1);
-  return Number.isFinite(numero) && numero > 0 ? numero : 1;
+
+  return Number.isFinite(numero) && numero > 0
+    ? numero
+    : 1;
 }
 
-function limpiarNombre(valor: string): string {
-  return valor.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 60);
-}
+function crearLogo(logo?: string): string {
+  const imagen = texto(logo);
 
-// Convierte texto a caracteres compatibles con la fuente
-// Helvetica estándar de PDF.
-function textoPDF(valor: unknown): string {
-  return String(valor ?? "")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^\x20-\x7E]/g, "?")
-    .replace(/\\/g, "\\\\")
-    .replace(/\(/g, "\\(")
-    .replace(/\)/g, "\\)");
-}
-
-// Generador PDF A4 sin dependencias.
-// Usa los objetos básicos del formato PDF.
-function crearPDF(
-  titulo: string,
-  codigo: string,
-  informacion: string[],
-  encabezados: string[],
-  filas: string[][],
-  total?: string
-): Uint8Array {
-  const ancho = 595;
-  const alto = 842;
-  const margen = 42;
-  const contenido: string[] = [];
-  const paginas: string[] = [];
-
-  let y = 790;
-
-  function comando(valor: string) {
-    contenido.push(valor);
-  }
-
-  function texto(
-    valor: string,
-    x: number,
-    posicionY: number,
-    tamano = 10,
-    negrita = false
+  if (
+    !/^https:\/\//i.test(imagen) &&
+    !/^data:image\/(png|jpeg|jpg|webp);base64,/i.test(imagen)
   ) {
-    comando(
-      `BT /${negrita ? "F2" : "F1"} ${tamano} Tf ` +
-      `${x} ${posicionY} Td (${textoPDF(valor)}) Tj ET`
-    );
+    return "";
   }
 
-  function linea(x1: number, y1: number, x2: number, y2: number) {
-    comando(`0.82 0.87 0.91 RG ${x1} ${y1} m ${x2} ${y2} l S`);
+  return `
+    <div class="logo">
+      <img src="${escapar(imagen)}" />
+    </div>
+  `;
+}
+
+// =====================================================
+// ESTILOS DEL DOCUMENTO
+// =====================================================
+
+const estilos = `
+
+@page {
+  size: A4;
+  margin: 12mm 13mm 14mm 13mm;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: white;
+  color: #334155;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 10px;
+  line-height: 1.45;
+
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+/* BARRA SUPERIOR */
+
+.barra-superior {
+  height: 10px;
+  background: #2563eb;
+  margin-bottom: 22px;
+}
+
+/* ENCABEZADO */
+
+.encabezado {
+  background: #f5f7fa;
+  border: 1px solid #dbe4ef;
+
+  min-height: 115px;
+
+  padding: 15px 25px;
+
+  display: flex;
+  align-items: flex-start;
+}
+
+.logo {
+  width: 95px;
+  height: 95px;
+
+  margin-right: 25px;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.logo img {
+  max-width: 95px;
+  max-height: 95px;
+  object-fit: contain;
+}
+
+.datos-laboratorio {
+  flex: 1;
+}
+
+.nombre-laboratorio {
+  color: #2563eb;
+  font-size: 18px;
+  font-weight: bold;
+  margin-bottom: 7px;
+}
+
+.detalle-laboratorio {
+  font-size: 10px;
+  color: #475569;
+  line-height: 1.4;
+}
+
+/* TÍTULO */
+
+.titulo-principal {
+  margin-top: 12px;
+  margin-bottom: 18px;
+
+  background: #2563eb;
+  color: white;
+
+  border-radius: 7px;
+
+  padding: 14px;
+
+  text-align: center;
+
+  font-size: 15px;
+  font-weight: bold;
+}
+
+/* TABLAS DE DATOS */
+
+.tabla-datos {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.tabla-datos td {
+  border: 1px solid #dce5f0;
+  padding: 10px 12px;
+  font-size: 10px;
+  overflow-wrap: anywhere;
+}
+
+.tabla-datos .etiqueta {
+  background: #eef1f7;
+  color: #263445;
+  font-weight: bold;
+}
+
+.tabla-datos .valor {
+  background: white;
+}
+
+/* TÍTULOS DE SECCIÓN */
+
+.titulo-seccion {
+  background: #eaf2f8;
+
+  border-left: 9px solid #2563eb;
+
+  color: #2563eb;
+
+  font-size: 12px;
+  font-weight: bold;
+
+  padding: 11px 15px;
+
+  margin-top: 22px;
+  margin-bottom: 14px;
+
+  border-radius: 0 6px 6px 0;
+}
+
+/* TABLA DE ANÁLISIS */
+
+.tabla-analisis {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.tabla-analisis th {
+  background: #2563eb;
+  color: white;
+
+  text-align: left;
+
+  padding: 12px 9px;
+
+  font-size: 9px;
+
+  border: 1px solid #dce5f0;
+}
+
+.tabla-analisis td {
+  padding: 11px 9px;
+
+  border: 1px solid #dce5f0;
+
+  font-size: 10px;
+  overflow-wrap: anywhere;
+}
+
+.tabla-analisis tbody tr:nth-child(odd) {
+  background: #f4f7fb;
+}
+
+.centro {
+  text-align: center;
+}
+
+.derecha {
+  text-align: right;
+}
+
+/* TOTAL */
+
+.total-contenedor {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 35px;
+}
+
+.total {
+  background: #eaf2f8;
+
+  color: #2563eb;
+
+  font-size: 17px;
+  font-weight: bold;
+
+  padding: 18px 24px;
+
+  border-radius: 8px;
+
+  min-width: 230px;
+
+  text-align: right;
+}
+
+/* AGRADECIMIENTO */
+
+.agradecimiento {
+  margin-top: 35px;
+
+  text-align: center;
+
+  color: #64748b;
+
+  font-size: 11px;
+}
+
+/* PIE */
+
+.pie {
+  border-top: 1px solid #dce5f0;
+
+  margin-top: 100px;
+
+  padding-top: 12px;
+
+  display: flex;
+
+  justify-content: space-between;
+
+  font-size: 9px;
+
+  color: #64748b;
+}
+
+.pie-final {
+  text-align: center;
+
+  margin-top: 8px;
+
+  font-size: 8px;
+
+  color: #64748b;
+}
+
+tr {
+  page-break-inside: avoid;
+}
+
+thead {
+  display: table-header-group;
+}
+
+`;
+
+// =====================================================
+// ENCABEZADO
+// =====================================================
+
+function encabezado(
+  nombre: string,
+  logo?: string,
+  direccion?: string,
+  telefono?: string,
+  correo?: string
+): string {
+  return `
+
+<div class="encabezado">
+
+  ${crearLogo(logo)}
+
+  <div class="datos-laboratorio">
+
+    <div class="nombre-laboratorio">
+      ${mostrar(nombre)}
+    </div>
+
+    <div class="detalle-laboratorio">
+      ${mostrar(direccion)}
+    </div>
+
+    <div class="detalle-laboratorio">
+      Tel.: ${mostrar(telefono)}
+    </div>
+
+    <div class="detalle-laboratorio">
+      ${mostrar(correo)}
+    </div>
+
+  </div>
+
+</div>
+
+`;
+}
+
+// =====================================================
+// PIE
+// =====================================================
+
+function pie(laboratorio: string): string {
+  const fecha = new Date().toLocaleString("es-BO");
+
+  return `
+
+<div class="pie">
+
+  <span>
+    ${mostrar(laboratorio)}
+  </span>
+
+  <span>
+    Impreso: ${escapar(fecha)}
+  </span>
+
+</div>
+
+<div class="pie-final">
+  Documento generado con la información registrada en el sistema.
+</div>
+
+`;
+}
+
+// =====================================================
+// GENERAR PDF
+// =====================================================
+
+async function generarDocumento(
+  html: string,
+  titulo: string
+): Promise<void> {
+  if (Platform.OS === "web") {
+    await Print.printAsync({ html });
+    return;
   }
 
-  function rectangulo(
-    x: number,
-    posicionY: number,
-    w: number,
-    h: number,
-    r: number,
-    g: number,
-    b: number
-  ) {
-    comando(`${r} ${g} ${b} rg ${x} ${posicionY} ${w} ${h} re f`);
-  }
-
-  function nuevaPagina() {
-    if (contenido.length > 0) {
-      paginas.push(contenido.join("\n"));
-      contenido.length = 0;
-    }
-
-    y = 790;
-  }
-
-  function verificarEspacio(alturaNecesaria: number) {
-    if (y - alturaNecesaria < 65) {
-      nuevaPagina();
-    }
-  }
-
-  function dividirTexto(valor: string, maximo: number): string[] {
-    const palabras = String(valor).split(/\s+/);
-    const resultado: string[] = [];
-    let actual = "";
-
-    for (const palabra of palabras) {
-      const candidato = actual ? `${actual} ${palabra}` : palabra;
-
-      if (candidato.length <= maximo) {
-        actual = candidato;
-      } else {
-        if (actual) resultado.push(actual);
-
-        if (palabra.length <= maximo) {
-          actual = palabra;
-        } else {
-          for (let i = 0; i < palabra.length; i += maximo) {
-            resultado.push(palabra.slice(i, i + maximo));
-          }
-          actual = "";
-        }
-      }
-    }
-
-    if (actual) resultado.push(actual);
-
-    return resultado.length ? resultado : [""];
-  }
-
-  // CABECERA
-
-  rectangulo(margen, y - 75, ancho - margen * 2, 85, 0.06, 0.46, 0.43);
-
-  comando("1 1 1 rg");
-  texto(titulo, margen + 15, y - 23, 18, true);
-
-  const codigoLineas = dividirTexto(`Codigo: ${codigo}`, 65);
-
-  codigoLineas.forEach((lineaCodigo, indice) => {
-    texto(lineaCodigo, margen + 15, y - 45 - indice * 12, 10);
+  const archivo = await Print.printToFileAsync({
+    html,
   });
 
-  comando("0 0 0 rg");
+  const disponible = await Sharing.isAvailableAsync();
 
-  y -= 105;
-
-  // INFORMACIÓN GENERAL
-
-  texto("INFORMACION GENERAL", margen, y, 13, true);
-  y -= 23;
-
-  for (const dato of informacion) {
-    const lineas = dividirTexto(dato, 90);
-
-    verificarEspacio(lineas.length * 15 + 5);
-
-    for (const parte of lineas) {
-      texto(parte, margen, y, 10);
-      y -= 15;
-    }
-
-    y -= 4;
-  }
-
-  y -= 15;
-  verificarEspacio(55);
-
-  texto("DETALLE", margen, y, 13, true);
-  y -= 24;
-
-  // TABLA
-
-  const columnas = encabezados.length;
-
-  const anchos =
-    columnas === 5
-      ? [30, 220, 55, 100, 105]
-      : [40, 310, 160];
-
-  const posiciones: number[] = [];
-  let posicion = margen;
-
-  for (const anchoColumna of anchos) {
-    posiciones.push(posicion);
-    posicion += anchoColumna;
-  }
-
-  function dibujarCabeceraTabla() {
-    verificarEspacio(40);
-
-    rectangulo(
-      margen,
-      y - 8,
-      ancho - margen * 2,
-      25,
-      0.89,
-      0.93,
-      0.96
+  if (!disponible) {
+    throw new Error(
+      "El dispositivo no permite compartir archivos PDF."
     );
-
-    encabezados.forEach((encabezado, indice) => {
-      texto(encabezado, posiciones[indice] + 4, y, 9, true);
-    });
-
-    y -= 28;
   }
 
-  dibujarCabeceraTabla();
-
-  const filasFinales =
-    filas.length > 0
-      ? filas
-      : [encabezados.map((_, indice) =>
-          indice === 1 ? "Sin detalles registrados" : ""
-        )];
-
-  for (const fila of filasFinales) {
-    const celdas = fila.map((valor, indice) => {
-      const maximo = Math.max(
-        4,
-        Math.floor(((anchos[indice] || 80) - 8) / 5)
-      );
-
-      return dividirTexto(String(valor ?? ""), maximo);
-    });
-
-    const maxLineas = Math.max(
-      1,
-      ...celdas.map((celda) => celda.length)
-    );
-
-    const alturaFila = maxLineas * 13 + 12;
-
-    if (y - alturaFila < 65) {
-      nuevaPagina();
-      dibujarCabeceraTabla();
-    }
-
-    celdas.forEach((celda, indice) => {
-      celda.forEach((parte, numeroLinea) => {
-        texto(
-          parte,
-          posiciones[indice] + 4,
-          y - numeroLinea * 13,
-          9
-        );
-      });
-    });
-
-    y -= alturaFila;
-    linea(margen, y + 5, ancho - margen, y + 5);
-  }
-
-  // TOTAL
-
-  if (total) {
-    verificarEspacio(45);
-    y -= 25;
-    texto(total, margen, y, 14, true);
-  }
-
-  nuevaPagina();
-
-  // OBJETOS PDF
-
-  const objetos: string[] = [];
-
-  function agregarObjeto(valor: string): number {
-    objetos.push(valor);
-    return objetos.length;
-  }
-
-  const catalogoId = agregarObjeto("");
-  const paginasId = agregarObjeto("");
-
-  const fuenteNormalId = agregarObjeto(
-    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>"
-  );
-
-  const fuenteNegritaId = agregarObjeto(
-    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>"
-  );
-
-  const paginaIds: number[] = [];
-
-  for (const contenidoPagina of paginas) {
-    const bytesContenido = new TextEncoder().encode(contenidoPagina);
-
-    const contenidoId = agregarObjeto(
-      `<< /Length ${bytesContenido.length} >>\nstream\n${contenidoPagina}\nendstream`
-    );
-
-    const paginaId = agregarObjeto(
-      `<< /Type /Page /Parent ${paginasId} 0 R ` +
-      `/MediaBox [0 0 ${ancho} ${alto}] ` +
-      `/Resources << /Font << /F1 ${fuenteNormalId} 0 R /F2 ${fuenteNegritaId} 0 R >> >> ` +
-      `/Contents ${contenidoId} 0 R >>`
-    );
-
-    paginaIds.push(paginaId);
-  }
-
-  objetos[catalogoId - 1] =
-    `<< /Type /Catalog /Pages ${paginasId} 0 R >>`;
-
-  objetos[paginasId - 1] =
-    `<< /Type /Pages /Kids [${paginaIds.map(id => `${id} 0 R`).join(" ")}] /Count ${paginaIds.length} >>`;
-
-  // CONSTRUIR PDF BINARIO
-
-  const partes: Uint8Array[] = [];
-  const codificador = new TextEncoder();
-
-  let longitud = 0;
-
-  function agregar(valor: string) {
-    const bytes = codificador.encode(valor);
-    partes.push(bytes);
-    longitud += bytes.length;
-  }
-
-  agregar("%PDF-1.4\n");
-
-  const offsets = [0];
-
-  objetos.forEach((objeto, indice) => {
-    offsets.push(longitud);
-    agregar(`${indice + 1} 0 obj\n${objeto}\nendobj\n`);
+  await Sharing.shareAsync(archivo.uri, {
+    mimeType: "application/pdf",
+    dialogTitle: titulo,
+    UTI: "com.adobe.pdf",
   });
-
-  const inicioXref = longitud;
-
-  agregar(`xref\n0 ${objetos.length + 1}\n`);
-  agregar("0000000000 65535 f \n");
-
-  for (let i = 1; i < offsets.length; i++) {
-    agregar(`${String(offsets[i]).padStart(10, "0")} 00000 n \n`);
-  }
-
-  agregar(
-    `trailer\n<< /Size ${objetos.length + 1} /Root ${catalogoId} 0 R >>\n` +
-    `startxref\n${inicioXref}\n%%EOF`
-  );
-
-  const resultado = new Uint8Array(longitud);
-  let desplazamiento = 0;
-
-  for (const parte of partes) {
-    resultado.set(parte, desplazamiento);
-    desplazamiento += parte.length;
-  }
-
-  return resultado;
 }
 
-// DESCARGA DIRECTA EN EL NAVEGADOR
-
-function descargarPDF(
-  bytes: Uint8Array,
-  nombre: string
-) {
-  if (typeof document === "undefined") {
-    throw new Error("La descarga requiere un navegador.");
-  }
-
-  const blob = new Blob(
-    [bytes as BlobPart],
-    { type: "application/pdf" }
-  );
-
-  const url = URL.createObjectURL(blob);
-
-  const enlace = document.createElement("a");
-  enlace.href = url;
-  enlace.download = nombre;
-
-  document.body.appendChild(enlace);
-  enlace.click();
-  enlace.remove();
-
-  setTimeout(() => URL.revokeObjectURL(url), 60000);
-}
-
-// ======================================================
-// PDF DE VENTA
-// ======================================================
+// =====================================================
+// GENERAR NOTA DE VENTA
+// =====================================================
 
 export async function generarPDFVenta(
   datos: DatosVentaPDF
 ): Promise<void> {
-  if (Platform.OS !== "web") {
-    throw new Error(
-      "Este generador de descarga directa está configurado para Expo Web."
-    );
-  }
-
   const lista = Array.isArray(datos.analisis)
     ? datos.analisis
     : [];
 
-  const filas = lista.map((item, indice) => {
-    const cantidadItem = cantidad(item.cantidad);
-    const precio = Number(item.precio ?? 0);
-    const precioValido = Number.isFinite(precio) ? precio : 0;
+  const filas = lista
+    .map((item) => {
+      const cant = cantidad(item.cantidad);
 
-    return [
-      String(indice + 1),
-      item.nombre || item.tipo || "Análisis",
-      String(cantidadItem),
-      `Bs ${dinero(precioValido)}`,
-      `Bs ${dinero(cantidadItem * precioValido)}`,
-    ];
-  });
+      const precio = Number(item.precio ?? 0);
 
-  const codigo = datos.codigo || "SIN_CODIGO";
+      const precioValido =
+        Number.isFinite(precio) ? precio : 0;
 
-  const pdf = crearPDF(
-    "COMPROBANTE DE VENTA",
-    codigo,
-    [
-      `Laboratorio: ${datos.laboratorio || "Laboratorio Clínico"}`,
-      `Fecha: ${datos.fecha || new Date().toLocaleString("es-BO")}`,
-      `Paciente: ${datos.paciente || "No registrado"}`,
-      `CI: ${datos.ci || "No registrado"}`,
-      `Metodo de pago: ${datos.metodoPago || "No registrado"}`,
-      "Estado: PAGADA",
-    ],
-    ["N.", "Analisis", "Cant.", "Precio", "Subtotal"],
-    filas,
-    `TOTAL PAGADO: Bs ${dinero(datos.total)}`
+      const subtotal = cant * precioValido;
+
+      return `
+
+<tr>
+
+<td>
+  ${mostrar(item.nombre || item.tipo)}
+</td>
+
+<td class="centro">
+  ${cant}
+</td>
+
+<td class="derecha">
+  Bs ${dinero(precioValido)}
+</td>
+
+<td class="derecha">
+  Bs ${dinero(subtotal)}
+</td>
+
+</tr>
+
+`;
+    })
+    .join("");
+
+  const totalCalculado = lista.reduce(
+    (acumulado, item) => {
+      const precio = Number(item.precio ?? 0);
+
+      return (
+        acumulado +
+        cantidad(item.cantidad) *
+          (Number.isFinite(precio) ? precio : 0)
+      );
+    },
+    0
   );
 
-  descargarPDF(
-    pdf,
-    `Venta_${limpiarNombre(codigo)}.pdf`
+  const total =
+    datos.total !== undefined &&
+    datos.total !== null &&
+    texto(datos.total) !== ""
+      ? datos.total
+      : totalCalculado;
+
+  const html = `
+
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+
+<meta charset="UTF-8">
+
+<meta
+  name="viewport"
+  content="width=device-width, initial-scale=1.0"
+>
+
+<style>
+${estilos}
+</style>
+
+</head>
+
+<body>
+
+<div class="barra-superior"></div>
+
+<!-- ENCABEZADO -->
+
+${encabezado(
+  datos.laboratorio || "Laboratorio Clínico",
+  datos.laboratorioLogo,
+  datos.laboratorioDireccion,
+  datos.laboratorioTelefono,
+  datos.laboratorioCorreo
+)}
+
+<!-- TÍTULO -->
+
+<div class="titulo-principal">
+  NOTA DE VENTA
+</div>
+
+<!-- DATOS DEL PACIENTE -->
+
+<table class="tabla-datos">
+
+<colgroup>
+  <col style="width:12%">
+  <col style="width:40%">
+  <col style="width:11%">
+  <col style="width:37%">
+</colgroup>
+
+<tr>
+
+<td class="etiqueta">PACIENTE</td>
+
+<td class="valor">
+  ${mostrar(datos.paciente)}
+</td>
+
+<td class="etiqueta">EDAD</td>
+
+<td class="valor">
+  ${mostrar(datos.edad)}
+</td>
+
+</tr>
+
+<tr>
+
+<td class="etiqueta">CI</td>
+
+<td class="valor">
+  ${mostrar(datos.ci)}
+</td>
+
+<td class="etiqueta">SEXO</td>
+
+<td class="valor">
+  ${mostrar(datos.sexo)}
+</td>
+
+</tr>
+
+<tr>
+
+<td class="etiqueta">CORREO</td>
+
+<td class="valor">
+  ${mostrar(datos.correo)}
+</td>
+
+<td class="etiqueta">FECHA</td>
+
+<td class="valor">
+  ${mostrar(datos.fecha)}
+</td>
+
+</tr>
+
+</table>
+
+<!-- INFORMACIÓN DE VENTA -->
+
+<div class="titulo-seccion">
+  INFORMACIÓN DE LA VENTA
+</div>
+
+<table class="tabla-datos">
+
+<colgroup>
+  <col style="width:24%">
+  <col style="width:76%">
+</colgroup>
+
+<tr>
+
+<td class="etiqueta">N.º VENTA</td>
+
+<td class="valor">
+  ${mostrar(datos.codigo)}
+</td>
+
+</tr>
+
+<tr>
+
+<td class="etiqueta">N.º ORDEN</td>
+
+<td class="valor">
+  ${mostrar(datos.ordenId)}
+</td>
+
+</tr>
+
+<tr>
+
+<td class="etiqueta">N.º SOLICITUD</td>
+
+<td class="valor">
+  ${mostrar(datos.solicitudId)}
+</td>
+
+</tr>
+
+<tr>
+
+<td class="etiqueta">MÉTODO DE PAGO</td>
+
+<td class="valor">
+  ${mostrar(datos.metodoPago)}
+</td>
+
+</tr>
+
+<tr>
+
+<td class="etiqueta">ESTADO</td>
+
+<td class="valor">
+  ${mostrar(datos.estado)}
+</td>
+
+</tr>
+
+<tr>
+
+<td class="etiqueta">FECHA</td>
+
+<td class="valor">
+  ${mostrar(datos.fecha)}
+</td>
+
+</tr>
+
+</table>
+
+<!-- DETALLE -->
+
+<div class="titulo-seccion">
+  DETALLE DE ANÁLISIS
+</div>
+
+<table class="tabla-analisis">
+
+<colgroup>
+  <col style="width:47%">
+  <col style="width:18%">
+  <col style="width:15%">
+  <col style="width:20%">
+</colgroup>
+
+<thead>
+
+<tr>
+
+<th>ANÁLISIS</th>
+<th>CANTIDAD</th>
+<th>PRECIO</th>
+<th>SUBTOTAL</th>
+
+</tr>
+
+</thead>
+
+<tbody>
+
+${
+  filas ||
+  `
+  <tr>
+    <td colspan="4" class="centro">
+      Sin análisis registrados.
+    </td>
+  </tr>
+  `
+}
+
+</tbody>
+
+</table>
+
+<!-- TOTAL -->
+
+<div class="total-contenedor">
+
+  <div class="total">
+    TOTAL: Bs ${dinero(total)}
+  </div>
+
+</div>
+
+<!-- AGRADECIMIENTO -->
+
+<div class="agradecimiento">
+  Gracias por confiar en nuestros servicios.
+</div>
+
+<!-- PIE -->
+
+${pie(
+  datos.laboratorio || "Laboratorio Clínico"
+)}
+
+</body>
+
+</html>
+
+`;
+
+  await generarDocumento(
+    html,
+    "Nota de venta"
   );
 }
 
-// ======================================================
-// PDF DE SOLICITUD DE ANÁLISIS
-// ======================================================
+// =====================================================
+// GENERAR SOLICITUD DE ANÁLISIS
+// =====================================================
 
 export async function generarPDFAnalisis(
   datos: DatosAnalisisPDF
 ): Promise<void> {
-  if (Platform.OS !== "web") {
-    throw new Error(
-      "Este generador de descarga directa está configurado para Expo Web."
-    );
-  }
-
-  const codigo = datos.codigo || "SIN_CODIGO";
-
   const lista = Array.isArray(datos.analisis)
     ? datos.analisis
     : [];
 
-  const filas = lista.map((item, indice) => [
-    String(indice + 1),
-    item.nombre || "Análisis",
-    item.tipo || "-",
-  ]);
+  const filas = lista
+    .map(
+      (item, indice) => `
 
-  const pdf = crearPDF(
-    "SOLICITUD DE ANALISIS",
-    codigo,
-    [
-      `Laboratorio: ${datos.laboratorio || "Laboratorio Clínico"}`,
-      `Fecha: ${datos.fecha || new Date().toLocaleString("es-BO")}`,
-      `Paciente: ${datos.paciente || "No registrado"}`,
-      `CI: ${datos.ci || "No registrado"}`,
-      `Estado: ${datos.estado || "Pendiente"}`,
-    ],
-    ["N.", "Analisis", "Tipo"],
-    filas
-  );
+<tr>
 
-  descargarPDF(
-    pdf,
-    `Solicitud_${limpiarNombre(codigo)}.pdf`
+<td class="centro">
+  ${indice + 1}
+</td>
+
+<td>
+  ${mostrar(item.nombre)}
+</td>
+
+<td>
+  ${mostrar(item.tipo)}
+</td>
+
+</tr>
+
+`
+    )
+    .join("");
+
+  const html = `
+
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+
+<meta charset="UTF-8">
+
+<meta
+  name="viewport"
+  content="width=device-width, initial-scale=1.0"
+>
+
+<style>
+${estilos}
+</style>
+
+</head>
+
+<body>
+
+<div class="barra-superior"></div>
+
+${encabezado(
+  datos.laboratorio || "Laboratorio Clínico",
+  datos.laboratorioLogo,
+  datos.laboratorioDireccion,
+  datos.laboratorioTelefono,
+  datos.laboratorioCorreo
+)}
+
+<div class="titulo-principal">
+  SOLICITUD DE ANÁLISIS
+</div>
+
+<table class="tabla-datos">
+
+<tr>
+
+<td class="etiqueta">PACIENTE</td>
+
+<td class="valor">
+  ${mostrar(datos.paciente)}
+</td>
+
+</tr>
+
+<tr>
+
+<td class="etiqueta">CI</td>
+
+<td class="valor">
+  ${mostrar(datos.ci)}
+</td>
+
+</tr>
+
+<tr>
+
+<td class="etiqueta">N.º SOLICITUD</td>
+
+<td class="valor">
+  ${mostrar(datos.codigo)}
+</td>
+
+</tr>
+
+<tr>
+
+<td class="etiqueta">FECHA</td>
+
+<td class="valor">
+  ${mostrar(datos.fecha)}
+</td>
+
+</tr>
+
+<tr>
+
+<td class="etiqueta">ESTADO</td>
+
+<td class="valor">
+  ${mostrar(datos.estado)}
+</td>
+
+</tr>
+
+</table>
+
+<div class="titulo-seccion">
+  ANÁLISIS SOLICITADOS
+</div>
+
+<table class="tabla-analisis">
+
+<thead>
+
+<tr>
+  <th>N.º</th>
+  <th>ANÁLISIS</th>
+  <th>TIPO</th>
+</tr>
+
+</thead>
+
+<tbody>
+
+${
+  filas ||
+  `
+  <tr>
+    <td colspan="3" class="centro">
+      Sin análisis registrados.
+    </td>
+  </tr>
+  `
+}
+
+</tbody>
+
+</table>
+
+${pie(
+  datos.laboratorio || "Laboratorio Clínico"
+)}
+
+</body>
+
+</html>
+
+`;
+
+  await generarDocumento(
+    html,
+    "Solicitud de análisis"
   );
 }

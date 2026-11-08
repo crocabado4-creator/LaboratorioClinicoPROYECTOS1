@@ -1,0 +1,952 @@
+/* =====================================================
+   CONFIGURACIÓN DE PAGOS QR
+   LABORATORIO CLÍNICO
+===================================================== */
+
+.pagosqr {
+  width: 100%;
+  margin: 28px 0;
+  font-family: inherit;
+  color: #1e293b;
+}
+
+/* =====================================================
+   ENCABEZADO
+===================================================== */
+
+.pagosqr-header {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  flex-wrap: wrap;
+
+  padding: 28px 30px;
+
+  background: linear-gradient(
+    135deg,
+    #12365c 0%,
+    #1d4e79 55%,
+    #256c9b 100%
+  );
+
+  border-radius: 18px;
+  color: white;
+
+  box-shadow: 0 12px 30px rgba(18, 54, 92, 0.15);
+}
+
+.pagosqr-header-icon {
+  width: 64px;
+  height: 64px;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  flex-shrink: 0;
+
+  border-radius: 16px;
+
+  background: rgba(255, 255, 255, 0.13);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+
+  font-size: 35px;
+  font-weight: 700;
+}
+
+.pagosqr-header-info {
+  flex: 1;
+  min-width: 220px;
+}
+
+.pagosqr-eyebrow {
+  display: block;
+  margin-bottom: 7px;
+
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 1.5px;
+
+  color: #a5d8ff;
+}
+
+.pagosqr-header h2 {
+  margin: 0 0 8px;
+
+  color: #ffffff;
+  font-size: 25px;
+  font-weight: 800;
+}
+
+.pagosqr-header p {
+  margin: 0;
+
+  max-width: 650px;
+
+  color: #d9e8f5;
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+/* =====================================================
+   ESTADO
+===================================================== */
+
+.pagosqr-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+
+  padding: 10px 14px;
+
+  border-radius: 30px;
+
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.pagosqr-status.activo {
+  color: #dcfce7;
+  background: rgba(22, 163, 74, 0.22);
+  border: 1px solid rgba(134, 239, 172, 0.35);
+}
+
+.pagosqr-status.inactivo {
+  color: #fef3c7;
+  background: rgba(245, 158, 11, 0.2);
+  border: 1px solid rgba(253, 230, 138, 0.3);
+}
+
+.pagosqr-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+/* =====================================================
+   ALERTAS
+===================================================== */
+
+.pagosqr-alert {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+
+  margin-top: 20px;
+  padding: 15px 18px;
+
+  border-radius: 12px;
+
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.pagosqr-alert-exito {
+  background: #ecfdf5;
+  color: #047857;
+  border: 1px solid #a7f3d0;
+}
+
+.pagosqr-alert-error {
+  background: #fef2f2;
+  color: #b91c1c;
+  border: 1px solid #fecaca;
+}
+
+.pagosqr-alert-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  width: 26px;
+  height: 26px;
+
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.06);
+  font-weight: 800;
+}
+
+.pagosqr-alert > span:nth-child(2) {
+  flex: 1;
+}
+
+.pagosqr-alert button {
+  border: none;
+  background: transparent;
+  color: inherit;
+  font-size: 23px;
+  cursor: pointer;
+}
+
+/* =====================================================
+   LABORATORIO
+===================================================== */
+
+.pagosqr-laboratorio {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+
+  margin-top: 24px;
+  padding: 20px 24px;
+
+  background: #ffffff;
+
+  border: 1px solid #e2e8f0;
+  border-radius: 15px;
+
+  box-shadow: 0 4px 15px rgba(15, 23, 42, 0.04);
+}
+
+.pagosqr-laboratorio-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  width: 52px;
+  height: 52px;
+
+  flex-shrink: 0;
+
+  border-radius: 13px;
+
+  background: #eaf4ff;
+  color: #2563eb;
+
+  font-size: 30px;
+  font-weight: 800;
+}
+
+.pagosqr-laboratorio > div:nth-child(2) {
+  flex: 1;
+}
+
+.pagosqr-laboratorio span {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  color: #64748b;
+}
+
+.pagosqr-laboratorio h3 {
+  margin: 5px 0;
+
+  font-size: 19px;
+  font-weight: 800;
+  color: #17365d;
+}
+
+.pagosqr-laboratorio p {
+  margin: 0;
+  font-size: 13px;
+  color: #64748b;
+}
+
+.pagosqr-badge {
+  padding: 9px 13px;
+
+  background: #eff6ff;
+  color: #1d4ed8 !important;
+
+  border: 1px solid #bfdbfe;
+  border-radius: 25px;
+
+  font-size: 12px !important;
+  letter-spacing: 0 !important;
+}
+
+/* =====================================================
+   DISTRIBUCIÓN
+===================================================== */
+
+.pagosqr-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  gap: 24px;
+
+  margin-top: 24px;
+}
+
+.pagosqr-preview-card,
+.pagosqr-form-card {
+  min-width: 0;
+
+  background: #ffffff;
+
+  border: 1px solid #e2e8f0;
+  border-radius: 17px;
+
+  padding: 25px;
+
+  box-shadow: 0 6px 20px rgba(15, 23, 42, 0.05);
+}
+
+.pagosqr-card-heading {
+  margin-bottom: 22px;
+}
+
+.pagosqr-card-heading h3 {
+  margin: 0 0 7px;
+
+  font-size: 18px;
+  font-weight: 800;
+  color: #17365d;
+}
+
+.pagosqr-card-heading p {
+  margin: 0;
+
+  color: #64748b;
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+/* =====================================================
+   VISTA PREVIA
+===================================================== */
+
+.pagosqr-preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  width: 100%;
+  min-height: 330px;
+
+  padding: 25px;
+
+  background: #f8fafc;
+
+  border: 2px dashed #cbd5e1;
+  border-radius: 15px;
+}
+
+.pagosqr-image {
+  display: block;
+
+  width: 100%;
+  max-width: 285px;
+  max-height: 285px;
+
+  object-fit: contain;
+
+  padding: 12px;
+
+  background: #ffffff;
+  border-radius: 12px;
+
+  box-shadow: 0 8px 25px rgba(15, 23, 42, 0.08);
+}
+
+.pagosqr-empty {
+  text-align: center;
+  color: #64748b;
+}
+
+.pagosqr-empty-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  width: 85px;
+  height: 85px;
+
+  margin: 0 auto 20px;
+
+  border-radius: 20px;
+
+  background: #eaf2ff;
+  color: #2563eb;
+
+  font-size: 55px;
+}
+
+.pagosqr-empty h4 {
+  margin: 0 0 10px;
+
+  color: #334155;
+  font-size: 16px;
+}
+
+.pagosqr-empty p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.pagosqr-preview-footer {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+
+  margin-top: 18px;
+
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.pagosqr-indicator {
+  color: #f59e0b;
+}
+
+.pagosqr-indicator.activo {
+  color: #16a34a;
+}
+
+/* =====================================================
+   CARGA DE ARCHIVOS
+===================================================== */
+
+.pagosqr-upload {
+  padding: 30px 20px;
+
+  text-align: center;
+
+  border: 2px dashed #bfdbfe;
+  border-radius: 15px;
+
+  background: #f8fbff;
+
+  transition: 0.2s ease;
+}
+
+.pagosqr-upload:hover {
+  border-color: #3b82f6;
+  background: #eff6ff;
+}
+
+.pagosqr-upload-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  width: 60px;
+  height: 60px;
+
+  margin: 0 auto 16px;
+
+  border-radius: 15px;
+
+  background: #dbeafe;
+  color: #2563eb;
+
+  font-size: 35px;
+  font-weight: 800;
+}
+
+.pagosqr-upload h4 {
+  margin: 0 0 8px;
+
+  color: #17365d;
+  font-size: 16px;
+}
+
+.pagosqr-upload p {
+  margin: 0 0 20px;
+
+  color: #64748b;
+  font-size: 13px;
+}
+
+.pagosqr-file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  overflow: hidden;
+}
+
+.pagosqr-select-button {
+  display: inline-block;
+
+  padding: 12px 22px;
+
+  background: #ffffff;
+  color: #2563eb;
+
+  border: 1px solid #93c5fd;
+  border-radius: 10px;
+
+  font-size: 13px;
+  font-weight: 800;
+
+  cursor: pointer;
+
+  transition: 0.2s ease;
+}
+
+.pagosqr-select-button:hover {
+  background: #dbeafe;
+  border-color: #2563eb;
+}
+
+.pagosqr-upload small {
+  display: block;
+
+  margin-top: 15px;
+
+  color: #94a3b8;
+  font-size: 11px;
+}
+
+/* =====================================================
+   ARCHIVO SELECCIONADO
+===================================================== */
+
+.pagosqr-selected {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+
+  margin-top: 18px;
+  padding: 13px;
+
+  background: #f0fdf4;
+
+  border: 1px solid #bbf7d0;
+  border-radius: 11px;
+}
+
+.pagosqr-selected-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  width: 42px;
+  height: 42px;
+
+  background: #dcfce7;
+  color: #15803d;
+
+  border-radius: 10px;
+  font-size: 24px;
+}
+
+.pagosqr-selected-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+
+  flex: 1;
+  min-width: 0;
+}
+
+.pagosqr-selected-info strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+
+  color: #166534;
+  font-size: 13px;
+}
+
+.pagosqr-selected-info span {
+  color: #64748b;
+  font-size: 11px;
+}
+
+.pagosqr-selected button {
+  border: none;
+  background: transparent;
+
+  color: #64748b;
+  font-size: 24px;
+
+  cursor: pointer;
+}
+
+/* =====================================================
+   BOTONES
+===================================================== */
+
+.pagosqr-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+
+  margin-top: 22px;
+}
+
+.pagosqr-primary-button {
+  flex: 1;
+
+  min-height: 47px;
+  padding: 13px 20px;
+
+  border: none;
+  border-radius: 10px;
+
+  background: linear-gradient(
+    135deg,
+    #2563eb,
+    #1d4ed8
+  );
+
+  color: white;
+
+  font-size: 13px;
+  font-weight: 800;
+
+  cursor: pointer;
+
+  transition: 0.2s ease;
+}
+
+.pagosqr-primary-button:hover:not(:disabled) {
+  transform: translateY(-1px);
+
+  box-shadow: 0 6px 16px rgba(37, 99, 235, 0.2);
+}
+
+.pagosqr-primary-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.pagosqr-danger-button {
+  min-height: 47px;
+  padding: 13px 20px;
+
+  border: 1px solid #fecaca;
+  border-radius: 10px;
+
+  background: #fef2f2;
+  color: #b91c1c;
+
+  font-size: 13px;
+  font-weight: 800;
+
+  cursor: pointer;
+}
+
+.pagosqr-danger-button:hover:not(:disabled) {
+  background: #fee2e2;
+}
+
+.pagosqr-danger-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* =====================================================
+   INFORMACIÓN
+===================================================== */
+
+.pagosqr-info {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+
+  margin-top: 25px;
+  padding: 18px;
+
+  background: #eff6ff;
+
+  border: 1px solid #bfdbfe;
+  border-radius: 12px;
+}
+
+.pagosqr-info-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  width: 25px;
+  height: 25px;
+
+  flex-shrink: 0;
+
+  background: #dbeafe;
+  color: #1d4ed8;
+
+  border-radius: 50%;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.pagosqr-info strong {
+  color: #1e40af;
+  font-size: 13px;
+}
+
+.pagosqr-info p {
+  margin: 7px 0 0;
+
+  color: #475569;
+  font-size: 12px;
+  line-height: 1.8;
+}
+
+/* =====================================================
+   SEGURIDAD
+===================================================== */
+
+.pagosqr-security {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+
+  margin-top: 24px;
+  padding: 20px 24px;
+
+  background: #ecfdf5;
+
+  border: 1px solid #a7f3d0;
+  border-radius: 13px;
+}
+
+.pagosqr-security-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  width: 35px;
+  height: 35px;
+
+  flex-shrink: 0;
+
+  border-radius: 50%;
+
+  background: #d1fae5;
+  color: #047857;
+
+  font-weight: 900;
+}
+
+.pagosqr-security strong {
+  color: #065f46;
+  font-size: 13px;
+}
+
+.pagosqr-security p {
+  margin: 7px 0 0;
+
+  color: #047857;
+  font-size: 12px;
+  line-height: 1.8;
+}
+
+/* =====================================================
+   CARGANDO
+===================================================== */
+
+.pagosqr-loading {
+  padding: 65px 20px;
+
+  text-align: center;
+
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+
+  margin-top: 24px;
+}
+
+.pagosqr-spinner {
+  width: 42px;
+  height: 42px;
+
+  margin: 0 auto 20px;
+
+  border: 4px solid #dbeafe;
+  border-top-color: #2563eb;
+  border-radius: 50%;
+
+  animation: pagosqr-spin 0.8s linear infinite;
+}
+
+@keyframes pagosqr-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.pagosqr-loading h3 {
+  color: #17365d;
+  font-size: 18px;
+}
+
+.pagosqr-loading p {
+  color: #64748b;
+  font-size: 13px;
+}
+
+/* =====================================================
+   MODAL
+===================================================== */
+
+.pagosqr-modal-overlay {
+  position: fixed;
+  inset: 0;
+
+  z-index: 9999;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  padding: 20px;
+
+  background: rgba(15, 23, 42, 0.65);
+  backdrop-filter: blur(5px);
+}
+
+.pagosqr-modal {
+  width: 100%;
+  max-width: 430px;
+
+  padding: 35px 30px;
+
+  background: white;
+
+  border-radius: 20px;
+
+  text-align: center;
+
+  box-shadow: 0 25px 60px rgba(0, 0, 0, 0.2);
+}
+
+.pagosqr-modal-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  width: 65px;
+  height: 65px;
+
+  margin: 0 auto 20px;
+
+  background: #fee2e2;
+  color: #dc2626;
+
+  border-radius: 50%;
+
+  font-size: 35px;
+  font-weight: 900;
+}
+
+.pagosqr-modal h3 {
+  margin: 0 0 12px;
+
+  color: #17365d;
+  font-size: 22px;
+}
+
+.pagosqr-modal p {
+  color: #64748b;
+
+  font-size: 14px;
+  line-height: 1.8;
+}
+
+.pagosqr-modal-actions {
+  display: flex;
+  gap: 12px;
+
+  margin-top: 25px;
+}
+
+.pagosqr-cancel-button,
+.pagosqr-confirm-button {
+  flex: 1;
+
+  padding: 13px 16px;
+
+  border-radius: 10px;
+
+  font-weight: 800;
+  font-size: 13px;
+
+  cursor: pointer;
+}
+
+.pagosqr-cancel-button {
+  background: #f1f5f9;
+  color: #475569;
+  border: 1px solid #e2e8f0;
+}
+
+.pagosqr-confirm-button {
+  background: #dc2626;
+  color: white;
+  border: none;
+}
+
+.pagosqr-confirm-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* =====================================================
+   RESPONSIVE
+===================================================== */
+
+@media (max-width: 900px) {
+  .pagosqr-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .pagosqr-header {
+    padding: 24px;
+  }
+
+  .pagosqr-header h2 {
+    font-size: 22px;
+  }
+}
+
+@media (max-width: 600px) {
+  .pagosqr-header {
+    padding: 20px;
+    gap: 15px;
+  }
+
+  .pagosqr-header-icon {
+    width: 52px;
+    height: 52px;
+    font-size: 28px;
+  }
+
+  .pagosqr-header h2 {
+    font-size: 20px;
+  }
+
+  .pagosqr-preview-card,
+  .pagosqr-form-card {
+    padding: 18px;
+  }
+
+  .pagosqr-preview {
+    min-height: 260px;
+  }
+
+  .pagosqr-image {
+    max-width: 220px;
+    max-height: 220px;
+  }
+
+  .pagosqr-laboratorio {
+    padding: 17px;
+  }
+
+  .pagosqr-actions {
+    flex-direction: column;
+  }
+
+  .pagosqr-primary-button,
+  .pagosqr-danger-button {
+    width: 100%;
+  }
+
+  .pagosqr-modal {
+    padding: 25px 20px;
+  }
+
+  .pagosqr-modal-actions {
+    flex-direction: column;
+  }
+}

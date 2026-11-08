@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+
 import {
   ActivityIndicator,
   Alert,
@@ -28,6 +29,7 @@ import {
 
 import { auth, db } from "../firebase/firebase";
 import { generarPDFVenta } from "../services/pdfService";
+import PagoQRMobile from "../components/PagoQRMobile";
 
 // ======================================================
 // TIPOS
@@ -180,7 +182,9 @@ export default function VentasScreen() {
 
   const [error, setError] = useState("");
 
+  // ====================================================
   // FILTROS DEL HISTORIAL
+  // ====================================================
 
   const [busqueda, setBusqueda] = useState("");
   const [fechaDesde, setFechaDesde] = useState("");
@@ -190,16 +194,22 @@ export default function VentasScreen() {
 
   const [mostrarPacientes, setMostrarPacientes] = useState(false);
 
+  // ====================================================
   // REGISTRAR VENTA
+  // ====================================================
 
   const [busquedaSolicitud, setBusquedaSolicitud] = useState("");
+
   const [solicitudSeleccionadaId, setSolicitudSeleccionadaId] =
     useState("");
 
   const [metodoPago, setMetodoPago] = useState("efectivo");
 
-  // DETALLE
+  // NUEVO: CONFIRMACIÓN DEL PAGO QR
+  const [pagoQRConfirmado, setPagoQRConfirmado] =
+    useState(false);
 
+  // DETALLE
   const [ventaDetalle, setVentaDetalle] = useState<Venta | null>(
     null
   );
@@ -208,77 +218,88 @@ export default function VentasScreen() {
     normalizar(usuario?.rol) === "recepcionista";
 
   // ====================================================
+  // REINICIAR CONFIRMACIÓN QR
+  // ====================================================
+
+  useEffect(() => {
+    setPagoQRConfirmado(false);
+  }, [solicitudSeleccionadaId]);
+
+  // ====================================================
   // AUTENTICACIÓN
   // ====================================================
 
   useEffect(() => {
-    const cancelar = onAuthStateChanged(auth, async (firebaseUser) => {
-      if (!firebaseUser) {
-        setUsuario(null);
-        setCargando(false);
-        setError("Debes iniciar sesión.");
-        return;
+    const cancelar = onAuthStateChanged(
+      auth,
+      async (firebaseUser) => {
+        if (!firebaseUser) {
+          setUsuario(null);
+          setCargando(false);
+          setError("Debes iniciar sesión.");
+          return;
+        }
+
+        try {
+          setCargando(true);
+          setError("");
+
+          const usuarioSnap = await getDoc(
+            doc(db, "usuarios", firebaseUser.uid)
+          );
+
+          if (!usuarioSnap.exists()) {
+            throw new Error(
+              "No se encontró tu usuario en Firestore."
+            );
+          }
+
+          const datos = usuarioSnap.data();
+
+          if (datos.activo !== true) {
+            throw new Error("Tu usuario está inactivo.");
+          }
+
+          const rol = normalizar(datos.rol);
+
+          if (
+            rol !== "administrador" &&
+            rol !== "recepcionista"
+          ) {
+            throw new Error(
+              "No tienes autorización para acceder a Ventas."
+            );
+          }
+
+          const laboratorioId = texto(datos.laboratorioId);
+
+          if (!laboratorioId) {
+            throw new Error(
+              "Tu usuario no tiene laboratorio asignado."
+            );
+          }
+
+          const usuarioActual: Usuario = {
+            uid: firebaseUser.uid,
+            rol,
+            laboratorioId,
+            nombre: texto(datos.nombre),
+          };
+
+          setUsuario(usuarioActual);
+
+          await cargarDatos(laboratorioId);
+        } catch (e: any) {
+          console.error("Error de acceso a Ventas:", e);
+
+          setError(
+            e?.message || "No se pudo abrir Gestión de ventas."
+          );
+        } finally {
+          setCargando(false);
+        }
       }
-
-      try {
-        setCargando(true);
-        setError("");
-
-        const usuarioSnap = await getDoc(
-          doc(db, "usuarios", firebaseUser.uid)
-        );
-
-        if (!usuarioSnap.exists()) {
-          throw new Error(
-            "No se encontró tu usuario en Firestore."
-          );
-        }
-
-        const datos = usuarioSnap.data();
-
-        if (datos.activo !== true) {
-          throw new Error("Tu usuario está inactivo.");
-        }
-
-        const rol = normalizar(datos.rol);
-
-        if (
-          rol !== "administrador" &&
-          rol !== "recepcionista"
-        ) {
-          throw new Error(
-            "No tienes autorización para acceder a Ventas."
-          );
-        }
-
-        const laboratorioId = texto(datos.laboratorioId);
-
-        if (!laboratorioId) {
-          throw new Error(
-            "Tu usuario no tiene laboratorio asignado."
-          );
-        }
-
-        const usuarioActual: Usuario = {
-          uid: firebaseUser.uid,
-          rol,
-          laboratorioId,
-          nombre: texto(datos.nombre),
-        };
-
-        setUsuario(usuarioActual);
-
-        await cargarDatos(laboratorioId);
-      } catch (e: any) {
-        console.error("Error de acceso a Ventas:", e);
-
-        setError(
-          e?.message || "No se pudo abrir Gestión de ventas."
-        );
-      } finally {
-        setCargando(false);
-      }
-    });
+    );
 
     return cancelar;
   }, []);
@@ -457,6 +478,11 @@ export default function VentasScreen() {
     (item) => item.id === solicitudSeleccionadaId
   );
 
+  // NUEVO: REINICIAR QR SI CAMBIA EL TOTAL
+  useEffect(() => {
+    setPagoQRConfirmado(false);
+  }, [solicitudSeleccionada?.total]);
+
   // ====================================================
   // FILTROS DEL HISTORIAL
   // ====================================================
@@ -533,6 +559,18 @@ export default function VentasScreen() {
       return;
     }
 
+    // NUEVO: VERIFICAR PAGO QR
+    if (
+      metodoPago === "qr" &&
+      !pagoQRConfirmado
+    ) {
+      Alert.alert(
+        "Pago QR pendiente",
+        "Primero verifica que el dinero fue recibido en la cuenta bancaria del laboratorio."
+      );
+      return;
+    }
+
     if (guardando) return;
 
     try {
@@ -590,6 +628,7 @@ export default function VentasScreen() {
 
         const pacienteId = texto(datos.pacienteId);
 
+        // CREAR VENTA
         transaccion.set(ventaRef, {
           ventaId: ventaRef.id,
           solicitudId: solicitudRef.id,
@@ -604,8 +643,18 @@ export default function VentasScreen() {
           estado: "pagada",
           fecha: serverTimestamp(),
           fechaCreacion: serverTimestamp(),
+
+          // NUEVO: REGISTRO DE VERIFICACIÓN QR
+          ...(metodoPago === "qr"
+            ? {
+                pagoQRVerificado: true,
+                pagoQRVerificadoPor: usuario.uid,
+                pagoQRVerificadoEn: serverTimestamp(),
+              }
+            : {}),
         });
 
+        // CREAR ORDEN INDEPENDIENTE
         transaccion.set(ordenRef, {
           ordenId: ordenRef.id,
           solicitudId: solicitudRef.id,
@@ -619,6 +668,7 @@ export default function VentasScreen() {
           fechaCreacion: serverTimestamp(),
         });
 
+        // ACTUALIZAR SOLICITUD
         transaccion.update(solicitudRef, {
           estado: "pagada",
           ventaId: ventaRef.id,
@@ -629,6 +679,8 @@ export default function VentasScreen() {
 
       setSolicitudSeleccionadaId("");
       setBusquedaSolicitud("");
+      setMetodoPago("efectivo");
+      setPagoQRConfirmado(false);
 
       await cargarDatos(usuario.laboratorioId);
 
@@ -811,8 +863,6 @@ export default function VentasScreen() {
 
         {puedeRegistrar && (
           <View style={styles.tarjeta}>
-            
-
             <Text style={styles.seccionTitulo}>
               Registrar venta
             </Text>
@@ -847,9 +897,10 @@ export default function VentasScreen() {
                     solicitudSeleccionadaId === solicitud.id &&
                       styles.solicitudActiva,
                   ]}
-                  onPress={() =>
-                    setSolicitudSeleccionadaId(solicitud.id)
-                  }
+                  onPress={() => {
+                    setSolicitudSeleccionadaId(solicitud.id);
+                    setPagoQRConfirmado(false);
+                  }}
                 >
                   <Text style={styles.ventaPaciente}>
                     {nombrePaciente(solicitud.pacienteId)}
@@ -912,6 +963,8 @@ export default function VentasScreen() {
                   Método de pago
                 </Text>
 
+                {/* MÉTODOS DE PAGO */}
+
                 <View style={styles.metodos}>
                   {[
                     "efectivo",
@@ -925,7 +978,10 @@ export default function VentasScreen() {
                         metodoPago === metodo &&
                           styles.metodoActivo,
                       ]}
-                      onPress={() => setMetodoPago(metodo)}
+                      onPress={() => {
+                        setMetodoPago(metodo);
+                        setPagoQRConfirmado(false);
+                      }}
                     >
                       <Text
                         style={[
@@ -940,12 +996,36 @@ export default function VentasScreen() {
                   ))}
                 </View>
 
+                {/* ===================================== */}
+                {/* NUEVO: MOSTRAR QR DE COBRO */}
+                {/* ===================================== */}
+
+                {metodoPago === "qr" && (
+                  <PagoQRMobile
+                    key={`${usuario.laboratorioId}-${solicitudSeleccionada.id}`}
+                    laboratorioId={usuario.laboratorioId}
+                    total={numero(solicitudSeleccionada.total)}
+                    onConfirmar={setPagoQRConfirmado}
+                  />
+                )}
+
+                {/* ===================================== */}
+                {/* BOTÓN REGISTRAR PAGO */}
+                {/* ===================================== */}
+
                 <Pressable
                   style={[
                     styles.botonRegistrar,
-                    guardando && styles.deshabilitado,
+                    (guardando ||
+                      (metodoPago === "qr" &&
+                        !pagoQRConfirmado)) &&
+                      styles.deshabilitado,
                   ]}
-                  disabled={guardando}
+                  disabled={
+                    guardando ||
+                    (metodoPago === "qr" &&
+                      !pagoQRConfirmado)
+                  }
                   onPress={registrarVenta}
                 >
                   {guardando ? (
@@ -956,6 +1036,14 @@ export default function VentasScreen() {
                     </Text>
                   )}
                 </Pressable>
+
+                {metodoPago === "qr" &&
+                  !pagoQRConfirmado && (
+                    <Text style={styles.advertencia}>
+                      Debes verificar que el pago QR fue recibido
+                      antes de registrar la venta.
+                    </Text>
+                  )}
               </View>
             )}
           </View>
@@ -966,8 +1054,6 @@ export default function VentasScreen() {
         {/* =========================================== */}
 
         <View style={styles.tarjeta}>
-          
-
           <Text style={styles.seccionTitulo}>
             Historial de ventas
           </Text>
@@ -1146,7 +1232,6 @@ export default function VentasScreen() {
             ))
           )}
         </View>
-
       </ScrollView>
 
       {/* =========================================== */}

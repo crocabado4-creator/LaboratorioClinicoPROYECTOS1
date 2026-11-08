@@ -475,7 +475,9 @@ export async function solicitarNuevaToma(muestra) {
     );
   }
 
-  const muestraId = texto(muestra?.id);
+  const muestraId = texto(
+    muestra?.muestraId || muestra?.id
+  );
 
   if (!muestraId) {
     throw new Error(
@@ -489,9 +491,6 @@ export async function solicitarNuevaToma(muestra) {
     muestraId
   );
 
-  // Se usa el ID de la muestra original para impedir
-  // solicitudes duplicadas por esta misma operación.
-
   const referenciaSolicitud = doc(
     db,
     "solicitudesNuevaToma",
@@ -502,14 +501,14 @@ export async function solicitarNuevaToma(muestra) {
     await runTransaction(
       db,
       async (transaccion) => {
+
+        // Consultar la muestra original.
+        // No se realiza get() sobre la solicitud
+        // para evitar el BatchGetDocuments denegado.
+
         const documentoMuestra =
           await transaccion.get(
             referenciaMuestra
-          );
-
-        const documentoSolicitud =
-          await transaccion.get(
-            referenciaSolicitud
           );
 
         if (!documentoMuestra.exists()) {
@@ -536,12 +535,6 @@ export async function solicitarNuevaToma(muestra) {
         ) {
           throw new Error(
             "Solo puedes solicitar una nueva toma de una muestra rechazada."
-          );
-        }
-
-        if (documentoSolicitud.exists()) {
-          throw new Error(
-            "Ya existe una solicitud de nueva toma para esta muestra."
           );
         }
 
@@ -581,6 +574,13 @@ export async function solicitarNuevaToma(muestra) {
             serverTimestamp(),
         };
 
+        // La escritura utiliza un ID fijo
+        // basado en la muestra original.
+        //
+        // La regla de Firestore debe permitir
+        // CREATE y proteger contra UPDATE
+        // no autorizado.
+
         transaccion.set(
           referenciaSolicitud,
           nuevaSolicitud
@@ -589,11 +589,21 @@ export async function solicitarNuevaToma(muestra) {
     );
 
     return referenciaSolicitud.id;
+
   } catch (error) {
     console.error(
       "Error solicitando nueva toma:",
       error
     );
+
+    if (error?.code === "permission-denied") {
+      throw new Error(
+        "Firestore rechazó la operación. " +
+        "Verifica que Recepción tenga permisos " +
+        "para consultar muestras y crear " +
+        "solicitudesNuevaToma."
+      );
+    }
 
     throw error;
   }

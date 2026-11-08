@@ -1,21 +1,20 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-
 import {
   collection,
+  doc,
+  getDoc,
   getDocs,
   query,
   where,
 } from "firebase/firestore";
-
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 
 import { db } from "../firebase/firebase";
-
 import "./ResultadosRecepcion.css";
 
 // ======================================================
-// FUNCIONES AUXILIARES
+// UTILIDADES
 // ======================================================
 
 const texto = (valor) => {
@@ -33,23 +32,22 @@ const primero = (...valores) => {
       return valor;
     }
   }
-
   return "";
 };
 
-const mostrar = (valor, defecto = "No registrado") => {
-  const resultado = texto(valor);
-  return resultado || defecto;
-};
+const mostrar = (valor, defecto = "No registrado") =>
+  texto(valor) || defecto;
 
 const normalizar = (valor) =>
   texto(valor)
     .toLowerCase()
     .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "");
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
 
-const fechaTexto = (valor) => {
-  if (!valor) return "Sin fecha";
+const fechaObjeto = (valor) => {
+  if (!valor) return null;
 
   try {
     let fecha;
@@ -62,34 +60,41 @@ const fechaTexto = (valor) => {
       fecha = new Date(valor);
     }
 
-    if (Number.isNaN(fecha.getTime())) {
-      return "Sin fecha";
-    }
-
-    return fecha.toLocaleString("es-BO");
+    return Number.isNaN(fecha.getTime()) ? null : fecha;
   } catch {
-    return "Sin fecha";
+    return null;
   }
 };
 
-const documentos = (snapshot) =>
-  snapshot.docs.map((documento) => ({
-    ...documento.data(),
-    id: documento.id,
-  }));
+const fechaTexto = (valor) => {
+  const fecha = fechaObjeto(valor);
+  return fecha ? fecha.toLocaleString("es-BO") : "No registrada";
+};
 
-const convertirLista = (valor) => {
+const fechaCorta = (valor) => {
+  const fecha = fechaObjeto(valor);
+  return fecha ? fecha.toLocaleDateString("es-BO") : "No registrada";
+};
+
+const lista = (valor) => {
   if (Array.isArray(valor)) {
-    return valor.filter(Boolean);
+    return valor.filter((item) => item !== null && item !== undefined);
   }
 
   if (valor && typeof valor === "object") {
-    return Object.entries(valor).map(([id, datos]) => ({
-      ...(datos && typeof datos === "object"
-        ? datos
-        : { valor: datos }),
-      id,
-    }));
+    return Object.entries(valor).map(([clave, dato]) => {
+      if (dato && typeof dato === "object" && !Array.isArray(dato)) {
+        return {
+          ...dato,
+          _clave: clave,
+        };
+      }
+
+      return {
+        _clave: clave,
+        valor: dato,
+      };
+    });
   }
 
   return [];
@@ -98,21 +103,18 @@ const convertirLista = (valor) => {
 const nombrePaciente = (paciente) => {
   if (!paciente) return "Paciente no identificado";
 
-  const nombres = primero(
-    paciente.nombres,
-    paciente.nombre
+  const completo = primero(
+    paciente.nombreCompleto,
+    paciente.nombrePaciente
   );
 
-  const apellidos = primero(
-    paciente.apellidos,
-    paciente.apellido
-  );
+  if (completo) return texto(completo);
 
   return mostrar(
-    primero(
-      paciente.nombreCompleto,
-      `${nombres} ${apellidos}`.trim()
-    )
+    `${texto(primero(paciente.nombres, paciente.nombre))} ${texto(
+      primero(paciente.apellidos, paciente.apellido)
+    )}`.trim(),
+    "Paciente no identificado"
   );
 };
 
@@ -122,130 +124,685 @@ const ciPaciente = (paciente) =>
       paciente?.ci,
       paciente?.carnet,
       paciente?.numeroDocumento
-    ),
-    "Sin CI"
-  );
-
-const obtenerIdParametro = (parametro) =>
-  texto(
-    primero(
-      parametro?.parametroId,
-      parametro?.idParametro,
-      parametro?.id
     )
   );
 
-const obtenerNombreParametro = (parametro) =>
+const correoPaciente = (paciente) =>
   mostrar(
     primero(
-      parametro?.nombreParametro,
-      parametro?.nombre,
-      parametro?.parametro,
-      parametro?.descripcion
-    ),
-    "Parámetro"
+      paciente?.correo,
+      paciente?.email,
+      paciente?.correoElectronico
+    )
   );
 
-const obtenerRango = (valor) => {
+const edadPaciente = (paciente) => {
+  const edad = primero(paciente?.edad, paciente?.edadAnios);
+
+  if (edad !== "") return `${edad} años`;
+
+  const nacimiento = fechaObjeto(paciente?.fechaNacimiento);
+
+  if (!nacimiento) return "No registrada";
+
+  const hoy = new Date();
+  let anios = hoy.getFullYear() - nacimiento.getFullYear();
+
   if (
-    valor === null ||
-    valor === undefined ||
-    valor === ""
+    hoy.getMonth() < nacimiento.getMonth() ||
+    (hoy.getMonth() === nacimiento.getMonth() &&
+      hoy.getDate() < nacimiento.getDate())
+  ) {
+    anios--;
+  }
+
+  return anios >= 0 ? `${anios} años` : "No registrada";
+};
+
+const moneda = (valor) => {
+  const numero = Number(valor);
+
+  return (Number.isFinite(numero) ? numero : 0).toLocaleString("es-BO", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+};
+
+// ======================================================
+// CAMPOS UTILIZADOS POR LOS RESULTADOS
+// ======================================================
+
+const CAMPOS_VALOR = [
+  "valorResultado",
+  "valorRegistrado",
+  "resultado",
+  "valor",
+  "medicion",
+  "valorMedido",
+  "resultadoObtenido",
+  "valorObtenido",
+  "resultadoFinal",
+  "resultadoParametro",
+  "valorAnalisis",
+  "valorIngresado",
+  "valorNumerico",
+  "valorTexto",
+  "dato",
+  "lectura",
+  "respuesta",
+];
+
+const CAMPOS_LISTAS = [
+  "valoresParametros",
+  "resultadosParametros",
+  "parametrosResultados",
+  "valores",
+  "mediciones",
+  "detalles",
+  "resultados",
+  "items",
+  "datos",
+  "parametros",
+  "analitos",
+];
+
+const obtenerIdParametro = (dato) =>
+  texto(
+    primero(
+      dato?.parametroId,
+      dato?.idParametro,
+      dato?.codigoParametro,
+      dato?.codigo,
+      dato?.id,
+      dato?._clave
+    )
+  );
+
+const obtenerNombreParametro = (dato) => {
+  if (typeof dato === "string") return dato;
+
+  return texto(
+    primero(
+      dato?.nombreParametro,
+      dato?.parametroNombre,
+      dato?.nombre,
+      dato?.parametro,
+      dato?.analito,
+      dato?.descripcion,
+      dato?.nombreAnalisis
+    )
+  );
+};
+
+const obtenerUnidad = (dato) =>
+  texto(
+    primero(
+      dato?.unidadMedida,
+      dato?.unidad,
+      dato?.unidades
+    )
+  );
+
+const obtenerRango = (dato, profundidad = 0) => {
+  if (
+    dato === null ||
+    dato === undefined ||
+    dato === "" ||
+    profundidad > 4
   ) {
     return "";
   }
 
-  if (typeof valor !== "object") {
-    return texto(valor);
+  if (typeof dato === "string" || typeof dato === "number") {
+    return texto(dato);
   }
 
-  const rangoAnidado = primero(
-    valor.rangoReferencia,
-    valor.rangoNormal,
-    valor.referencia
-  );
-
-  if (rangoAnidado) {
-    const rango = obtenerRango(rangoAnidado);
-
-    if (rango) return rango;
+  if (typeof dato !== "object" || Array.isArray(dato)) {
+    return "";
   }
 
-  const descripcion = primero(
-    valor.textoReferencia,
-    valor.descripcionRango,
-    valor.rangoTexto
+  const referencia = primero(
+    dato.rangoReferencia,
+    dato.rangoNormal,
+    dato.referencia,
+    dato.rango,
+    dato.valoresReferencia
   );
 
-  if (descripcion) {
-    return texto(descripcion);
+  if (referencia !== "" && referencia !== dato) {
+    const encontrado = obtenerRango(referencia, profundidad + 1);
+    if (encontrado) return encontrado;
   }
 
   const minimo = primero(
-    valor.minimo,
-    valor.valorMinimo,
-    valor.rangoMinimo,
-    valor.min
+    dato.minimo,
+    dato.valorMinimo,
+    dato.rangoMinimo,
+    dato.min
   );
 
   const maximo = primero(
-    valor.maximo,
-    valor.valorMaximo,
-    valor.rangoMaximo,
-    valor.max
+    dato.maximo,
+    dato.valorMaximo,
+    dato.rangoMaximo,
+    dato.max
   );
 
   if (minimo !== "" && maximo !== "") {
     return `${minimo} - ${maximo}`;
   }
 
-  if (minimo !== "") {
-    return `Desde ${minimo}`;
+  if (minimo !== "") return `Desde ${minimo}`;
+  if (maximo !== "") return `Hasta ${maximo}`;
+
+  return texto(
+    primero(
+      dato.textoReferencia,
+      dato.descripcionRango,
+      dato.rangoTexto
+    )
+  );
+};
+
+const extraerValor = (dato, profundidad = 0) => {
+  if (
+    dato === null ||
+    dato === undefined ||
+    profundidad > 6
+  ) {
+    return "";
   }
 
-  if (maximo !== "") {
-    return `Hasta ${maximo}`;
+  if (
+    typeof dato === "string" ||
+    typeof dato === "number" ||
+    typeof dato === "boolean"
+  ) {
+    return dato;
+  }
+
+  if (Array.isArray(dato) || typeof dato !== "object") {
+    return "";
+  }
+
+  for (const campo of CAMPOS_VALOR) {
+    const valor = dato[campo];
+
+    if (
+      valor !== null &&
+      valor !== undefined &&
+      valor !== ""
+    ) {
+      const encontrado = extraerValor(valor, profundidad + 1);
+
+      if (encontrado !== "") return encontrado;
+    }
   }
 
   return "";
+};
+
+const extraerRegistros = (documento) => {
+  if (!documento || typeof documento !== "object") return [];
+
+  const encontrados = [];
+
+  for (const campo of CAMPOS_LISTAS) {
+    const valor = documento[campo];
+
+    if (Array.isArray(valor)) {
+      encontrados.push(...lista(valor));
+    } else if (valor && typeof valor === "object") {
+      encontrados.push(...lista(valor));
+    }
+  }
+
+  return encontrados;
 };
 
 const coincidenParametros = (a, b) => {
   const idA = obtenerIdParametro(a);
   const idB = obtenerIdParametro(b);
 
-  if (idA && idB && idA === idB) {
-    return true;
+  if (idA && idB && idA === idB) return true;
+
+  const nombreA = normalizar(obtenerNombreParametro(a));
+  const nombreB = normalizar(obtenerNombreParametro(b));
+
+  return Boolean(nombreA && nombreB && nombreA === nombreB);
+};
+
+const evaluarRango = (valor, rango) => {
+  const numeroTexto = texto(valor).replace(",", ".");
+
+  if (!/^-?\d+(\.\d+)?$/.test(numeroTexto)) return null;
+
+  const referencia = texto(rango).replace(/,/g, ".");
+
+  const coincidencia = referencia.match(
+    /^(-?\d+(?:\.\d+)?)\s*[-–]\s*(-?\d+(?:\.\d+)?)$/
+  );
+
+  if (!coincidencia) return null;
+
+  const numero = Number(numeroTexto);
+  const minimo = Number(coincidencia[1]);
+  const maximo = Number(coincidencia[2]);
+
+  return numero < minimo || numero > maximo;
+};
+
+// ======================================================
+// CONSTRUIR RESULTADOS REALES
+// ======================================================
+
+const construirParametros = (
+  resultado,
+  analisis,
+  registrosAdicionales = []
+) => {
+  const configurados = [
+    ...lista(analisis?.parametros),
+    ...lista(analisis?.parametrosConfigurados),
+  ];
+
+  const registrados = [
+    ...extraerRegistros(resultado),
+    ...registrosAdicionales,
+  ];
+
+  const filas = [];
+
+  const agregarFila = (registro, configuracion = null) => {
+    const valor = extraerValor(registro);
+
+    const nombre = primero(
+      obtenerNombreParametro(registro),
+      obtenerNombreParametro(configuracion),
+      resultado?.nombreAnalisis,
+      analisis?.nombre
+    );
+
+    const unidad = primero(
+      obtenerUnidad(registro),
+      obtenerUnidad(configuracion),
+      obtenerUnidad(resultado)
+    );
+
+    const rango = primero(
+      obtenerRango(registro),
+      obtenerRango(configuracion)
+    );
+
+    const fila = {
+      id: primero(
+        obtenerIdParametro(registro),
+        obtenerIdParametro(configuracion),
+        nombre
+      ),
+      nombre: mostrar(nombre, "Resultado clínico"),
+      valor: valor !== "" ? texto(valor) : "Sin resultado registrado",
+      unidad: mostrar(unidad, "-"),
+      rango: mostrar(rango, "-"),
+      registrado: valor !== "",
+      anormal: evaluarRango(valor, rango) === true,
+      observacion: mostrar(
+        primero(
+          registro?.observacion,
+          registro?.observaciones
+        ),
+        "-"
+      ),
+    };
+
+    filas.push(fila);
+  };
+
+  // Prioridad 1: resultados efectivamente registrados.
+  for (const registro of registrados) {
+    const configuracion = configurados.find((item) =>
+      coincidenParametros(item, registro)
+    );
+
+    agregarFila(registro, configuracion);
   }
 
-  const nombreA = normalizar(
-    obtenerNombreParametro(a)
-  );
+  // Prioridad 2: resultado directo del documento clínico.
+  if (filas.length === 0) {
+    const valorPrincipal = extraerValor(resultado);
 
-  const nombreB = normalizar(
-    obtenerNombreParametro(b)
-  );
+    if (valorPrincipal !== "") {
+      agregarFila(
+        {
+          nombre: primero(
+            resultado?.nombreAnalisis,
+            analisis?.nombre,
+            "Resultado principal"
+          ),
+          resultado: valorPrincipal,
+          unidad: primero(
+            resultado?.unidad,
+            analisis?.unidad
+          ),
+          rangoReferencia: primero(
+            resultado?.rangoReferencia,
+            analisis?.rangoReferencia
+          ),
+          observacion: primero(
+            resultado?.observacion,
+            resultado?.observaciones
+          ),
+        },
+        null
+      );
+    }
+  }
 
-  return (
-    nombreA !== "" &&
-    nombreA !== "parametro" &&
-    nombreA === nombreB
-  );
-};
+  // Prioridad 3: parámetros configurados sin resultado encontrado.
+  if (filas.length === 0) {
+    configurados.forEach((parametro) => {
+      agregarFila(parametro, parametro);
+    });
+  } else {
+    // Agregar únicamente parámetros configurados que no tengan registro.
+    configurados.forEach((parametro) => {
+      const existe = filas.some(
+        (fila) =>
+          (obtenerIdParametro(parametro) &&
+            fila.id === obtenerIdParametro(parametro)) ||
+          normalizar(fila.nombre) ===
+            normalizar(obtenerNombreParametro(parametro))
+      );
 
-const numero = (valor, defecto = 0) => {
-  const resultado = Number(valor);
+      if (!existe) {
+        agregarFila(parametro, parametro);
+      }
+    });
+  }
 
-  return Number.isFinite(resultado)
-    ? resultado
-    : defecto;
-};
-
-const moneda = (valor) =>
-  numero(valor).toLocaleString("es-BO", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
+  // Evitar duplicados exactos.
+  return filas.filter((fila, indice, arreglo) => {
+    return (
+      arreglo.findIndex(
+        (item) =>
+          item.id === fila.id &&
+          item.nombre === fila.nombre &&
+          item.valor === fila.valor
+      ) === indice
+    );
   });
+};
+
+// ======================================================
+// PDF
+// ======================================================
+
+const colorPDF = (color) => {
+  const valor = texto(color);
+
+  if (!/^#[0-9a-fA-F]{6}$/.test(valor)) {
+    return [37, 99, 235];
+  }
+
+  return [
+    parseInt(valor.substring(1, 3), 16),
+    parseInt(valor.substring(3, 5), 16),
+    parseInt(valor.substring(5, 7), 16),
+  ];
+};
+
+const cargarLogo = async (url) => {
+  if (!url || typeof url !== "string") return null;
+
+  return new Promise((resolve) => {
+    const imagen = new Image();
+    imagen.crossOrigin = "anonymous";
+
+    imagen.onload = () => {
+      try {
+        const canvas = document.createElement("canvas");
+
+        canvas.width = imagen.naturalWidth;
+        canvas.height = imagen.naturalHeight;
+
+        const contexto = canvas.getContext("2d");
+
+        if (!contexto) {
+          resolve(null);
+          return;
+        }
+
+        contexto.drawImage(imagen, 0, 0);
+
+        resolve({
+          data: canvas.toDataURL("image/png"),
+          ancho: imagen.naturalWidth,
+          alto: imagen.naturalHeight,
+        });
+      } catch {
+        resolve(null);
+      }
+    };
+
+    imagen.onerror = () => resolve(null);
+    imagen.src = url;
+  });
+};
+
+const encabezadoPDF = (pdf, laboratorio, logo, titulo) => {
+  const ancho = pdf.internal.pageSize.getWidth();
+  const color = colorPDF(laboratorio?.colorPrimario);
+
+  pdf.setFillColor(...color);
+  pdf.rect(0, 0, ancho, 5, "F");
+
+  pdf.setFillColor(247, 250, 253);
+  pdf.rect(12, 11, ancho - 24, 37, "F");
+
+  pdf.setDrawColor(218, 227, 236);
+  pdf.rect(12, 11, ancho - 24, 37);
+
+  if (logo) {
+    try {
+      let anchoLogo = 29;
+      let altoLogo = (29 * logo.alto) / logo.ancho;
+
+      if (altoLogo > 29) {
+        altoLogo = 29;
+        anchoLogo = (29 * logo.ancho) / logo.alto;
+      }
+
+      pdf.addImage(
+        logo.data,
+        "PNG",
+        16 + (30 - anchoLogo) / 2,
+        15 + (29 - altoLogo) / 2,
+        anchoLogo,
+        altoLogo
+      );
+    } catch (error) {
+      console.warn("No se pudo dibujar el logo:", error);
+    }
+  }
+
+  const nombre = mostrar(
+    primero(laboratorio?.nombreVisible, laboratorio?.nombre),
+    "LABORATORIO CLÍNICO"
+  );
+
+  pdf.setFont("helvetica", "bold");
+  pdf.setFontSize(12);
+  pdf.setTextColor(...color);
+
+  const lineasNombre = pdf.splitTextToSize(
+    nombre.toUpperCase(),
+    140
+  );
+
+  pdf.text(lineasNombre.slice(0, 2), 51, 19);
+
+  pdf.setFont("helvetica", "normal");
+  pdf.setFontSize(7);
+  pdf.setTextColor(65, 78, 91);
+
+  let y = lineasNombre.length > 1 ? 30 : 25;
+
+  const datos = [
+    laboratorio?.direccion,
+    laboratorio?.telefono
+      ? `Tel.: ${laboratorio.telefono}`
+      : "",
+    primero(laboratorio?.email, laboratorio?.correo),
+  ].filter(Boolean);
+
+  datos.forEach((dato) => {
+    pdf.text(
+      pdf.splitTextToSize(texto(dato), 140).slice(0, 2),
+      51,
+      y
+    );
+
+    y += 4;
+  });
+
+  pdf.setFillColor(...color);
+  pdf.roundedRect(12, 51, ancho - 24, 12, 2, 2, "F");
+
+  pdf.setFont("helvetica", "bold");
+  pdf.setFontSize(11);
+  pdf.setTextColor(255, 255, 255);
+
+  pdf.text(titulo, ancho / 2, 58.5, {
+    align: "center",
+  });
+};
+
+const piePDF = (pdf, laboratorio) => {
+  const paginas = pdf.internal.getNumberOfPages();
+  const ancho = pdf.internal.pageSize.getWidth();
+  const alto = pdf.internal.pageSize.getHeight();
+
+  const nombre = mostrar(
+    primero(laboratorio?.nombreVisible, laboratorio?.nombre),
+    "Laboratorio Clínico"
+  );
+
+  for (let pagina = 1; pagina <= paginas; pagina++) {
+    pdf.setPage(pagina);
+
+    pdf.setDrawColor(210, 220, 230);
+    pdf.line(12, alto - 20, ancho - 12, alto - 20);
+
+    pdf.setFont("helvetica", "normal");
+    pdf.setFontSize(7);
+    pdf.setTextColor(100, 110, 120);
+
+    pdf.text(nombre.substring(0, 35), 12, alto - 14);
+
+    pdf.text(
+      `Impreso: ${fechaTexto(new Date())}`,
+      ancho / 2,
+      alto - 14,
+      { align: "center" }
+    );
+
+    pdf.text(`${pagina} / ${paginas}`, ancho - 12, alto - 14, {
+      align: "right",
+    });
+
+    pdf.setFontSize(6.5);
+
+    pdf.text(
+      "Documento generado con la información registrada en el sistema.",
+      ancho / 2,
+      alto - 9,
+      { align: "center" }
+    );
+  }
+};
+
+const datosPacientePDF = (pdf, paciente, fecha) => {
+  autoTable(pdf, {
+    startY: 68,
+    margin: {
+      left: 12,
+      right: 12,
+      bottom: 25,
+    },
+    theme: "grid",
+    body: [
+      [
+        "PACIENTE",
+        nombrePaciente(paciente),
+        "EDAD",
+        edadPaciente(paciente),
+      ],
+      [
+        "CI",
+        ciPaciente(paciente),
+        "SEXO",
+        mostrar(paciente?.sexo),
+      ],
+      [
+        "CORREO",
+        correoPaciente(paciente),
+        "FECHA",
+        fechaCorta(fecha),
+      ],
+    ],
+    styles: {
+      fontSize: 8,
+      cellPadding: 3,
+      lineColor: [215, 225, 235],
+      lineWidth: 0.2,
+      textColor: [42, 55, 69],
+    },
+    columnStyles: {
+      0: {
+        fontStyle: "bold",
+        fillColor: [242, 246, 250],
+        cellWidth: 23,
+      },
+      1: {
+        cellWidth: 75,
+      },
+      2: {
+        fontStyle: "bold",
+        fillColor: [242, 246, 250],
+        cellWidth: 20,
+      },
+    },
+  });
+
+  return pdf.lastAutoTable.finalY;
+};
+
+const tituloSeccionPDF = (pdf, titulo, posicionY, color) => {
+  let y = posicionY;
+
+  if (y + 13 > 270) {
+    pdf.addPage();
+    y = 20;
+  }
+
+  pdf.setFillColor(235, 242, 248);
+  pdf.roundedRect(12, y, 186, 9, 1.5, 1.5, "F");
+
+  pdf.setFillColor(...color);
+  pdf.rect(12, y, 2.5, 9, "F");
+
+  pdf.setFont("helvetica", "bold");
+  pdf.setFontSize(9);
+  pdf.setTextColor(...color);
+
+  pdf.text(
+    pdf.splitTextToSize(titulo.toUpperCase(), 170)[0],
+    18,
+    y + 6
+  );
+
+  return y + 13;
+};
 
 // ======================================================
 // ESTILOS
@@ -253,71 +810,60 @@ const moneda = (valor) =>
 
 const estilos = {
   pagina: {
-    minHeight: "100%",
-    padding: "28px",
+    minHeight: "100vh",
+    padding: 28,
     background: "#f1f5f9",
-    color: "#17365d",
     fontFamily: "Arial, sans-serif",
+    color: "#17365d",
     boxSizing: "border-box",
   },
 
   cabecera: {
-    padding: "30px",
-    background:
-      "linear-gradient(120deg, #ffffff, #eaf2ff)",
-    border: "1px solid #c7dcff",
-    borderRadius: "18px",
-    marginBottom: "24px",
-  },
-
-  titulo: {
-    margin: "0 0 12px",
-    fontSize: "29px",
-    fontWeight: 800,
+    padding: 28,
+    background: "#ffffff",
+    border: "1px solid #dbe5f1",
+    borderRadius: 16,
+    marginBottom: 20,
   },
 
   tarjeta: {
     background: "#ffffff",
     border: "1px solid #dbe5f1",
-    borderRadius: "15px",
-    padding: "24px",
-    marginBottom: "20px",
-    boxShadow:
-      "0 5px 20px rgba(15,23,42,0.04)",
+    borderRadius: 14,
+    padding: 22,
+    marginBottom: 18,
   },
 
   grid: {
     display: "grid",
-    gridTemplateColumns:
-      "repeat(auto-fit, minmax(230px, 1fr))",
-    gap: "16px",
+    gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))",
+    gap: 15,
   },
 
   boton: {
     background: "#2563eb",
     color: "#ffffff",
-    padding: "11px 18px",
     border: "none",
-    borderRadius: "9px",
-    fontWeight: 700,
+    padding: "11px 16px",
+    borderRadius: 8,
     cursor: "pointer",
+    fontWeight: "bold",
   },
 
-  botonSecundario: {
+  secundario: {
     background: "#e2e8f0",
     color: "#17365d",
-    padding: "11px 18px",
     border: "none",
-    borderRadius: "9px",
-    fontWeight: 700,
+    padding: "11px 16px",
+    borderRadius: 8,
     cursor: "pointer",
+    fontWeight: "bold",
   },
 
   campo: {
     background: "#f3f7fc",
-    borderRadius: "10px",
-    padding: "15px",
-    minWidth: 0,
+    padding: 14,
+    borderRadius: 9,
     overflowWrap: "anywhere",
   },
 
@@ -328,80 +874,50 @@ const estilos = {
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    padding: "18px",
+    padding: 15,
     zIndex: 9999,
   },
 
   modal: {
     background: "#ffffff",
     width: "100%",
-    maxWidth: "1000px",
+    maxWidth: 1050,
     maxHeight: "92vh",
     overflowY: "auto",
-    borderRadius: "18px",
-    padding: "30px",
+    borderRadius: 16,
+    padding: 25,
     boxSizing: "border-box",
-  },
-
-  seccion: {
-    border: "1px solid #dbe5f1",
-    borderRadius: "12px",
-    padding: "20px",
-    marginTop: "18px",
   },
 
   tabla: {
     width: "100%",
     borderCollapse: "collapse",
-    marginTop: "15px",
+    marginTop: 15,
   },
 
   celda: {
     border: "1px solid #dbe5f1",
-    padding: "12px",
+    padding: 10,
     textAlign: "left",
-    fontSize: "13px",
+    fontSize: 13,
   },
 };
-
-// ======================================================
-// COMPONENTES VISUALES
-// ======================================================
 
 function Campo({ titulo, valor }) {
   return (
     <div style={estilos.campo}>
       <div
         style={{
+          fontSize: 12,
           color: "#64748b",
-          fontSize: "12px",
-          marginBottom: "7px",
+          marginBottom: 6,
         }}
       >
         {titulo}
       </div>
 
-      <strong style={{ fontSize: "15px" }}>
-        {mostrar(valor)}
-      </strong>
+      <strong>{mostrar(valor)}</strong>
     </div>
-  );
-}
-
-function Seccion({ titulo, children }) {
-  return (
-    <section style={estilos.seccion}>
-      <h3
-        style={{
-          marginTop: 0,
-          fontSize: "18px",
-        }}
-      >
-        {titulo}
-      </h3>
-
-      {children}
-    </section>
   );
 }
 
@@ -409,13 +925,8 @@ function Seccion({ titulo, children }) {
 // COMPONENTE PRINCIPAL
 // ======================================================
 
-export default function ResultadosRecepcion({
-  usuario,
-  onVolver,
-}) {
-  const laboratorioId = texto(
-    usuario?.laboratorioId
-  );
+export default function ResultadosRecepcion({ usuario, onVolver }) {
+  const laboratorioId = texto(usuario?.laboratorioId);
 
   const [pacientes, setPacientes] = useState([]);
   const [resultados, setResultados] = useState([]);
@@ -423,34 +934,26 @@ export default function ResultadosRecepcion({
   const [analisis, setAnalisis] = useState([]);
   const [muestras, setMuestras] = useState([]);
 
-  const [
-    pacienteSeleccionado,
-    setPacienteSeleccionado,
-  ] = useState(null);
+  const [laboratorio, setLaboratorio] = useState(null);
 
-  const [
-    resultadoSeleccionado,
-    setResultadoSeleccionado,
-  ] = useState(null);
+  const [pacienteSeleccionado, setPacienteSeleccionado] =
+    useState(null);
 
-  const [
-    ventaSeleccionada,
-    setVentaSeleccionada,
-  ] = useState(null);
+  const [resultadoSeleccionado, setResultadoSeleccionado] =
+    useState(null);
+
+  const [ventaSeleccionada, setVentaSeleccionada] =
+    useState(null);
 
   const [valores, setValores] = useState([]);
   const [busqueda, setBusqueda] = useState("");
 
   const [cargando, setCargando] = useState(true);
-
-  const [
-    cargandoDetalle,
-    setCargandoDetalle,
-  ] = useState(false);
+  const [cargandoDetalle, setCargandoDetalle] = useState(false);
+  const [generandoPDF, setGenerandoPDF] = useState(false);
 
   const [error, setError] = useState("");
-  const [errorDetalle, setErrorDetalle] =
-    useState("");
+  const [errorDetalle, setErrorDetalle] = useState("");
 
   // ====================================================
   // CONSULTAR COLECCIONES
@@ -460,26 +963,22 @@ export default function ResultadosRecepcion({
     async (nombre) => {
       const referencia = query(
         collection(db, nombre),
-        where(
-          "laboratorioId",
-          "==",
-          laboratorioId
-        )
+        where("laboratorioId", "==", laboratorioId)
       );
 
       const snapshot = await getDocs(referencia);
 
-      return documentos(snapshot);
+      return snapshot.docs.map((documento) => ({
+        ...documento.data(),
+        id: documento.id,
+      }));
     },
     [laboratorioId]
   );
 
   const cargarDatos = useCallback(async () => {
     if (!laboratorioId) {
-      setError(
-        "No se identificó el laboratorio."
-      );
-
+      setError("No se identificó el laboratorio.");
       setCargando(false);
       return;
     }
@@ -489,10 +988,10 @@ export default function ResultadosRecepcion({
 
     try {
       const [
-        datosPacientes,
-        datosResultados,
-        datosVentas,
-        datosAnalisis,
+        pacientesData,
+        resultadosData,
+        ventasData,
+        analisisData,
       ] = await Promise.all([
         consultarColeccion("pacientes"),
         consultarColeccion("resultados"),
@@ -500,64 +999,71 @@ export default function ResultadosRecepcion({
         consultarColeccion("analisis"),
       ]);
 
-      setPacientes(datosPacientes);
-      setResultados(datosResultados);
-      setVentas(datosVentas);
-      setAnalisis(datosAnalisis);
+      setPacientes(pacientesData);
+      setResultados(resultadosData);
+      setVentas(ventasData);
+      setAnalisis(analisisData);
 
       try {
-        const datosMuestras =
-          await consultarColeccion("muestras");
-
-        setMuestras(datosMuestras);
+        const muestrasData = await consultarColeccion("muestras");
+        setMuestras(muestrasData);
       } catch (err) {
-        console.warn(
-          "No se pudieron consultar muestras:",
-          err
-        );
-
+        console.warn("No se pudieron cargar las muestras:", err);
         setMuestras([]);
       }
+
+      try {
+        const laboratorioDoc = await getDoc(
+          doc(db, "laboratorios", laboratorioId)
+        );
+
+        if (laboratorioDoc.exists()) {
+          setLaboratorio({
+            ...laboratorioDoc.data(),
+            id: laboratorioDoc.id,
+          });
+        }
+      } catch (err) {
+        console.warn("No se pudo cargar el laboratorio:", err);
+      }
     } catch (err) {
-      console.error(
-        "Error cargando resultados:",
-        err
-      );
+      console.error(err);
 
       setError(
-        err.code === "permission-denied"
-          ? "Firestore no permite consultar los datos."
-          : err.message
+        err?.code === "permission-denied"
+          ? "No tienes permisos para consultar esta información."
+          : err?.message || "Error al cargar los datos."
       );
     } finally {
       setCargando(false);
     }
-  }, [
-    laboratorioId,
-    consultarColeccion,
-  ]);
+  }, [laboratorioId, consultarColeccion]);
 
   useEffect(() => {
     cargarDatos();
   }, [cargarDatos]);
 
   // ====================================================
-  // OBTENER ANÁLISIS Y MUESTRAS
+  // RELACIONES
   // ====================================================
 
-  const obtenerAnalisis = (resultado) =>
-    analisis.find(
-      (item) =>
-        texto(item.id) ===
-        texto(resultado?.analisisId)
-    );
+  const obtenerAnalisis = useCallback(
+    (resultado) =>
+      analisis.find(
+        (item) =>
+          texto(item.id) === texto(resultado?.analisisId)
+      ),
+    [analisis]
+  );
 
-  const obtenerMuestra = (resultado) =>
-    muestras.find(
-      (item) =>
-        texto(item.id) ===
-        texto(resultado?.muestraId)
-    );
+  const obtenerMuestra = useCallback(
+    (resultado) =>
+      muestras.find(
+        (item) =>
+          texto(item.id) === texto(resultado?.muestraId)
+      ),
+    [muestras]
+  );
 
   const obtenerNombreAnalisis = (resultado) => {
     const actual = obtenerAnalisis(resultado);
@@ -573,51 +1079,563 @@ export default function ResultadosRecepcion({
     );
   };
 
-  // ====================================================
-  // OBTENER DETALLE DE LOS ANÁLISIS VENDIDOS
-  // ====================================================
-
-  const obtenerNombreItem = (item) => {
-    if (typeof item === "string") {
-      const encontrado = analisis.find(
-        (a) => texto(a.id) === texto(item)
-      );
-
-      return mostrar(
-        primero(
-          encontrado?.nombre,
-          encontrado?.nombreAnalisis
-        ),
-        "Análisis no identificado"
-      );
-    }
-
-    const analisisId = texto(
+  const obtenerNumeroOrden = (resultado) =>
+    mostrar(
       primero(
-        item?.analisisId,
-        item?.idAnalisis,
-        item?.productoId
+        resultado?.numeroOrden,
+        resultado?.codigoOrden,
+        resultado?.ordenId
       )
     );
 
-    const encontrado = analisis.find(
-      (a) => texto(a.id) === analisisId
-    );
+  const obtenerNumeroMuestra = (resultado) => {
+    const muestra = obtenerMuestra(resultado);
 
     return mostrar(
       primero(
-        item?.nombreAnalisis,
-        item?.analisisNombre,
-        item?.nombreProducto,
-        item?.producto,
-        item?.nombre,
-        item?.descripcion,
-        encontrado?.nombre,
-        encontrado?.nombreAnalisis
-      ),
-      "Análisis no identificado"
+        muestra?.numeroMuestra,
+        muestra?.codigoMuestra,
+        muestra?.codigo,
+        resultado?.numeroMuestra,
+        resultado?.codigoMuestra,
+        muestra?.id,
+        resultado?.muestraId
+      )
     );
   };
+
+  const obtenerTipoMuestra = (resultado) => {
+    const muestra = obtenerMuestra(resultado);
+
+    return mostrar(
+      primero(
+        muestra?.tipoMuestra,
+        muestra?.tipo,
+        resultado?.tipoMuestra
+      )
+    );
+  };
+
+  // ====================================================
+  // LEER RESULTADOS REGISTRADOS
+  // ====================================================
+
+  const consultarValoresResultado = useCallback(
+    async (resultado) => {
+      if (!resultado?.id) {
+        return {
+          valores: [],
+          advertencias: [],
+        };
+      }
+
+      const encontrados = [];
+      const advertencias = [];
+
+      // 1. Datos que ya están dentro del documento resultado.
+      encontrados.push(...extraerRegistros(resultado));
+
+      // 2. Subcolección principal de valores.
+      try {
+        const snapshot = await getDocs(
+          collection(db, "resultados", resultado.id, "valores")
+        );
+
+        snapshot.docs.forEach((documento) => {
+          encontrados.push({
+            ...documento.data(),
+            id: documento.id,
+          });
+        });
+      } catch (err) {
+        advertencias.push(
+          `valores: ${err?.code || err?.message}`
+        );
+      }
+
+      // 3. Documento de muestra relacionado.
+      const muestraId = texto(resultado.muestraId);
+
+      if (muestraId) {
+        try {
+          const snapshot = await getDoc(
+            doc(db, "muestras", muestraId)
+          );
+
+          if (snapshot.exists()) {
+            encontrados.push(
+              ...extraerRegistros(snapshot.data())
+            );
+          }
+        } catch (err) {
+          advertencias.push(
+            `muestra: ${err?.code || err?.message}`
+          );
+        }
+      }
+
+      // No se consultan subcolecciones adicionales sin conocer
+      // sus reglas de acceso y estructura real.
+
+      return {
+        valores: encontrados,
+        advertencias,
+      };
+    },
+    []
+  );
+
+  useEffect(() => {
+    if (!resultadoSeleccionado) {
+      setValores([]);
+      setErrorDetalle("");
+      return;
+    }
+
+    let activo = true;
+
+    const cargar = async () => {
+      setCargandoDetalle(true);
+      setValores([]);
+      setErrorDetalle("");
+
+      try {
+        const respuesta = await consultarValoresResultado(
+          resultadoSeleccionado
+        );
+
+        if (!activo) return;
+
+        setValores(respuesta.valores);
+
+        if (respuesta.advertencias.length > 0) {
+          setErrorDetalle(respuesta.advertencias.join(" | "));
+        }
+
+        console.log("RESULTADO FIRESTORE:", resultadoSeleccionado);
+        console.log("VALORES RECUPERADOS:", respuesta.valores);
+      } catch (err) {
+        if (activo) {
+          setErrorDetalle(
+            err?.message || "No se pudieron consultar los valores."
+          );
+        }
+      } finally {
+        if (activo) setCargandoDetalle(false);
+      }
+    };
+
+    cargar();
+
+    return () => {
+      activo = false;
+    };
+  }, [resultadoSeleccionado, consultarValoresResultado]);
+
+  const parametrosCompletos = useMemo(() => {
+    if (!resultadoSeleccionado) return [];
+
+    return construirParametros(
+      resultadoSeleccionado,
+      obtenerAnalisis(resultadoSeleccionado),
+      valores
+    );
+  }, [resultadoSeleccionado, obtenerAnalisis, valores]);
+
+  // ====================================================
+  // FILTROS
+  // ====================================================
+
+  const pacientesFiltrados = useMemo(() => {
+    const buscar = normalizar(busqueda);
+
+    return pacientes.filter((paciente) =>
+      normalizar(
+        `${nombrePaciente(paciente)} ${ciPaciente(
+          paciente
+        )} ${correoPaciente(paciente)}`
+      ).includes(buscar)
+    );
+  }, [pacientes, busqueda]);
+
+  const resultadosPaciente = useMemo(() => {
+    if (!pacienteSeleccionado) return [];
+
+    return resultados.filter(
+      (resultado) =>
+        texto(resultado.pacienteId) ===
+          texto(pacienteSeleccionado.id) &&
+        (normalizar(resultado.estado) === "validado" ||
+          resultado.validado === true)
+    );
+  }, [resultados, pacienteSeleccionado]);
+
+  const ventasPaciente = useMemo(() => {
+    if (!pacienteSeleccionado) return [];
+
+    return ventas.filter(
+      (venta) =>
+        texto(venta.pacienteId) ===
+        texto(pacienteSeleccionado.id)
+    );
+  }, [ventas, pacienteSeleccionado]);
+
+  // ====================================================
+  // PDF CLÍNICO
+  // ====================================================
+
+  const descargarResultado = async (resultado) => {
+    if (!resultado || generandoPDF) return;
+
+    setGenerandoPDF(true);
+
+    try {
+      const datosLaboratorio = laboratorio || {};
+
+      const logo = await cargarLogo(
+        primero(
+          datosLaboratorio.logoUrl,
+          datosLaboratorio.imagenURL,
+          datosLaboratorio.logo
+        )
+      );
+
+      const pdf = new jsPDF({
+        orientation: "portrait",
+        unit: "mm",
+        format: "a4",
+      });
+
+      const color = colorPDF(datosLaboratorio.colorPrimario);
+
+      const ordenId = texto(resultado.ordenId);
+
+      const resultadosInforme = ordenId
+        ? resultadosPaciente.filter(
+            (item) => texto(item.ordenId) === ordenId
+          )
+        : [resultado];
+
+      if (
+        !resultadosInforme.some(
+          (item) => item.id === resultado.id
+        )
+      ) {
+        resultadosInforme.push(resultado);
+      }
+
+      const detalles = await Promise.all(
+        resultadosInforme.map(async (item) => {
+          const respuesta = await consultarValoresResultado(item);
+
+          return {
+            resultado: item,
+            parametros: construirParametros(
+              item,
+              obtenerAnalisis(item),
+              respuesta.valores
+            ),
+          };
+        })
+      );
+
+      encabezadoPDF(
+        pdf,
+        datosLaboratorio,
+        logo,
+        "INFORME DE RESULTADOS CLÍNICOS"
+      );
+
+      const fecha = primero(
+        resultado.fechaValidacion,
+        resultado.fechaRegistro,
+        resultado.fecha
+      );
+
+      let y = datosPacientePDF(
+        pdf,
+        pacienteSeleccionado,
+        fecha
+      );
+
+      y = tituloSeccionPDF(
+        pdf,
+        "Información de la orden",
+        y + 6,
+        color
+      );
+
+      const numerosMuestra = [
+        ...new Set(
+          resultadosInforme.map((item) =>
+            obtenerNumeroMuestra(item)
+          )
+        ),
+      ].join(", ");
+
+      autoTable(pdf, {
+        startY: y,
+        margin: {
+          left: 12,
+          right: 12,
+          bottom: 25,
+        },
+        theme: "grid",
+        body: [
+          [
+            "N.º ORDEN",
+            obtenerNumeroOrden(resultado),
+            "N.º MUESTRA",
+            numerosMuestra,
+          ],
+          [
+            "REGISTRO",
+            fechaTexto(
+              primero(resultado.fechaRegistro, resultado.fecha)
+            ),
+            "VALIDACIÓN",
+            fechaTexto(resultado.fechaValidacion),
+          ],
+          [
+            "ESTADO",
+            mostrar(resultado.estado),
+            "ANÁLISIS",
+            String(detalles.length),
+          ],
+        ],
+        styles: {
+          fontSize: 8,
+          cellPadding: 3,
+          lineColor: [215, 225, 235],
+          lineWidth: 0.2,
+        },
+        columnStyles: {
+          0: {
+            fontStyle: "bold",
+            fillColor: [242, 246, 250],
+            cellWidth: 39,
+          },
+          1: {
+            cellWidth: 59,
+          },
+          2: {
+            fontStyle: "bold",
+            fillColor: [242, 246, 250],
+            cellWidth: 31,
+          },
+        },
+      });
+
+      y = pdf.lastAutoTable.finalY + 8;
+
+      for (const detalle of detalles) {
+        const item = detalle.resultado;
+
+        y = tituloSeccionPDF(
+          pdf,
+          obtenerNombreAnalisis(item),
+          y,
+          color
+        );
+
+        autoTable(pdf, {
+          startY: y,
+          margin: {
+            left: 12,
+            right: 12,
+            bottom: 25,
+          },
+          theme: "plain",
+          body: [
+            [
+              `Muestra: ${obtenerTipoMuestra(item)}`,
+              `N.º: ${obtenerNumeroMuestra(item)}`,
+              `Fecha: ${fechaTexto(
+                primero(item.fechaRegistro, item.fecha)
+              )}`,
+            ],
+          ],
+          styles: {
+            fontSize: 7.5,
+            cellPadding: 2,
+            textColor: [90, 105, 120],
+          },
+        });
+
+        y = pdf.lastAutoTable.finalY + 3;
+
+        const filas =
+          detalle.parametros.length > 0
+            ? detalle.parametros.map((parametro) => [
+                parametro.nombre,
+                {
+                  content: parametro.valor,
+                  styles: {
+                    fontStyle: parametro.anormal
+                      ? "bold"
+                      : "normal",
+                    textColor: parametro.anormal
+                      ? [200, 35, 45]
+                      : [35, 50, 65],
+                  },
+                },
+                parametro.unidad,
+                parametro.rango,
+                parametro.observacion,
+              ])
+            : [
+                [
+                  obtenerNombreAnalisis(item),
+                  "Sin resultado registrado",
+                  "-",
+                  "-",
+                  "-",
+                ],
+              ];
+
+        autoTable(pdf, {
+          startY: y,
+          margin: {
+            left: 12,
+            right: 12,
+            top: 18,
+            bottom: 25,
+          },
+          head: [
+            [
+              "PARÁMETRO",
+              "RESULTADO",
+              "UNIDAD",
+              "REFERENCIA",
+              "OBS.",
+            ],
+          ],
+          body: filas,
+          theme: "grid",
+          headStyles: {
+            fillColor: color,
+            textColor: [255, 255, 255],
+            fontStyle: "bold",
+            fontSize: 7.5,
+            halign: "center",
+          },
+          styles: {
+            fontSize: 8,
+            cellPadding: 3,
+            lineWidth: 0.15,
+            lineColor: [215, 225, 235],
+            textColor: [40, 55, 70],
+            overflow: "linebreak",
+          },
+          alternateRowStyles: {
+            fillColor: [248, 250, 253],
+          },
+          columnStyles: {
+            0: { cellWidth: 55 },
+            1: { cellWidth: 32, halign: "center" },
+            2: { cellWidth: 24, halign: "center" },
+            3: { cellWidth: 42, halign: "center" },
+            4: { cellWidth: 33 },
+          },
+        });
+
+        y = pdf.lastAutoTable.finalY + 8;
+
+        const observaciones = texto(
+          primero(item.observaciones, item.observacion)
+        );
+
+        if (observaciones) {
+          const lineas = pdf.splitTextToSize(observaciones, 178);
+
+          if (y + lineas.length * 4 + 15 > 270) {
+            pdf.addPage();
+            y = 20;
+          }
+
+          pdf.setFont("helvetica", "bold");
+          pdf.setFontSize(8);
+          pdf.setTextColor(...color);
+          pdf.text("OBSERVACIONES:", 12, y);
+
+          pdf.setFont("helvetica", "normal");
+          pdf.setTextColor(65, 75, 85);
+          pdf.text(lineas, 12, y + 5);
+
+          y += lineas.length * 4 + 13;
+        }
+
+        if (y + 17 > 270) {
+          pdf.addPage();
+          y = 20;
+        }
+
+        pdf.setDrawColor(220, 228, 236);
+        pdf.line(12, y, 198, y);
+
+        pdf.setFont("helvetica", "normal");
+        pdf.setFontSize(7);
+        pdf.setTextColor(85, 95, 105);
+
+        pdf.text(
+          `Validado por: ${mostrar(
+            primero(
+              item.validadoPorNombre,
+              item.nombreValidador
+            )
+          )}`,
+          12,
+          y + 5
+        );
+
+        pdf.text(
+          `Fecha: ${fechaTexto(item.fechaValidacion)}`,
+          198,
+          y + 5,
+          { align: "right" }
+        );
+
+        y += 17;
+      }
+
+      if (y + 22 > 270) {
+        pdf.addPage();
+        y = 20;
+      }
+
+      pdf.setDrawColor(...color);
+      pdf.line(12, y, 198, y);
+
+      pdf.setFont("helvetica", "bold");
+      pdf.setFontSize(8);
+      pdf.setTextColor(...color);
+
+      pdf.text("FIN DEL INFORME", 105, y + 8, {
+        align: "center",
+      });
+
+      piePDF(pdf, datosLaboratorio);
+
+      const nombreArchivo = texto(
+        primero(resultado.ordenId, resultado.id, "clinico")
+      ).replace(/[\\/:*?"<>|]/g, "_");
+
+      pdf.save(`Resultados_Orden_${nombreArchivo}.pdf`);
+    } catch (err) {
+      console.error("Error generando PDF:", err);
+
+      alert(
+        err?.message ||
+          "No se pudo generar el informe clínico."
+      );
+    } finally {
+      setGenerandoPDF(false);
+    }
+  };
+
+  // ====================================================
+  // DETALLES DE VENTA
+  // ====================================================
 
   const obtenerItemsVenta = (venta) => {
     if (!venta) return [];
@@ -633,724 +1651,212 @@ export default function ResultadosRecepcion({
       venta.servicios
     );
 
-    let lista = [];
+    const items = lista(origen);
 
-    if (Array.isArray(origen)) {
-      lista = origen;
-    } else if (
-      origen &&
-      typeof origen === "object"
-    ) {
-      lista = Object.values(origen);
-    } else if (
-      typeof origen === "string"
-    ) {
-      lista = [origen];
-    }
-
-    if (
-      lista.length === 0 &&
-      primero(
-        venta.analisisId,
-        venta.nombreAnalisis
-      )
-    ) {
-      lista = [venta];
-    }
-
-    return lista.map((item, index) => {
-      const datos =
-        typeof item === "object" &&
-        item !== null
+    return items.map((item, index) => {
+      const dato =
+        item && typeof item === "object"
           ? item
           : { analisisId: item };
 
-      const cantidad = numero(
-        primero(
-          datos.cantidad,
-          datos.cantidadAnalisis,
-          1
-        ),
-        1
+      const encontrado = analisis.find(
+        (a) =>
+          texto(a.id) ===
+          texto(primero(dato.analisisId, dato.idAnalisis))
       );
 
-      const precio = numero(
-        primero(
-          datos.precioUnitario,
-          datos.precio,
-          datos.costo,
-          datos.monto,
-          0
-        )
-      );
-
-      const subtotal = numero(
-        primero(
-          datos.subtotal,
-          datos.total,
-          cantidad * precio
-        )
-      );
+      const cantidad = Number(primero(dato.cantidad, 1)) || 1;
+      const precio =
+        Number(primero(dato.precioUnitario, dato.precio, 0)) || 0;
 
       return {
-        id: texto(
+        id: primero(dato.id, index),
+        nombre: mostrar(
           primero(
-            datos.id,
-            datos.analisisId,
-            index
-          )
+            dato.nombreAnalisis,
+            dato.analisisNombre,
+            dato.nombre,
+            encontrado?.nombre
+          ),
+          "Análisis"
         ),
-        nombre: obtenerNombreItem(datos),
         cantidad,
         precio,
-        subtotal,
+        subtotal:
+          Number(
+            primero(dato.subtotal, dato.total, cantidad * precio)
+          ) || 0,
       };
     });
   };
 
-  const itemsVentaSeleccionada = useMemo(
-    () => obtenerItemsVenta(ventaSeleccionada),
-    [ventaSeleccionada, analisis]
-  );
+  const descargarVenta = async (venta) => {
+    if (!venta || generandoPDF) return;
 
-  const nombreVenta = (venta) => {
-    const items = obtenerItemsVenta(venta);
+    setGenerandoPDF(true);
 
-    if (items.length === 0) {
-      return "Detalle de venta no disponible";
-    }
+    try {
+      const datosLaboratorio = laboratorio || {};
 
-    return items.map((item) => item.nombre).join(", ");
-  };
-
-  // ====================================================
-  // CONSULTAR VALORES REGISTRADOS
-  // ====================================================
-
-  useEffect(() => {
-    if (!resultadoSeleccionado) {
-      setValores([]);
-      setErrorDetalle("");
-      return;
-    }
-
-    let activo = true;
-
-    const cargarValores = async () => {
-      setCargandoDetalle(true);
-      setErrorDetalle("");
-
-      const integrados = convertirLista(
+      const logo = await cargarLogo(
         primero(
-          resultadoSeleccionado.valoresParametros,
-          resultadoSeleccionado.parametros,
-          resultadoSeleccionado.valores
+          datosLaboratorio.logoUrl,
+          datosLaboratorio.imagenURL,
+          datosLaboratorio.logo
         )
       );
 
-      try {
-        const referencia = collection(
-          db,
-          "resultados",
-          resultadoSeleccionado.id,
-          "valores"
-        );
+      const pdf = new jsPDF({
+        unit: "mm",
+        format: "a4",
+      });
 
-        const snapshot = await getDocs(referencia);
+      const color = colorPDF(datosLaboratorio.colorPrimario);
 
-        const guardados = documentos(snapshot);
-
-        if (activo) {
-          setValores([
-            ...guardados,
-            ...integrados,
-          ]);
-        }
-      } catch (err) {
-        console.error(
-          "Error consultando valores:",
-          err
-        );
-
-        if (activo) {
-          setValores(integrados);
-
-          setErrorDetalle(
-            err.code === "permission-denied"
-              ? "Firestore no permite consultar los valores registrados."
-              : "No se pudieron consultar todos los valores."
-          );
-        }
-      } finally {
-        if (activo) {
-          setCargandoDetalle(false);
-        }
-      }
-    };
-
-    cargarValores();
-
-    return () => {
-      activo = false;
-    };
-  }, [resultadoSeleccionado]);
-
-  // ====================================================
-  // PARÁMETROS COMPLETOS
-  // ====================================================
-
-  const parametrosCompletos = useMemo(() => {
-    if (!resultadoSeleccionado) {
-      return [];
-    }
-
-    const analisisActual = analisis.find(
-      (item) =>
-        texto(item.id) ===
-        texto(
-          resultadoSeleccionado.analisisId
-        )
-    );
-
-    const configurados = convertirLista(
-      primero(
-        analisisActual?.parametros,
-        analisisActual?.parametrosConfigurados
-      )
-    );
-
-    const todos = [];
-
-    configurados.forEach((parametro) => {
-      if (
-        !todos.some((actual) =>
-          coincidenParametros(
-            actual,
-            parametro
-          )
-        )
-      ) {
-        todos.push(parametro);
-      }
-    });
-
-    valores.forEach((parametro) => {
-      if (
-        !todos.some((actual) =>
-          coincidenParametros(
-            actual,
-            parametro
-          )
-        )
-      ) {
-        todos.push(parametro);
-      }
-    });
-
-    return todos.map((parametro) => {
-      const configuracion = configurados.find(
-        (actual) =>
-          coincidenParametros(
-            actual,
-            parametro
-          )
+      encabezadoPDF(
+        pdf,
+        datosLaboratorio,
+        logo,
+        "NOTA DE VENTA"
       );
 
-      const registrado = valores.find(
-        (actual) =>
-          coincidenParametros(
-            actual,
-            parametro
-          )
-      );
-
-      const rango = primero(
-        obtenerRango(configuracion),
-        obtenerRango(registrado),
-        obtenerRango(parametro)
-      );
-
-      return {
-        id: obtenerIdParametro(parametro),
-
-        nombre: obtenerNombreParametro(
-          configuracion ||
-          registrado ||
-          parametro
-        ),
-
-        unidad: mostrar(
-          primero(
-            registrado?.unidad,
-            configuracion?.unidad,
-            parametro.unidad
-          ),
-          "Sin unidad"
-        ),
-
-        rango: mostrar(
-          rango,
-          "No configurado"
-        ),
-      };
-    });
-  }, [
-    resultadoSeleccionado,
-    analisis,
-    valores,
-  ]);
-
-  // ====================================================
-  // RESULTADO CLÍNICO PRINCIPAL
-  // ====================================================
-
-  const rangoPrincipal = useMemo(() => {
-    if (!resultadoSeleccionado) {
-      return "No configurado";
-    }
-
-    const directo = primero(
-      obtenerRango(resultadoSeleccionado),
-      obtenerRango(
-        obtenerAnalisis(
-          resultadoSeleccionado
-        )
-      )
-    );
-
-    if (directo) {
-      return directo;
-    }
-
-    if (parametrosCompletos.length === 1) {
-      return parametrosCompletos[0].rango;
-    }
-
-    if (parametrosCompletos.length > 1) {
-      return "Ver rangos en los parámetros";
-    }
-
-    return "No configurado";
-  }, [
-    resultadoSeleccionado,
-    parametrosCompletos,
-    analisis,
-  ]);
-
-  const valorPrincipal = useMemo(() => {
-    return mostrar(
-      primero(
-        resultadoSeleccionado?.valorResultado,
-        resultadoSeleccionado?.valor
-      )
-    );
-  }, [resultadoSeleccionado]);
-
-  const observacionPrincipal = useMemo(() => {
-    return mostrar(
-      primero(
-        resultadoSeleccionado?.observaciones,
-        resultadoSeleccionado?.observacion
-      ),
-      "Sin observaciones"
-    );
-  }, [resultadoSeleccionado]);
-
-  // ====================================================
-  // FILTRAR PACIENTES
-  // ====================================================
-
-  const pacientesFiltrados = useMemo(() => {
-    const buscar = normalizar(busqueda);
-
-    return pacientes.filter((paciente) =>
-      normalizar(
-        `${nombrePaciente(paciente)} ${
-          ciPaciente(paciente)
-        }`
-      ).includes(buscar)
-    );
-  }, [
-    pacientes,
-    busqueda,
-  ]);
-
-  const resultadosPaciente = useMemo(() => {
-    if (!pacienteSeleccionado) {
-      return [];
-    }
-
-    return resultados.filter(
-      (resultado) =>
-        texto(resultado.pacienteId) ===
-          texto(pacienteSeleccionado.id) &&
-        (
-          normalizar(resultado.estado) ===
-            "validado" ||
-          resultado.validado === true
-        )
-    );
-  }, [
-    resultados,
-    pacienteSeleccionado,
-  ]);
-
-  const ventasPaciente = useMemo(() => {
-    if (!pacienteSeleccionado) {
-      return [];
-    }
-
-    return ventas.filter(
-      (venta) =>
-        texto(venta.pacienteId) ===
-        texto(pacienteSeleccionado.id)
-    );
-  }, [
-    ventas,
-    pacienteSeleccionado,
-  ]);
-
-  // ====================================================
-  // DESCARGAR PDF DE NOTA DE VENTA
-  // ====================================================
-
-  const descargarVenta = (venta) => {
-    if (!venta) return;
-
-    const pdf = new jsPDF();
-
-    const items = obtenerItemsVenta(venta);
-
-    const paciente = nombrePaciente(
-      pacienteSeleccionado
-    );
-
-    const ci = ciPaciente(
-      pacienteSeleccionado
-    );
-
-    const fecha = fechaTexto(
-      primero(
+      const fecha = primero(
         venta.fechaVenta,
         venta.fecha,
         venta.createdAt
-      )
-    );
+      );
 
-    const total = numero(
-      primero(
-        venta.total,
-        venta.montoTotal,
-        venta.totalVenta,
-        0
-      )
-    );
+      let y = datosPacientePDF(
+        pdf,
+        pacienteSeleccionado,
+        fecha
+      );
 
-    pdf.setFillColor(25, 56, 95);
-    pdf.rect(0, 0, 210, 38, "F");
-
-    pdf.setTextColor(255, 255, 255);
-    pdf.setFontSize(19);
-    pdf.setFont("helvetica", "bold");
-
-    pdf.text(
-      "NOTA DE VENTA",
-      105,
-      20,
-      { align: "center" }
-    );
-
-    pdf.setFontSize(10);
-    pdf.setFont("helvetica", "normal");
-
-    pdf.text(
-      "Laboratorio Clinico",
-      105,
-      29,
-      { align: "center" }
-    );
-
-    pdf.setTextColor(23, 54, 93);
-
-    pdf.setFontSize(11);
-    pdf.setFont("helvetica", "bold");
-
-    pdf.text(
-      "INFORMACION DE LA VENTA",
-      15,
-      51
-    );
-
-    pdf.setFont("helvetica", "normal");
-    pdf.setFontSize(10);
-
-    pdf.text(
-      `Venta: ${mostrar(venta.id)}`,
-      15,
-      61
-    );
-
-    pdf.text(
-      `Paciente: ${paciente}`,
-      15,
-      69
-    );
-
-    pdf.text(
-      `CI: ${ci}`,
-      15,
-      77
-    );
-
-    pdf.text(
-      `Fecha: ${fecha}`,
-      15,
-      85
-    );
-
-    pdf.setFont("helvetica", "bold");
-
-    pdf.text(
-      "DETALLE DE ANALISIS VENDIDOS",
-      15,
-      99
-    );
-
-    const filas = items.map((item) => [
-      item.nombre,
-      String(item.cantidad),
-      `Bs ${moneda(item.precio)}`,
-      `Bs ${moneda(item.subtotal)}`,
-    ]);
-
-    if (filas.length === 0) {
-      filas.push([
-        "Detalle no disponible",
-        "-",
-        "-",
-        "-",
-      ]);
-    }
-
-    autoTable(pdf, {
-      startY: 105,
-
-      head: [[
-        "Analisis",
-        "Cantidad",
-        "Precio unitario",
-        "Subtotal",
-      ]],
-
-      body: filas,
-
-      theme: "grid",
-
-      headStyles: {
-        fillColor: [25, 56, 95],
-        textColor: [255, 255, 255],
-      },
-
-      styles: {
-        fontSize: 9,
-        cellPadding: 4,
-      },
-
-      columnStyles: {
-        1: { halign: "center" },
-        2: { halign: "right" },
-        3: { halign: "right" },
-      },
-    });
-
-    const posicionFinal =
-      pdf.lastAutoTable?.finalY || 120;
-
-    let y = posicionFinal + 15;
-
-    if (y > 270) {
-      pdf.addPage();
-      y = 25;
-    }
-
-    pdf.setFontSize(14);
-    pdf.setFont("helvetica", "bold");
-
-    pdf.text(
-      `TOTAL: Bs ${moneda(total)}`,
-      195,
-      y,
-      { align: "right" }
-    );
-
-    pdf.setFontSize(9);
-    pdf.setFont("helvetica", "normal");
-
-    pdf.text(
-      "Documento generado por el sistema del laboratorio clinico.",
-      105,
-      285,
-      { align: "center" }
-    );
-
-    pdf.save(
-      `Nota_Venta_${venta.id}.pdf`
-    );
-  };
-
-  // ====================================================
-  // DESCARGAR PDF DEL RESULTADO
-  // ====================================================
-
-  const descargarResultado = (resultado) => {
-    if (!resultado) return;
-
-    const pdf = new jsPDF();
-
-    const muestraActual =
-      obtenerMuestra(resultado);
-
-    const analisisActual =
-      obtenerAnalisis(resultado);
-
-    pdf.setFillColor(25, 56, 95);
-    pdf.rect(0, 0, 210, 38, "F");
-
-    pdf.setTextColor(255, 255, 255);
-    pdf.setFontSize(18);
-    pdf.setFont("helvetica", "bold");
-
-    pdf.text(
-      "RESULTADO CLINICO",
-      105,
-      22,
-      { align: "center" }
-    );
-
-    pdf.setTextColor(23, 54, 93);
-
-    const filas = [
-      [
-        "Paciente",
-        nombrePaciente(
-          pacienteSeleccionado
-        ),
-      ],
-      [
-        "CI",
-        ciPaciente(
-          pacienteSeleccionado
-        ),
-      ],
-      [
-        "Analisis",
-        obtenerNombreAnalisis(resultado),
-      ],
-      [
-        "Descripcion",
-        mostrar(
-          analisisActual?.descripcion
-        ),
-      ],
-      [
-        "Tipo de muestra",
-        mostrar(
-          primero(
-            muestraActual?.tipoMuestra,
-            resultado.tipoMuestra
-          )
-        ),
-      ],
-      [
-        "Valor registrado",
-        valorPrincipal,
-      ],
-      [
-        "Unidad",
-        mostrar(resultado.unidad),
-      ],
-      [
-        "Rango de referencia",
-        rangoPrincipal,
-      ],
-      [
-        "Estado",
-        mostrar(resultado.estado),
-      ],
-      [
-        "Observaciones",
-        observacionPrincipal,
-      ],
-      [
-        "Validado por",
-        mostrar(
-          primero(
-            resultado.validadoPorNombre,
-            resultado.nombreValidador
-          )
-        ),
-      ],
-      [
-        "Fecha de validacion",
-        fechaTexto(
-          resultado.fechaValidacion
-        ),
-      ],
-    ];
-
-    autoTable(pdf, {
-      startY: 48,
-
-      head: [[
-        "Campo",
-        "Informacion",
-      ]],
-
-      body: filas,
-
-      theme: "grid",
-
-      headStyles: {
-        fillColor: [25, 56, 95],
-      },
-
-      styles: {
-        fontSize: 9,
-      },
-    });
-
-    if (parametrosCompletos.length > 0) {
-      const posicion =
-        pdf.lastAutoTable?.finalY || 180;
+      y = tituloSeccionPDF(
+        pdf,
+        "Información de la venta",
+        y + 6,
+        color
+      );
 
       autoTable(pdf, {
-        startY: posicion + 15,
-
-        head: [[
-          "Parametro",
-          "Unidad",
-          "Rango de referencia",
-        ]],
-
-        body: parametrosCompletos.map(
-          (parametro) => [
-            parametro.nombre,
-            parametro.unidad,
-            parametro.rango,
-          ]
-        ),
-
+        startY: y,
+        margin: {
+          left: 12,
+          right: 12,
+          bottom: 25,
+        },
         theme: "grid",
-
-        headStyles: {
-          fillColor: [25, 56, 95],
+        body: [
+          [
+            "N.º VENTA",
+            mostrar(primero(venta.ventaId, venta.id)),
+          ],
+          ["N.º ORDEN", mostrar(venta.ordenId)],
+          ["N.º SOLICITUD", mostrar(venta.solicitudId)],
+          ["MÉTODO DE PAGO", mostrar(venta.metodoPago)],
+          ["ESTADO", mostrar(venta.estado)],
+          ["FECHA", fechaTexto(fecha)],
+        ],
+        styles: {
+          fontSize: 8,
+          cellPadding: 3,
+          lineColor: [215, 225, 235],
+          lineWidth: 0.2,
+        },
+        columnStyles: {
+          0: {
+            fontStyle: "bold",
+            fillColor: [242, 246, 250],
+            cellWidth: 45,
+          },
         },
       });
-    }
 
-    pdf.save(
-      `Resultado_${resultado.id}.pdf`
-    );
+      y = tituloSeccionPDF(
+        pdf,
+        "Detalle de análisis",
+        pdf.lastAutoTable.finalY + 8,
+        color
+      );
+
+      const items = obtenerItemsVenta(venta);
+
+      const filas = items.map((item) => [
+        item.nombre,
+        String(item.cantidad),
+        `Bs ${moneda(item.precio)}`,
+        `Bs ${moneda(item.subtotal)}`,
+      ]);
+
+      if (filas.length === 0) {
+        filas.push(["Detalle no disponible", "-", "-", "-"]);
+      }
+
+      autoTable(pdf, {
+        startY: y,
+        margin: {
+          left: 12,
+          right: 12,
+          top: 18,
+          bottom: 25,
+        },
+        head: [
+          ["ANÁLISIS", "CANTIDAD", "PRECIO", "SUBTOTAL"],
+        ],
+        body: filas,
+        theme: "grid",
+        headStyles: {
+          fillColor: color,
+          textColor: [255, 255, 255],
+        },
+        styles: {
+          fontSize: 8,
+          cellPadding: 3,
+          lineColor: [215, 225, 235],
+          lineWidth: 0.2,
+        },
+        alternateRowStyles: {
+          fillColor: [248, 250, 253],
+        },
+      });
+
+      let totalY = pdf.lastAutoTable.finalY + 12;
+
+      if (totalY + 25 > 270) {
+        pdf.addPage();
+        totalY = 20;
+      }
+
+      pdf.setFillColor(237, 245, 251);
+      pdf.roundedRect(110, totalY, 88, 17, 2, 2, "F");
+
+      pdf.setFont("helvetica", "bold");
+      pdf.setFontSize(12);
+      pdf.setTextColor(...color);
+
+      pdf.text(
+        `TOTAL: Bs ${moneda(
+          primero(venta.total, venta.montoTotal, venta.totalVenta)
+        )}`,
+        193,
+        totalY + 11,
+        { align: "right" }
+      );
+
+      piePDF(pdf, datosLaboratorio);
+
+      const nombreArchivo = texto(
+        primero(venta.ventaId, venta.id, "venta")
+      ).replace(/[\\/:*?"<>|]/g, "_");
+
+      pdf.save(`Nota_Venta_${nombreArchivo}.pdf`);
+    } catch (err) {
+      console.error(err);
+      alert("No se pudo generar la nota de venta.");
+    } finally {
+      setGenerandoPDF(false);
+    }
   };
 
   // ====================================================
@@ -1359,28 +1865,49 @@ export default function ResultadosRecepcion({
 
   return (
     <div style={estilos.pagina}>
-
       <header style={estilos.cabecera}>
-        <h1 style={estilos.titulo}>
-          Resultados de pacientes
-        </h1>
+        <h1>Resultados de pacientes</h1>
 
-        <p
-          style={{
-            margin: 0,
-            color: "#64748b",
-          }}
-        >
-          Consulta resultados clínicos,
+        <p>
+          Consulta de resultados clínicos, parámetros,
           rangos de referencia y notas de venta.
         </p>
+
+        {laboratorio && (
+          <p>
+            <strong>
+              {mostrar(
+                primero(
+                  laboratorio.nombreVisible,
+                  laboratorio.nombre
+                )
+              )}
+            </strong>
+          </p>
+        )}
+
+        {typeof onVolver === "function" && (
+          <button
+            type="button"
+            style={estilos.secundario}
+            onClick={onVolver}
+          >
+            ← Volver
+          </button>
+        )}
       </header>
 
       {error && (
         <div style={estilos.tarjeta}>
-          <p style={{ color: "#dc2626" }}>
-            {error}
-          </p>
+          <p style={{ color: "red" }}>{error}</p>
+
+          <button
+            type="button"
+            style={estilos.boton}
+            onClick={cargarDatos}
+          >
+            Reintentar
+          </button>
         </div>
       )}
 
@@ -1394,64 +1921,64 @@ export default function ResultadosRecepcion({
 
           <input
             type="text"
-            placeholder="Buscar por nombre, apellido o CI..."
+            placeholder="Buscar por nombre, CI o correo..."
             value={busqueda}
-            onChange={(e) =>
-              setBusqueda(e.target.value)
-            }
+            onChange={(e) => setBusqueda(e.target.value)}
             style={{
               width: "100%",
-              padding: "14px",
-              border:
-                "1px solid #cbd5e1",
-              borderRadius: "9px",
-              marginBottom: "20px",
+              padding: 13,
+              border: "1px solid #cbd5e1",
+              borderRadius: 8,
+              marginBottom: 20,
               boxSizing: "border-box",
             }}
           />
 
           <div style={estilos.grid}>
-            {pacientesFiltrados.map(
-              (paciente) => (
-                <div
-                  key={paciente.id}
-                  style={estilos.tarjeta}
+            {pacientesFiltrados.map((paciente) => (
+              <div
+                key={paciente.id}
+                style={{
+                  ...estilos.tarjeta,
+                  marginBottom: 0,
+                }}
+              >
+                <h3>{nombrePaciente(paciente)}</h3>
+
+                <p>
+                  <strong>CI:</strong> {ciPaciente(paciente)}
+                </p>
+
+                <p>
+                  <strong>Correo:</strong> {correoPaciente(paciente)}
+                </p>
+
+                <button
+                  type="button"
+                  style={estilos.boton}
+                  onClick={() => {
+                    setPacienteSeleccionado(paciente);
+                    setResultadoSeleccionado(null);
+                    setVentaSeleccionada(null);
+                  }}
                 >
-                  <h3>
-                    {nombrePaciente(
-                      paciente
-                    )}
-                  </h3>
-
-                  <p>
-                    CI: {ciPaciente(
-                      paciente
-                    )}
-                  </p>
-
-                  <button
-                    type="button"
-                    style={estilos.boton}
-                    onClick={() =>
-                      setPacienteSeleccionado(
-                        paciente
-                      )
-                    }
-                  >
-                    Ver resultados
-                  </button>
-                </div>
-              )
-            )}
+                  Ver resultados
+                </button>
+              </div>
+            ))}
           </div>
+
+          {pacientesFiltrados.length === 0 && (
+            <p>No se encontraron pacientes.</p>
+          )}
         </div>
       ) : (
         <>
           <button
             type="button"
             style={{
-              ...estilos.botonSecundario,
-              marginBottom: "15px",
+              ...estilos.secundario,
+              marginBottom: 15,
             }}
             onClick={() => {
               setPacienteSeleccionado(null);
@@ -1463,78 +1990,104 @@ export default function ResultadosRecepcion({
           </button>
 
           <div style={estilos.tarjeta}>
-            <h2 style={{ marginTop: 0 }}>
-              {nombrePaciente(
-                pacienteSeleccionado
-              )}
-            </h2>
+            <h2>{nombrePaciente(pacienteSeleccionado)}</h2>
 
-            <p style={{ marginBottom: 0 }}>
-              CI: {ciPaciente(
-                pacienteSeleccionado
-              )}
-            </p>
+            <div style={estilos.grid}>
+              <Campo
+                titulo="CI"
+                valor={ciPaciente(pacienteSeleccionado)}
+              />
+
+              <Campo
+                titulo="Edad"
+                valor={edadPaciente(pacienteSeleccionado)}
+              />
+
+              <Campo
+                titulo="Sexo"
+                valor={pacienteSeleccionado.sexo}
+              />
+
+              <Campo
+                titulo="Correo electrónico"
+                valor={correoPaciente(pacienteSeleccionado)}
+              />
+            </div>
           </div>
 
           <div style={estilos.tarjeta}>
             <h2>Resultados clínicos</h2>
+            <p>Resultados validados del paciente.</p>
 
             {resultadosPaciente.length === 0 ? (
-              <p>
-                No existen resultados validados.
-              </p>
+              <p>No existen resultados validados.</p>
             ) : (
               <div style={estilos.grid}>
-                {resultadosPaciente.map(
-                  (resultado) => (
+                {resultadosPaciente.map((resultado) => (
+                  <div
+                    key={resultado.id}
+                    style={{
+                      ...estilos.tarjeta,
+                      marginBottom: 0,
+                    }}
+                  >
+                    <h3>{obtenerNombreAnalisis(resultado)}</h3>
+
+                    <p>
+                      <strong>N.º orden:</strong>{" "}
+                      {obtenerNumeroOrden(resultado)}
+                    </p>
+
+                    <p>
+                      <strong>N.º muestra:</strong>{" "}
+                      {obtenerNumeroMuestra(resultado)}
+                    </p>
+
+                    <p>
+                      <strong>Estado:</strong>{" "}
+                      {mostrar(resultado.estado)}
+                    </p>
+
+                    <p>
+                      <strong>Fecha:</strong>{" "}
+                      {fechaTexto(
+                        primero(
+                          resultado.fechaValidacion,
+                          resultado.fechaRegistro
+                        )
+                      )}
+                    </p>
+
                     <div
-                      key={resultado.id}
                       style={{
-                        ...estilos.tarjeta,
-                        marginBottom: 0,
+                        display: "flex",
+                        gap: 10,
+                        flexWrap: "wrap",
                       }}
                     >
-                      <h3>
-                        {obtenerNombreAnalisis(
-                          resultado
-                        )}
-                      </h3>
-
-                      <p>
-                        <strong>
-                          Estado:
-                        </strong>{" "}
-                        {mostrar(
-                          resultado.estado
-                        )}
-                      </p>
-
-                      <p>
-                        <strong>
-                          Fecha:
-                        </strong>{" "}
-                        {fechaTexto(
-                          primero(
-                            resultado.fechaValidacion,
-                            resultado.fechaRegistro
-                          )
-                        )}
-                      </p>
-
                       <button
                         type="button"
                         style={estilos.boton}
                         onClick={() =>
-                          setResultadoSeleccionado(
-                            resultado
-                          )
+                          setResultadoSeleccionado(resultado)
                         }
                       >
                         Ver resultado
                       </button>
+
+                      <button
+                        type="button"
+                        disabled={generandoPDF}
+                        style={estilos.secundario}
+                        onClick={() => descargarResultado(resultado)}
+                      >
+                        {generandoPDF
+                          ? "Generando..."
+                          : "Descargar PDF"}
+                      </button>
                     </div>
-                  )
-                )}
+                  </div>
+                ))}
               </div>
             )}
           </div>
@@ -1543,266 +2096,187 @@ export default function ResultadosRecepcion({
             <h2>Notas de venta</h2>
 
             {ventasPaciente.length === 0 ? (
-              <p>
-                No existen notas de venta.
-              </p>
+              <p>No existen notas de venta.</p>
             ) : (
               <div style={estilos.grid}>
-                {ventasPaciente.map(
-                  (venta) => (
+                {ventasPaciente.map((venta) => (
+                  <div
+                    key={venta.id}
+                    style={{
+                      ...estilos.tarjeta,
+                      marginBottom: 0,
+                    }}
+                  >
+                    <h3>
+                      Nota de venta{" "}
+                      {mostrar(primero(venta.ventaId, venta.id))}
+                    </h3>
+
+                    <p>
+                      <strong>Fecha:</strong>{" "}
+                      {fechaTexto(
+                        primero(venta.fechaVenta, venta.fecha)
+                      )}
+                    </p>
+
+                    <p>
+                      <strong>Total:</strong> Bs{" "}
+                      {moneda(
+                        primero(venta.total, venta.montoTotal)
+                      )}
+                    </p>
+
                     <div
-                      key={venta.id}
                       style={{
-                        ...estilos.tarjeta,
-                        marginBottom: 0,
+                        display: "flex",
+                        gap: 10,
+                        flexWrap: "wrap",
                       }}
                     >
-                      <h3>
-                        {nombreVenta(venta)}
-                      </h3>
-
-                      <p>
-                        <strong>
-                          Fecha:
-                        </strong>{" "}
-                        {fechaTexto(
-                          primero(
-                            venta.fechaVenta,
-                            venta.fecha
-                          )
-                        )}
-                      </p>
-
-                      <p>
-                        <strong>
-                          Total:
-                        </strong>{" "}
-                        Bs{" "}
-                        {moneda(
-                          primero(
-                            venta.total,
-                            venta.montoTotal,
-                            0
-                          )
-                        )}
-                      </p>
-
                       <button
                         type="button"
                         style={estilos.boton}
-                        onClick={() =>
-                          setVentaSeleccionada(
-                            venta
-                          )
-                        }
+                        onClick={() => setVentaSeleccionada(venta)}
                       >
-                        Ver nota de venta
+                        Ver nota
                       </button>
 
                       <button
                         type="button"
-                        style={{
-                          ...estilos.botonSecundario,
-                          marginLeft: "10px",
-                        }}
-                        onClick={() =>
-                          descargarVenta(venta)
-                        }
+                        style={estilos.secundario}
+                        disabled={generandoPDF}
+                        onClick={() => descargarVenta(venta)}
                       >
                         Descargar PDF
                       </button>
                     </div>
-                  )
-                )}
+                  </div>
+                ))}
               </div>
             )}
           </div>
         </>
       )}
 
-      {/* ==============================================
-          MODAL RESULTADO CLÍNICO
-      ============================================== */}
+      {/* MODAL RESULTADO */}
 
       {resultadoSeleccionado && (
         <div
           style={estilos.fondoModal}
-          onClick={() =>
-            setResultadoSeleccionado(null)
-          }
+          onClick={() => setResultadoSeleccionado(null)}
         >
           <div
             style={estilos.modal}
-            onClick={(e) =>
-              e.stopPropagation()
-            }
+            onClick={(e) => e.stopPropagation()}
           >
             <div
               style={{
                 display: "flex",
-                justifyContent:
-                  "space-between",
+                justifyContent: "space-between",
                 alignItems: "center",
-                gap: "15px",
+                gap: 15,
               }}
             >
-              <h2 style={{ margin: 0 }}>
-                Detalle completo del resultado clínico
-              </h2>
+              <h2>Detalle del resultado clínico</h2>
 
               <button
                 type="button"
-                style={estilos.botonSecundario}
-                onClick={() =>
-                  setResultadoSeleccionado(null)
-                }
+                style={estilos.secundario}
+                onClick={() => setResultadoSeleccionado(null)}
               >
-                ✕
+                Cerrar
               </button>
             </div>
 
-            <Seccion titulo="1. Información del paciente">
-              <div style={estilos.grid}>
-                <Campo
-                  titulo="Paciente"
-                  valor={nombrePaciente(
-                    pacienteSeleccionado
-                  )}
-                />
+            <h3>Información del paciente</h3>
 
-                <Campo
-                  titulo="CI"
-                  valor={ciPaciente(
-                    pacienteSeleccionado
-                  )}
-                />
-              </div>
-            </Seccion>
+            <div style={estilos.grid}>
+              <Campo
+                titulo="Paciente"
+                valor={nombrePaciente(pacienteSeleccionado)}
+              />
 
-            <Seccion titulo="2. Información del análisis">
-              <div style={estilos.grid}>
-                <Campo
-                  titulo="Análisis"
-                  valor={obtenerNombreAnalisis(
-                    resultadoSeleccionado
-                  )}
-                />
+              <Campo
+                titulo="CI"
+                valor={ciPaciente(pacienteSeleccionado)}
+              />
 
-                <Campo
-                  titulo="Descripción"
-                  valor={
-                    obtenerAnalisis(
-                      resultadoSeleccionado
-                    )?.descripcion
-                  }
-                />
-              </div>
-            </Seccion>
+              <Campo
+                titulo="Correo"
+                valor={correoPaciente(pacienteSeleccionado)}
+              />
 
-            <Seccion titulo="3. Información de la muestra">
-              <div style={estilos.grid}>
-                <Campo
-                  titulo="Tipo de muestra"
-                  valor={primero(
-                    obtenerMuestra(
-                      resultadoSeleccionado
-                    )?.tipoMuestra,
-                    resultadoSeleccionado.tipoMuestra
-                  )}
-                />
+              <Campo
+                titulo="Edad"
+                valor={edadPaciente(pacienteSeleccionado)}
+              />
+            </div>
 
-                <Campo
-                  titulo="Estado de muestra"
-                  valor={
-                    obtenerMuestra(
-                      resultadoSeleccionado
-                    )?.estado
-                  }
-                />
+            <h3>Información del análisis</h3>
 
-                <Campo
-                  titulo="Fecha de toma"
-                  valor={fechaTexto(
-                    obtenerMuestra(
-                      resultadoSeleccionado
-                    )?.fechaToma
-                  )}
-                />
-              </div>
-            </Seccion>
+            <div style={estilos.grid}>
+              <Campo
+                titulo="Análisis"
+                valor={obtenerNombreAnalisis(
+                  resultadoSeleccionado
+                )}
+              />
 
-            <Seccion titulo="4. Resultado clínico">
-              <div style={estilos.grid}>
-                <Campo
-                  titulo="Valor registrado"
-                  valor={valorPrincipal}
-                />
+              <Campo
+                titulo="Número de orden"
+                valor={obtenerNumeroOrden(
+                  resultadoSeleccionado
+                )}
+              />
 
-                <Campo
-                  titulo="Unidad"
-                  valor={
-                    resultadoSeleccionado.unidad
-                  }
-                />
+              <Campo
+                titulo="Número de muestra"
+                valor={obtenerNumeroMuestra(
+                  resultadoSeleccionado
+                )}
+              />
 
-                <Campo
-                  titulo="Rango de referencia"
-                  valor={rangoPrincipal}
-                />
+              <Campo
+                titulo="Tipo de muestra"
+                valor={obtenerTipoMuestra(
+                  resultadoSeleccionado
+                )}
+              />
+            </div>
 
-                <Campo
-                  titulo="Estado"
-                  valor={
-                    resultadoSeleccionado.estado
-                  }
-                />
+            <h3>Parámetros y resultados</h3>
 
-                <Campo
-                  titulo="Fecha de registro"
-                  valor={fechaTexto(
-                    resultadoSeleccionado.fechaRegistro
-                  )}
-                />
+            {cargandoDetalle ? (
+              <p>Cargando valores registrados...</p>
+            ) : (
+              <>
+                {errorDetalle && (
+                  <p style={{ color: "#b45309" }}>
+                    {errorDetalle}
+                  </p>
+                )}
 
-                <Campo
-                  titulo="Observaciones"
-                  valor={observacionPrincipal}
-                />
-              </div>
-            </Seccion>
-
-            {!cargandoDetalle &&
-              parametrosCompletos.length > 0 && (
-                <Seccion titulo="5. Valores de los parámetros">
-                  {errorDetalle && (
-                    <p
-                      style={{
-                        color: "#b45309",
-                      }}
-                    >
-                      {errorDetalle}
-                    </p>
-                  )}
-
-                  <div
-                    style={{
-                      overflowX: "auto",
-                    }}
-                  >
+                {parametrosCompletos.length === 0 ? (
+                  <p>
+                    No se encontraron parámetros individuales.
+                  </p>
+                ) : (
+                  <div style={{ overflowX: "auto" }}>
                     <table style={estilos.tabla}>
                       <thead>
                         <tr>
                           {[
                             "Parámetro",
+                            "Resultado",
                             "Unidad",
-                            "Rango de referencia",
+                            "Referencia",
+                            "Observación",
                           ].map((titulo) => (
                             <th
                               key={titulo}
                               style={{
                                 ...estilos.celda,
-                                background:
-                                  "#eaf2ff",
+                                background: "#eaf2ff",
                               }}
                             >
                               {titulo}
@@ -1821,6 +2295,20 @@ export default function ResultadosRecepcion({
                                 {parametro.nombre}
                               </td>
 
+                              <td
+                                style={{
+                                  ...estilos.celda,
+                                  color: parametro.anormal
+                                    ? "#dc2626"
+                                    : "#17365d",
+                                  fontWeight: parametro.anormal
+                                    ? "bold"
+                                    : "normal",
+                                }}
+                              >
+                                {parametro.valor}
+                              </td>
+
                               <td style={estilos.celda}>
                                 {parametro.unidad}
                               </td>
@@ -1828,66 +2316,77 @@ export default function ResultadosRecepcion({
                               <td style={estilos.celda}>
                                 {parametro.rango}
                               </td>
+
+                              <td style={estilos.celda}>
+                                {parametro.observacion}
+                              </td>
                             </tr>
                           )
                         )}
                       </tbody>
                     </table>
                   </div>
-                </Seccion>
-              )}
+                )}
+              </>
+            )}
 
-            <Seccion titulo="6. Validación del resultado">
-              <div style={estilos.grid}>
-                <Campo
-                  titulo="Estado"
-                  valor={
-                    resultadoSeleccionado.estado
-                  }
-                />
+            <h3>Observaciones y validación</h3>
 
-                <Campo
-                  titulo="Validado por"
-                  valor={primero(
-                    resultadoSeleccionado.validadoPorNombre,
-                    resultadoSeleccionado.nombreValidador
-                  )}
-                />
+            <div style={estilos.grid}>
+              <Campo
+                titulo="Observaciones"
+                valor={primero(
+                  resultadoSeleccionado.observaciones,
+                  resultadoSeleccionado.observacion
+                )}
+              />
 
-                <Campo
-                  titulo="Fecha de validación"
-                  valor={fechaTexto(
-                    resultadoSeleccionado.fechaValidacion
-                  )}
-                />
-              </div>
-            </Seccion>
+              <Campo
+                titulo="Estado"
+                valor={resultadoSeleccionado.estado}
+              />
+
+              <Campo
+                titulo="Validado por"
+                valor={primero(
+                  resultadoSeleccionado.validadoPorNombre,
+                  resultadoSeleccionado.nombreValidador
+                )}
+              />
+
+              <Campo
+                titulo="Fecha de validación"
+                valor={fechaTexto(
+                  resultadoSeleccionado.fechaValidacion
+                )}
+              />
+            </div>
 
             <div
               style={{
                 display: "flex",
-                gap: "12px",
-                marginTop: "25px",
+                gap: 12,
+                marginTop: 25,
+                flexWrap: "wrap",
               }}
             >
               <button
                 type="button"
+                disabled={generandoPDF}
                 style={estilos.boton}
                 onClick={() =>
-                  descargarResultado(
-                    resultadoSeleccionado
-                  )
+                  descargarResultado(resultadoSeleccionado)
                 }
               >
-                Descargar PDF
+                {generandoPDF
+                  ? "Generando PDF..."
+                  : "Descargar PDF completo"}
               </button>
 
               <button
                 type="button"
-                style={estilos.botonSecundario}
-                onClick={() =>
-                  setResultadoSeleccionado(null)
-                }
+                style={estilos.secundario}
+                onClick={() => setResultadoSeleccionado(null)}
               >
                 Cerrar
               </button>
@@ -1896,164 +2395,133 @@ export default function ResultadosRecepcion({
         </div>
       )}
 
-      {/* ==============================================
-          MODAL NOTA DE VENTA
-      ============================================== */}
+      {/* MODAL VENTA */}
 
       {ventaSeleccionada && (
         <div
           style={estilos.fondoModal}
-          onClick={() =>
-            setVentaSeleccionada(null)
-          }
+          onClick={() => setVentaSeleccionada(null)}
         >
           <div
             style={{
               ...estilos.modal,
-              maxWidth: "850px",
+              maxWidth: 850,
             }}
-            onClick={(e) =>
-              e.stopPropagation()
-            }
+            onClick={(e) => e.stopPropagation()}
           >
-            <h2>
-              Detalle de la nota de venta
-            </h2>
+            <h2>Detalle de nota de venta</h2>
 
-            <Seccion titulo="Información de venta">
-              <div style={estilos.grid}>
-                <Campo
-                  titulo="Análisis vendidos"
-                  valor={nombreVenta(
-                    ventaSeleccionada
-                  )}
-                />
+            <div style={estilos.grid}>
+              <Campo
+                titulo="Paciente"
+                valor={nombrePaciente(pacienteSeleccionado)}
+              />
 
-                <Campo
-                  titulo="Paciente"
-                  valor={nombrePaciente(
-                    pacienteSeleccionado
-                  )}
-                />
+              <Campo
+                titulo="Número de venta"
+                valor={primero(
+                  ventaSeleccionada.ventaId,
+                  ventaSeleccionada.id
+                )}
+              />
 
-                <Campo
-                  titulo="CI"
-                  valor={ciPaciente(
-                    pacienteSeleccionado
-                  )}
-                />
+              <Campo
+                titulo="Número de orden"
+                valor={ventaSeleccionada.ordenId}
+              />
 
-                <Campo
-                  titulo="Fecha"
-                  valor={fechaTexto(
-                    primero(
-                      ventaSeleccionada.fechaVenta,
-                      ventaSeleccionada.fecha
-                    )
-                  )}
-                />
+              <Campo
+                titulo="Método de pago"
+                valor={ventaSeleccionada.metodoPago}
+              />
 
-                <Campo
-                  titulo="Total"
-                  valor={`Bs ${moneda(
-                    primero(
-                      ventaSeleccionada.total,
-                      ventaSeleccionada.montoTotal,
-                      0
-                    )
-                  )}`}
-                />
-              </div>
-            </Seccion>
+              <Campo
+                titulo="Estado"
+                valor={ventaSeleccionada.estado}
+              />
 
-            <Seccion titulo="Detalle de análisis vendidos">
-              {itemsVentaSeleccionada.length === 0 ? (
-                <p>
-                  No se encontraron detalles de los
-                  análisis vendidos en esta venta.
-                </p>
-              ) : (
-                <div
-                  style={{
-                    overflowX: "auto",
-                  }}
-                >
-                  <table style={estilos.tabla}>
-                    <thead>
-                      <tr>
-                        {[
-                          "Análisis",
-                          "Cantidad",
-                          "Precio",
-                          "Subtotal",
-                        ].map((titulo) => (
-                          <th
-                            key={titulo}
-                            style={{
-                              ...estilos.celda,
-                              background:
-                                "#eaf2ff",
-                            }}
-                          >
-                            {titulo}
-                          </th>
-                        ))}
+              <Campo
+                titulo="Total"
+                valor={`Bs ${moneda(
+                  primero(
+                    ventaSeleccionada.total,
+                    ventaSeleccionada.montoTotal
+                  )
+                )}`}
+              />
+            </div>
+
+            <h3>Detalle de análisis vendidos</h3>
+
+            <div style={{ overflowX: "auto" }}>
+              <table style={estilos.tabla}>
+                <thead>
+                  <tr>
+                    {[
+                      "Análisis",
+                      "Cantidad",
+                      "Precio",
+                      "Subtotal",
+                    ].map((titulo) => (
+                      <th
+                        key={titulo}
+                        style={{
+                          ...estilos.celda,
+                          background: "#eaf2ff",
+                        }}
+                      >
+                        {titulo}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {obtenerItemsVenta(ventaSeleccionada).map(
+                    (item, index) => (
+                      <tr key={index}>
+                        <td style={estilos.celda}>
+                          {item.nombre}
+                        </td>
+
+                        <td style={estilos.celda}>
+                          {item.cantidad}
+                        </td>
+
+                        <td style={estilos.celda}>
+                          Bs {moneda(item.precio)}
+                        </td>
+
+                        <td style={estilos.celda}>
+                          Bs {moneda(item.subtotal)}
+                        </td>
                       </tr>
-                    </thead>
-
-                    <tbody>
-                      {itemsVentaSeleccionada.map(
-                        (item, index) => (
-                          <tr key={index}>
-                            <td style={estilos.celda}>
-                              {item.nombre}
-                            </td>
-
-                            <td style={estilos.celda}>
-                              {item.cantidad}
-                            </td>
-
-                            <td style={estilos.celda}>
-                              Bs {moneda(item.precio)}
-                            </td>
-
-                            <td style={estilos.celda}>
-                              Bs {moneda(item.subtotal)}
-                            </td>
-                          </tr>
-                        )
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </Seccion>
+                    )
+                  )}
+                </tbody>
+              </table>
+            </div>
 
             <div
               style={{
                 display: "flex",
-                gap: "12px",
-                marginTop: "25px",
+                gap: 12,
+                marginTop: 25,
               }}
             >
               <button
                 type="button"
                 style={estilos.boton}
-                onClick={() =>
-                  descargarVenta(
-                    ventaSeleccionada
-                  )
-                }
+                disabled={generandoPDF}
+                onClick={() => descargarVenta(ventaSeleccionada)}
               >
                 Descargar PDF
               </button>
 
               <button
                 type="button"
-                style={estilos.botonSecundario}
-                onClick={() =>
-                  setVentaSeleccionada(null)
-                }
+                style={estilos.secundario}
+                onClick={() => setVentaSeleccionada(null)}
               >
                 Cerrar
               </button>
