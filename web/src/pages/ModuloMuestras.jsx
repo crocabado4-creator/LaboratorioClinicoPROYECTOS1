@@ -4,15 +4,16 @@ import GestionMuestras from "./GestionMuestras";
 import ValidacionMuestras from "./ValidacionMuestras";
 import SeguimientoMuestras from "./SeguimientoMuestras";
 
+import MuestrasDisponibles from "./MuestrasDisponibles";
 import GestionResultados from "./GestionResultados";
 import EstadoAnalisis from "./EstadoAnalisis";
 import ValidacionResultados from "./ValidacionResultados";
 import InformeResultados from "./InformeResultados";
 import HistorialResultados from "./HistorialResultados";
 
-// ===============================================
-// OPCIONES DE CADA MODULO
-// ===============================================
+// ======================================================
+// OPCIONES DEL MÓDULO DE MUESTRAS
+// ======================================================
 
 const OPCIONES_MUESTRAS = [
   {
@@ -29,11 +30,15 @@ const OPCIONES_MUESTRAS = [
   },
 ];
 
-// ===============================================
-// OPCIONES DE RESULTADOS
-// ===============================================
+// ======================================================
+// OPCIONES DEL MÓDULO DE RESULTADOS
+// ======================================================
 
 const OPCIONES_RESULTADOS = [
+  {
+    id: "disponibles",
+    titulo: "Muestras disponibles",
+  },
   {
     id: "resultados",
     titulo: "Registro de resultados",
@@ -56,9 +61,9 @@ const OPCIONES_RESULTADOS = [
   },
 ];
 
-// ===============================================
+// ======================================================
 // COMPONENTE PRINCIPAL
-// ===============================================
+// ======================================================
 
 export default function ModuloMuestras({
   usuario,
@@ -67,167 +72,270 @@ export default function ModuloMuestras({
 }) {
   const esResultados = tipo === "resultados";
 
+  // Pantalla inicial del módulo.
+  // Resultados abre directamente Muestras disponibles.
+
   const [seccion, setSeccion] = useState(
-    esResultados ? "resultados" : "registro"
+    esResultados ? "disponibles" : "registro"
   );
+
+  const [menuAbierto, setMenuAbierto] = useState(false);
 
   const opciones = esResultados
     ? OPCIONES_RESULTADOS
     : OPCIONES_MUESTRAS;
 
-  // ===============================================
-  // ESTILO DE LOS BOTONES
-  // ===============================================
+  const tituloModulo = esResultados
+    ? "Menú de Resultados"
+    : "Menú Bioquímico";
 
-  const estiloBoton = (activo) => ({
-    padding: "12px 20px",
+  // ======================================================
+  // NAVEGACIÓN
+  // ======================================================
 
-    border: "none",
+  const cambiarSeccion = (nuevaSeccion) => {
+    setSeccion(nuevaSeccion);
+    setMenuAbierto(false);
+  };
 
-    borderRadius: "9px",
+  const volverDashboard = () => {
+    setMenuAbierto(false);
 
-    background: activo
-      ? "#19385f"
-      : "#e2e8f0",
+    if (typeof onVolver === "function") {
+      onVolver();
+    }
+  };
 
-    color: activo
-      ? "#ffffff"
-      : "#19385f",
+  // ======================================================
+  // ESTILOS DEL CONTENEDOR
+  // ======================================================
 
-    fontFamily:
-      'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+  const estilos = {
+    contenedor: {
+      minHeight: "100vh",
+      background: "#f3f7fc",
+      fontFamily:
+        'Inter, system-ui, -apple-system, "Segoe UI", sans-serif',
+    },
 
-    fontSize: "14px",
+    barraSuperior: {
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: "16px",
+      padding: "13px 20px",
+      background: "#ffffff",
+      borderBottom: "1px solid #e2e8f0",
+      boxShadow: "0 2px 12px rgba(15, 23, 42, 0.035)",
+    },
 
-    fontWeight: 700,
+    izquierda: {
+      display: "flex",
+      alignItems: "center",
+      gap: "12px",
+    },
 
-    cursor: "pointer",
+    botonMenu: {
+      width: "40px",
+      height: "40px",
+      borderRadius: "10px",
+      border: "none",
+      background: "#19385f",
+      color: "#ffffff",
+      fontSize: "22px",
+      fontWeight: "bold",
+      cursor: "pointer",
+    },
 
-    transition: "background 0.2s",
-  });
+    titulo: {
+      margin: 0,
+      fontSize: "14px",
+      color: "#19385f",
+      fontWeight: 800,
+    },
 
-  // ===============================================
-  // INTERFAZ PRINCIPAL
-  // ===============================================
+    botonVolver: {
+      padding: "11px 17px",
+      background: "#e8eef6",
+      border: "1px solid #dce5f0",
+      borderRadius: "10px",
+      color: "#19385f",
+      fontSize: "12px",
+      fontWeight: 700,
+      cursor: "pointer",
+    },
 
-  return (
-    <div
-      style={{
-        minHeight: "100%",
-        background: "#f1f5f9",
-      }}
-    >
-      {/* =======================================
-          MENÚ SEGÚN EL MÓDULO SELECCIONADO
-      ======================================= */}
+    menu: {
+      display: "flex",
+      gap: "10px",
+      flexWrap: "wrap",
+      padding: "15px 20px",
+      background: "#ffffff",
+      borderBottom: "1px solid #e2e8f0",
+    },
 
-      <div
+    contenido: {
+      minHeight: "calc(100vh - 68px)",
+    },
+  };
+
+  // ======================================================
+  // RENDERIZAR OPCIONES
+  // ======================================================
+
+  const renderizarOpcion = (opcion) => {
+    const activo = seccion === opcion.id;
+
+    return (
+      <button
+        key={opcion.id}
+        type="button"
+        onClick={() => cambiarSeccion(opcion.id)}
         style={{
-          display: "flex",
-          gap: "12px",
-          padding: "20px",
-          background: "#f1f5f9",
-          flexWrap: "wrap",
-          borderBottom: "1px solid #e2e8f0",
+          padding: "11px 17px",
+          borderRadius: "10px",
+          border: activo
+            ? "1px solid #19385f"
+            : "1px solid #dce5f0",
+          background: activo
+            ? "#19385f"
+            : "#f4f7fb",
+          color: activo
+            ? "#ffffff"
+            : "#19385f",
+          fontSize: "12px",
+          fontWeight: 700,
+          cursor: "pointer",
+          transition: "all 0.2s ease",
         }}
       >
-        {opciones.map((opcion) => (
+        {opcion.titulo}
+      </button>
+    );
+  };
+
+  // ======================================================
+  // INTERFAZ PRINCIPAL
+  // ======================================================
+
+  return (
+    <div style={estilos.contenedor}>
+      {/* BARRA SUPERIOR */}
+
+      <header style={estilos.barraSuperior}>
+        <div style={estilos.izquierda}>
           <button
-            key={opcion.id}
             type="button"
-            style={estiloBoton(
-              seccion === opcion.id
-            )}
+            style={estilos.botonMenu}
             onClick={() =>
-              setSeccion(opcion.id)
+              setMenuAbierto((anterior) => !anterior)
             }
+            aria-label="Abrir o cerrar menú"
+            aria-expanded={menuAbierto}
           >
-            {opcion.titulo}
+            ☰
           </button>
-        ))}
-      </div>
 
-      {/* =======================================
-          FUNCIONALIDADES DE MUESTRAS
-      ======================================= */}
+          <h2 style={estilos.titulo}>
+            {tituloModulo}
+          </h2>
+        </div>
 
-      {!esResultados &&
-        seccion === "registro" && (
+        <button
+          type="button"
+          style={estilos.botonVolver}
+          onClick={volverDashboard}
+        >
+          ← Volver
+        </button>
+      </header>
+
+      {/* MENÚ DESPLEGABLE */}
+
+      {menuAbierto && (
+        <nav style={estilos.menu}>
+          {opciones.map(renderizarOpcion)}
+        </nav>
+      )}
+
+      {/* CONTENIDO */}
+
+      <div style={estilos.contenido}>
+        {/* ==========================================
+            MÓDULO DE MUESTRAS
+        ========================================== */}
+
+        {!esResultados && seccion === "registro" && (
           <GestionMuestras
             usuario={usuario}
-            onVolver={onVolver}
+            onVolver={volverDashboard}
           />
         )}
 
-      {!esResultados &&
-        seccion === "validacion" && (
+        {!esResultados && seccion === "validacion" && (
           <ValidacionMuestras
             usuario={usuario}
-            onVolver={onVolver}
+            onVolver={volverDashboard}
           />
         )}
 
-      {!esResultados &&
-        seccion === "seguimiento" && (
+        {!esResultados && seccion === "seguimiento" && (
           <SeguimientoMuestras
             usuario={usuario}
-            onVolver={onVolver}
+            onVolver={volverDashboard}
           />
         )}
 
-      {/* =======================================
-          FUNCIONALIDADES DE RESULTADOS
-      ======================================= */}
+        {/* ==========================================
+            MÓDULO DE RESULTADOS
+        ========================================== */}
 
-      {/* REGISTRO DE RESULTADOS */}
+        {esResultados && seccion === "disponibles" && (
+          <MuestrasDisponibles
+            usuario={usuario}
+            onVolver={volverDashboard}
+          />
+        )}
 
-      {esResultados &&
-        seccion === "resultados" && (
+        {esResultados && seccion === "resultados" && (
           <GestionResultados
             usuario={usuario}
-            onVolver={onVolver}
+            onVolver={volverDashboard}
           />
         )}
 
-      {/* ESTADO DE ANÁLISIS */}
-
-      {esResultados &&
-        seccion === "estadoAnalisis" && (
+        {esResultados && seccion === "estadoAnalisis" && (
           <EstadoAnalisis
             usuario={usuario}
-            onVolver={onVolver}
+            onVolver={volverDashboard}
           />
         )}
 
-      {/* VALIDACIÓN DE RESULTADOS */}
+        {esResultados &&
+          seccion === "validacionResultados" && (
+            <ValidacionResultados
+              usuario={usuario}
+              onVolver={volverDashboard}
+              volver={volverDashboard}
+            />
+          )}
 
-      {esResultados &&
-        seccion === "validacionResultados" && (
-          <ValidacionResultados
-            usuario={usuario}
-            onVolver={onVolver}
-          />
-        )}
+        {esResultados &&
+          seccion === "informeResultados" && (
+            <InformeResultados
+              usuario={usuario}
+              onVolver={volverDashboard}
+            />
+          )}
 
-      {/* INFORME DE RESULTADOS */}
-
-      {esResultados &&
-        seccion === "informeResultados" && (
-          <InformeResultados
-            usuario={usuario}
-            onVolver={onVolver}
-          />
-        )}
-
-      {/* HISTORIAL DE RESULTADOS */}
-
-      {esResultados &&
-        seccion === "historialResultados" && (
-          <HistorialResultados
-            usuario={usuario}
-            onVolver={onVolver}
-          />
-        )}
+        {esResultados &&
+          seccion === "historialResultados" && (
+            <HistorialResultados
+              usuario={usuario}
+              onVolver={volverDashboard}
+            />
+          )}
+      </div>
     </div>
   );
 }

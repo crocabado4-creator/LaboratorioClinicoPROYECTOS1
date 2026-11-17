@@ -20,11 +20,20 @@ import ModuloAdministracionSprint3 from "./ModuloAdministracionSprint3";
 import NotificacionesRecepcion from "./NotificacionesRecepcion";
 
 // =====================================================
-// NUEVOS MÓDULOS PARA RECEPCIONISTA
+// MÓDULOS DE RECEPCIÓN
 // =====================================================
 
 import HistorialPacientes from "./HistorialPacientes";
 import ResultadosRecepcion from "./ResultadosRecepcion";
+
+// =====================================================
+// MÓDULO DE RESULTADOS
+// =====================================================
+
+// ESTE COMPONENTE DEBE ABRIRSE DIRECTAMENTE
+// DESDE RESULTADOS PARA ADMINISTRADOR Y BIOQUÍMICO.
+
+import MuestrasDisponibles from "./MuestrasDisponibles";
 
 // =====================================================
 // MÓDULOS DEL SUPERADMINISTRADOR
@@ -39,12 +48,20 @@ import SuperAdminRoles from "./SuperAdminRoles";
 import SuperAdminAuditoria from "./SuperAdminAuditoria";
 
 // =====================================================
-// DASHBOARD PRINCIPAL
+// COMPONENTE PRINCIPAL
 // =====================================================
 
 function Dashboard({ usuario, onLogout }) {
+  // =====================================================
+  // ESTADOS
+  // =====================================================
+
   const [permisos, setPermisos] = useState([]);
-  const [cargandoPermisos, setCargandoPermisos] = useState(true);
+
+  const [
+    cargandoPermisos,
+    setCargandoPermisos,
+  ] = useState(true);
 
   const [vista, setVista] = useState("dashboard");
 
@@ -67,15 +84,24 @@ function Dashboard({ usuario, onLogout }) {
       try {
         setCargandoPermisos(true);
 
-        const resultado = await obtenerPermisosRol(usuario.rol);
+        const resultado = await obtenerPermisosRol(
+          usuario.rol
+        );
 
-        if (!activo) return;
+        if (!activo) {
+          return;
+        }
 
         setPermisos(
-          Array.isArray(resultado) ? resultado : []
+          Array.isArray(resultado)
+            ? resultado
+            : []
         );
       } catch (error) {
-        console.error("Error al cargar permisos:", error);
+        console.error(
+          "Error al cargar permisos:",
+          error
+        );
 
         if (activo) {
           setPermisos([]);
@@ -95,7 +121,7 @@ function Dashboard({ usuario, onLogout }) {
   }, [usuario?.rol]);
 
   // =====================================================
-  // CARGAR PERSONALIZACIÓN
+  // CARGAR PERSONALIZACIÓN DEL LABORATORIO
   // =====================================================
 
   useEffect(() => {
@@ -135,7 +161,7 @@ function Dashboard({ usuario, onLogout }) {
   }, [usuario?.laboratorioId, vista]);
 
   // =====================================================
-  // PERMISOS
+  // FUNCIONES DE PERMISOS
   // =====================================================
 
   const tienePermiso = (permiso) => {
@@ -149,16 +175,20 @@ function Dashboard({ usuario, onLogout }) {
   };
 
   // =====================================================
-  // ROLES
+  // IDENTIFICAR ROLES
   // =====================================================
 
-  const esSuperAdmin = usuario?.rol === "super_admin";
+  const esSuperAdmin =
+    usuario?.rol === "super_admin";
 
-  const esAdministrador = usuario?.rol === "administrador";
+  const esAdministrador =
+    usuario?.rol === "administrador";
 
-  const esRecepcionista = usuario?.rol === "recepcionista";
+  const esRecepcionista =
+    usuario?.rol === "recepcionista";
 
-  const esBioquimico = usuario?.rol === "bioquimico";
+  const esBioquimico =
+    usuario?.rol === "bioquimico";
 
   // =====================================================
   // NAVEGACIÓN
@@ -181,7 +211,9 @@ function Dashboard({ usuario, onLogout }) {
       "¿Deseas cerrar sesión?"
     );
 
-    if (!confirmar) return;
+    if (!confirmar) {
+      return;
+    }
 
     try {
       await cerrarSesionFirebase();
@@ -291,7 +323,7 @@ function Dashboard({ usuario, onLogout }) {
   }
 
   // =====================================================
-  // ADMINISTRADOR - ROLES
+  // ADMINISTRADOR - ROLES Y PERMISOS
   // =====================================================
 
   if (
@@ -409,7 +441,10 @@ function Dashboard({ usuario, onLogout }) {
   // VENTAS
   // =====================================================
 
-  if (vista === "ventas") {
+  if (
+    vista === "ventas" &&
+    tienePermiso("ventas.ver")
+  ) {
     return (
       <GestionVentas
         usuario={usuario}
@@ -444,48 +479,19 @@ function Dashboard({ usuario, onLogout }) {
     esRecepcionista
   ) {
     return (
-      <div
-        style={{
-          minHeight: "100vh",
-          padding: "30px",
-          background: "#f1f5f9",
-        }}
+      <ContenedorModulo
+        onVolver={irDashboard}
       >
-        <div
-          style={{
-            maxWidth: "1200px",
-            margin: "0 auto",
-          }}
-        >
-          <button
-            type="button"
-            onClick={irDashboard}
-            style={{
-              padding: "12px 20px",
-              marginBottom: "20px",
-              background: "#2563eb",
-              color: "#ffffff",
-              border: "none",
-              borderRadius: "10px",
-              cursor: "pointer",
-              fontWeight: "bold",
-            }}
-          >
-            ← Volver al Dashboard
-          </button>
-
-          <NotificacionesRecepcion
-            laboratorioId={usuario.laboratorioId}
-            usuarioId={usuario.uid}
-          />
-        </div>
-      </div>
+        <NotificacionesRecepcion
+          laboratorioId={usuario.laboratorioId}
+          usuarioId={usuario.uid}
+        />
+      </ContenedorModulo>
     );
   }
 
   // =====================================================
-  // NUEVO MÓDULO: HISTORIAL DE PACIENTES
-  // RECEPCIONISTA
+  // HISTORIAL DE PACIENTES - RECEPCIONISTA
   // =====================================================
 
   if (
@@ -493,33 +499,18 @@ function Dashboard({ usuario, onLogout }) {
     esRecepcionista
   ) {
     return (
-      <div
-        style={{
-          minHeight: "100vh",
-          background: "#f1f5f9",
-          padding: "25px",
-        }}
+      <ContenedorModulo
+        onVolver={irDashboard}
       >
-        <div
-          style={{
-            maxWidth: "1450px",
-            margin: "0 auto",
-          }}
-        >
-          <BotonVolver
-            onClick={irDashboard}
-          />
-
-          <HistorialPacientes
-            usuario={usuario}
-          />
-        </div>
-      </div>
+        <HistorialPacientes
+          usuario={usuario}
+        />
+      </ContenedorModulo>
     );
   }
 
   // =====================================================
-  // NUEVO MÓDULO: RESULTADOS DE RECEPCIÓN
+  // RESULTADOS DE RECEPCIÓN
   // =====================================================
 
   if (
@@ -527,33 +518,23 @@ function Dashboard({ usuario, onLogout }) {
     esRecepcionista
   ) {
     return (
-      <div
-        style={{
-          minHeight: "100vh",
-          background: "#f1f5f9",
-          padding: "25px",
-        }}
+      <ContenedorModulo
+        onVolver={irDashboard}
       >
-        <div
-          style={{
-            maxWidth: "1450px",
-            margin: "0 auto",
-          }}
-        >
-          <BotonVolver
-            onClick={irDashboard}
-          />
-
-          <ResultadosRecepcion
-            usuario={usuario}
-          />
-        </div>
-      </div>
+        <ResultadosRecepcion
+          usuario={usuario}
+        />
+      </ContenedorModulo>
     );
   }
 
   // =====================================================
-  // PANEL ADMINISTRADOR - SPRINT 3
+  // PANEL DEL ADMINISTRADOR - SPRINT 3
+  // =====================================================
+  //
+  // ESTE ES EL MÓDULO DE ADMINISTRACIÓN.
+  // NO DEBE ABRIRSE DESDE RESULTADOS.
+  //
   // =====================================================
 
   if (
@@ -573,6 +554,13 @@ function Dashboard({ usuario, onLogout }) {
   // =====================================================
   // RESULTADOS - ADMINISTRADOR
   // =====================================================
+  //
+  // CORRECCIÓN:
+  // ANTES ABRÍA MODULOADMINISTRACIONSPRINT3.
+  //
+  // AHORA ABRE DIRECTAMENTE MUESTRAS DISPONIBLES.
+  //
+  // =====================================================
 
   if (
     vista === "resultados" &&
@@ -580,17 +568,20 @@ function Dashboard({ usuario, onLogout }) {
     tienePermiso("resultados.ver")
   ) {
     return (
-      <ModuloAdministracionSprint3
+      <MuestrasDisponibles
         usuario={usuario}
-        permisos={permisos}
         onVolver={irDashboard}
-        volver={irDashboard}
       />
     );
   }
 
   // =====================================================
   // RESULTADOS - BIOQUÍMICO
+  // =====================================================
+  //
+  // CORRECCIÓN:
+  // TAMBIÉN ABRE DIRECTAMENTE MUESTRAS DISPONIBLES.
+  //
   // =====================================================
 
   if (
@@ -599,9 +590,8 @@ function Dashboard({ usuario, onLogout }) {
     tienePermiso("resultados.ver")
   ) {
     return (
-      <ModuloMuestras
+      <MuestrasDisponibles
         usuario={usuario}
-        tipo="resultados"
         onVolver={irDashboard}
       />
     );
@@ -629,71 +619,107 @@ function Dashboard({ usuario, onLogout }) {
     "Laboratorio Clínico";
 
   // =====================================================
+  // ESTILOS
+  // =====================================================
+
+  const estilos = {
+    pagina: {
+      minHeight: "100vh",
+      padding: "32px",
+      background:
+        "linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%)",
+      color: "#0f172a",
+      fontFamily:
+        'Inter, system-ui, -apple-system, "Segoe UI", sans-serif',
+    },
+
+    contenedor: {
+      width: "100%",
+      maxWidth: "1450px",
+      margin: "0 auto",
+    },
+
+    cabecera: {
+      position: "relative",
+      overflow: "hidden",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "space-between",
+      flexWrap: "wrap",
+      gap: "30px",
+      minHeight: "250px",
+      padding: "38px 42px",
+      borderRadius: "26px",
+      background: `linear-gradient(
+        125deg,
+        ${colorPrimario} 0%,
+        ${colorSecundario} 100%
+      )`,
+      color: "#ffffff",
+      boxShadow: `0 24px 55px ${hexToRgba(
+        colorPrimario,
+        0.22
+      )}`,
+    },
+
+    informacion: {
+      display: "grid",
+      gridTemplateColumns:
+        "repeat(auto-fit, minmax(210px, 1fr))",
+      gap: "14px",
+      marginTop: "22px",
+    },
+
+    modulos: {
+      display: "grid",
+      gridTemplateColumns:
+        "repeat(auto-fit, minmax(250px, 1fr))",
+      gap: "16px",
+    },
+
+    pie: {
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center",
+      flexWrap: "wrap",
+      gap: "15px",
+      marginTop: "35px",
+      padding: "20px",
+      border: "1px solid #e2e8f0",
+      borderRadius: "16px",
+      background: "#ffffff",
+    },
+  };
+
+  // =====================================================
   // DASHBOARD PRINCIPAL
   // =====================================================
 
   return (
-    <main
-      style={{
-        minHeight: "100vh",
-        padding: "32px",
-        background:
-          "linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%)",
-        color: "#0f172a",
-        fontFamily: "Inter, Arial, sans-serif",
-      }}
-    >
-      <div
-        style={{
-          width: "100%",
-          maxWidth: "1450px",
-          margin: "0 auto",
-        }}
-      >
+    <main style={estilos.pagina}>
+      <div style={estilos.contenedor}>
+
         {/* ==========================================
             CABECERA
         ========================================== */}
 
-        <section
-          style={{
-            position: "relative",
-            overflow: "hidden",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            flexWrap: "wrap",
-            gap: "30px",
-            minHeight: "250px",
-            padding: "38px 42px",
-            borderRadius: "26px",
-            background: `linear-gradient(
-              125deg,
-              ${colorPrimario} 0%,
-              ${colorSecundario} 100%
-            )`,
-            color: "#ffffff",
-            boxShadow: `0 24px 55px ${hexToRgba(
-              colorPrimario,
-              0.22
-            )}`,
-          }}
-        >
+        <section style={estilos.cabecera}>
           <div
             style={{
-              position: "relative",
-              zIndex: 2,
               maxWidth: "720px",
+              flex: "1 1 300px",
             }}
           >
             <span
               style={{
                 display: "inline-flex",
-                padding: "7px 11px",
+                padding: "7px 12px",
                 marginBottom: "15px",
                 borderRadius: "30px",
-                background: "rgba(255,255,255,.12)",
-                fontSize: "10px",
-                fontWeight: "800",
+                background:
+                  "rgba(255,255,255,0.15)",
+                fontSize: "11px",
+                fontWeight: 800,
                 letterSpacing: "1px",
               }}
             >
@@ -703,8 +729,11 @@ function Dashboard({ usuario, onLogout }) {
             <h1
               style={{
                 margin: 0,
-                fontSize: "clamp(30px, 4vw, 48px)",
+                fontSize:
+                  "clamp(30px, 4vw, 48px)",
                 lineHeight: 1.15,
+                fontWeight: 800,
+                letterSpacing: "-1px",
               }}
             >
               {nombreLaboratorio}
@@ -712,8 +741,9 @@ function Dashboard({ usuario, onLogout }) {
 
             <p
               style={{
-                margin: "14px 0 0",
+                margin: "16px 0 0",
                 fontSize: "14px",
+                lineHeight: 1.7,
               }}
             >
               Bienvenido,{" "}
@@ -725,13 +755,12 @@ function Dashboard({ usuario, onLogout }) {
             <p
               style={{
                 margin: "5px 0 0",
-                fontSize: "11px",
+                fontSize: "12px",
+                opacity: 0.9,
               }}
             >
               {nombreRol(usuario.rol)}
             </p>
-
-            {/* NOTIFICACIONES RECEPCIONISTA */}
 
             {esRecepcionista && (
               <button
@@ -743,16 +772,16 @@ function Dashboard({ usuario, onLogout }) {
                   marginTop: "20px",
                   padding: "12px 18px",
                   border:
-                    "1px solid rgba(255,255,255,.4)",
+                    "1px solid rgba(255,255,255,0.4)",
                   borderRadius: "12px",
                   background:
-                    "rgba(255,255,255,.2)",
+                    "rgba(255,255,255,0.2)",
                   color: "#ffffff",
                   cursor: "pointer",
-                  fontWeight: "bold",
+                  fontWeight: 700,
                 }}
               >
-                🔔 Ver notificaciones
+                Ver notificaciones
               </button>
             )}
           </div>
@@ -761,8 +790,6 @@ function Dashboard({ usuario, onLogout }) {
 
           <div
             style={{
-              position: "relative",
-              zIndex: 2,
               width: "135px",
               height: "135px",
               flexShrink: 0,
@@ -771,7 +798,7 @@ function Dashboard({ usuario, onLogout }) {
               overflow: "hidden",
               borderRadius: "30px",
               background:
-                "rgba(255,255,255,.16)",
+                "rgba(255,255,255,0.16)",
             }}
           >
             {laboratorio?.logoUrl ? (
@@ -783,9 +810,9 @@ function Dashboard({ usuario, onLogout }) {
                   height: "100%",
                   objectFit: "contain",
                   padding: "13px",
-                  boxSizing: "border-box",
                   background:
-                    "rgba(255,255,255,.93)",
+                    "rgba(255,255,255,0.93)",
+                  boxSizing: "border-box",
                 }}
               />
             ) : (
@@ -804,15 +831,7 @@ function Dashboard({ usuario, onLogout }) {
             INFORMACIÓN DEL USUARIO
         ========================================== */}
 
-        <section
-          style={{
-            display: "grid",
-            gridTemplateColumns:
-              "repeat(auto-fit, minmax(210px, 1fr))",
-            gap: "14px",
-            marginTop: "22px",
-          }}
-        >
+        <section style={estilos.informacion}>
           <InfoCard
             titulo="Usuario"
             valor={`${usuario.nombre || ""} ${
@@ -840,8 +859,8 @@ function Dashboard({ usuario, onLogout }) {
             titulo="Estado"
             valor="Activo"
             icono="●"
-            valorColor="#059669"
             color={colorPrimario}
+            valorColor="#059669"
           />
         </section>
 
@@ -856,14 +875,14 @@ function Dashboard({ usuario, onLogout }) {
         >
           <div
             style={{
-              marginBottom: "20px",
+              marginBottom: "22px",
             }}
           >
             <span
               style={{
                 color: colorPrimario,
-                fontSize: "10px",
-                fontWeight: "900",
+                fontSize: "11px",
+                fontWeight: 900,
                 letterSpacing: "1.2px",
               }}
             >
@@ -872,8 +891,9 @@ function Dashboard({ usuario, onLogout }) {
 
             <h2
               style={{
-                margin: "5px 0 5px",
-                fontSize: "25px",
+                margin: "6px 0",
+                fontSize: "27px",
+                fontWeight: 800,
               }}
             >
               Módulos disponibles
@@ -881,8 +901,9 @@ function Dashboard({ usuario, onLogout }) {
 
             <p
               style={{
+                margin: 0,
                 color: "#64748b",
-                fontSize: "12px",
+                fontSize: "13px",
               }}
             >
               Accede a las funciones disponibles
@@ -890,17 +911,9 @@ function Dashboard({ usuario, onLogout }) {
             </p>
           </div>
 
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns:
-                "repeat(auto-fit, minmax(250px, 1fr))",
-              gap: "16px",
-            }}
-          >
-            {/* ======================================
-                ROLES Y PERMISOS
-            ====================================== */}
+          <div style={estilos.modulos}>
+
+            {/* ROLES Y PERMISOS */}
 
             {esAdministrador &&
               tienePermiso("roles.asignar") && (
@@ -914,9 +927,7 @@ function Dashboard({ usuario, onLogout }) {
                 />
               )}
 
-            {/* ======================================
-                CONFIGURACIÓN
-            ====================================== */}
+            {/* CONFIGURACIÓN */}
 
             {esAdministrador &&
               tienePermiso(
@@ -934,9 +945,7 @@ function Dashboard({ usuario, onLogout }) {
                 />
               )}
 
-            {/* ======================================
-                PERSONAL
-            ====================================== */}
+            {/* PERSONAL */}
 
             {esAdministrador &&
               tieneAlgunPermiso([
@@ -951,13 +960,13 @@ function Dashboard({ usuario, onLogout }) {
                   descripcion="Administra Recepcionistas y Bioquímicos."
                   fondo="#CCFBF1"
                   color="#0F766E"
-                  onClick={() => navegar("personal")}
+                  onClick={() =>
+                    navegar("personal")
+                  }
                 />
               )}
 
-            {/* ======================================
-                PACIENTES
-            ====================================== */}
+            {/* PACIENTES */}
 
             {tieneAlgunPermiso([
               "pacientes.crear",
@@ -970,13 +979,13 @@ function Dashboard({ usuario, onLogout }) {
                 descripcion="Gestiona los pacientes del laboratorio."
                 fondo="#DCFCE7"
                 color="#15803D"
-                onClick={() => navegar("pacientes")}
+                onClick={() =>
+                  navegar("pacientes")
+                }
               />
             )}
 
-            {/* ======================================
-                ANÁLISIS CLÍNICOS
-            ====================================== */}
+            {/* ANÁLISIS CLÍNICOS */}
 
             {tieneAlgunPermiso([
               "analisis.crear",
@@ -989,13 +998,13 @@ function Dashboard({ usuario, onLogout }) {
                 descripcion="Consulta y administra los análisis clínicos."
                 fondo="#CFFAFE"
                 color="#0E7490"
-                onClick={() => navegar("analisis")}
+                onClick={() =>
+                  navegar("analisis")
+                }
               />
             )}
 
-            {/* ======================================
-                SOLICITUDES DE ANÁLISIS
-            ====================================== */}
+            {/* SOLICITUDES */}
 
             {esRecepcionista && (
               <ModuloCard
@@ -1010,9 +1019,7 @@ function Dashboard({ usuario, onLogout }) {
               />
             )}
 
-            {/* ======================================
-                VENTAS
-            ====================================== */}
+            {/* VENTAS */}
 
             {tienePermiso("ventas.ver") && (
               <ModuloCard
@@ -1021,13 +1028,13 @@ function Dashboard({ usuario, onLogout }) {
                 descripcion="Consulta y administra las ventas registradas."
                 fondo="#FEF3C7"
                 color="#A16207"
-                onClick={() => navegar("ventas")}
+                onClick={() =>
+                  navegar("ventas")
+                }
               />
             )}
 
-            {/* ======================================
-                MUESTRAS - BIOQUÍMICO
-            ====================================== */}
+            {/* MUESTRAS */}
 
             {esBioquimico && (
               <ModuloCard
@@ -1036,38 +1043,34 @@ function Dashboard({ usuario, onLogout }) {
                 descripcion="Registra, acepta, rechaza y procesa muestras."
                 fondo="#CCFBF1"
                 color="#0F766E"
-                onClick={() => navegar("muestras")}
+                onClick={() =>
+                  navegar("muestras")
+                }
               />
             )}
 
-            {/* ======================================
-                NOTIFICACIONES - RECEPCIONISTA
-            ====================================== */}
+            {/* NOTIFICACIONES */}
 
             {esRecepcionista && (
               <ModuloCard
                 icono="🔔"
                 titulo="Notificaciones"
-                descripcion="Consulta muestras rechazadas, contaminadas y procesadas. Coordina nuevas tomas cuando sea necesario."
+                descripcion="Consulta muestras rechazadas, contaminadas y procesadas."
                 fondo="#FEE2E2"
                 color="#B91C1C"
                 onClick={() =>
-                  navegar(
-                    "notificaciones_recepcion"
-                  )
+                  navegar("notificaciones_recepcion")
                 }
               />
             )}
 
-            {/* ======================================
-                NUEVO: HISTORIAL DE PACIENTES
-            ====================================== */}
+            {/* HISTORIAL DE PACIENTES */}
 
             {esRecepcionista && (
               <ModuloCard
                 icono="📚"
                 titulo="Historial de pacientes"
-                descripcion="Busca pacientes, consulta su historial de solicitudes, órdenes, muestras, ventas y resultados. Descarga el historial en PDF."
+                descripcion="Consulta el historial de solicitudes, órdenes, muestras, ventas y resultados."
                 fondo="#E0F2FE"
                 color="#0369A1"
                 onClick={() =>
@@ -1076,15 +1079,13 @@ function Dashboard({ usuario, onLogout }) {
               />
             )}
 
-            {/* ======================================
-                NUEVO: RESULTADOS DE RECEPCIÓN
-            ====================================== */}
+            {/* RESULTADOS DE RECEPCIÓN */}
 
             {esRecepcionista && (
               <ModuloCard
                 icono="📄"
                 titulo="Resultados y notas de venta"
-                descripcion="Busca pacientes, consulta los resultados clínicos disponibles y descarga sus notas de venta."
+                descripcion="Consulta los resultados clínicos disponibles y descarga notas de venta."
                 fondo="#DCFCE7"
                 color="#15803D"
                 onClick={() =>
@@ -1093,9 +1094,7 @@ function Dashboard({ usuario, onLogout }) {
               />
             )}
 
-            {/* ======================================
-                PANEL DEL ADMINISTRADOR
-            ====================================== */}
+            {/* PANEL DE ADMINISTRACIÓN */}
 
             {esAdministrador && (
               <ModuloCard
@@ -1111,19 +1110,16 @@ function Dashboard({ usuario, onLogout }) {
             )}
 
             {/* ======================================
-                RESULTADOS ADMINISTRADOR/BIOQUÍMICO
+                RESULTADOS
+                NAVEGACIÓN CORREGIDA
             ====================================== */}
 
-            {!esRecepcionista &&
+            {(esAdministrador || esBioquimico) &&
               tienePermiso("resultados.ver") && (
                 <ModuloCard
                   icono="📊"
                   titulo="Resultados"
-                  descripcion={
-                    esAdministrador
-                      ? "Consulta los resultados clínicos."
-                      : "Registra, consulta y valida los resultados clínicos."
-                  }
+                  descripcion="Consulta las muestras procesadas de tu laboratorio."
                   fondo="#DBEAFE"
                   color="#1D4ED8"
                   onClick={() =>
@@ -1131,6 +1127,7 @@ function Dashboard({ usuario, onLogout }) {
                   }
                 />
               )}
+
           </div>
         </section>
 
@@ -1138,29 +1135,22 @@ function Dashboard({ usuario, onLogout }) {
             CERRAR SESIÓN
         ========================================== */}
 
-        <section
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            flexWrap: "wrap",
-            gap: "15px",
-            marginTop: "35px",
-            padding: "20px",
-            border: "1px solid #e2e8f0",
-            borderRadius: "16px",
-            background: "#ffffff",
-          }}
-        >
+        <section style={estilos.pie}>
           <div>
-            <strong>
-              {usuario.email}
+            <strong
+              style={{
+                fontSize: "13px",
+                color: "#19385f",
+              }}
+            >
+              {usuario.email || "Usuario activo"}
             </strong>
 
             <p
               style={{
                 color: "#64748b",
                 fontSize: "12px",
+                margin: "5px 0 0",
               }}
             >
               Sesión activa
@@ -1171,51 +1161,22 @@ function Dashboard({ usuario, onLogout }) {
             type="button"
             onClick={cerrarSesion}
             style={{
-              padding: "11px 17px",
+              padding: "12px 19px",
               border: "1px solid #fecaca",
-              borderRadius: "10px",
+              borderRadius: "11px",
               background: "#fff1f2",
               color: "#dc2626",
-              fontWeight: "900",
+              fontSize: "12px",
+              fontWeight: 800,
               cursor: "pointer",
             }}
           >
             Cerrar sesión
           </button>
         </section>
+
       </div>
     </main>
-  );
-}
-
-// =====================================================
-// BOTÓN VOLVER
-// =====================================================
-
-function BotonVolver({ onClick }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        gap: "8px",
-        padding: "12px 20px",
-        marginBottom: "20px",
-        background: "#2563eb",
-        color: "#ffffff",
-        border: "none",
-        borderRadius: "10px",
-        fontSize: "13px",
-        fontWeight: "700",
-        cursor: "pointer",
-        boxShadow:
-          "0 4px 12px rgba(37,99,235,.15)",
-      }}
-    >
-      ← Volver al Dashboard
-    </button>
   );
 }
 
@@ -1231,31 +1192,41 @@ function ModuloCard({
   color,
   onClick,
 }) {
+  const [hover, setHover] = useState(false);
+
   return (
     <article
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
       style={{
-        minHeight: "215px",
         display: "flex",
         flexDirection: "column",
-        padding: "22px",
-        border: "1px solid #e2e8f0",
-        borderRadius: "18px",
+        minHeight: "270px",
+        padding: "25px",
+        border: hover
+          ? "1px solid #cbd5e1"
+          : "1px solid #e2e8f0",
+        borderRadius: "22px",
         background: "#ffffff",
-        boxShadow:
-          "0 7px 24px rgba(15,23,42,.05)",
+        boxShadow: hover
+          ? "0 16px 38px rgba(15,23,42,0.09)"
+          : "0 7px 24px rgba(15,23,42,0.045)",
+        transform: hover
+          ? "translateY(-3px)"
+          : "translateY(0)",
         transition:
-          "transform .2s, box-shadow .2s",
+          "transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease",
       }}
     >
       <div
         style={{
-          width: "50px",
-          height: "50px",
+          width: "60px",
+          height: "60px",
           display: "grid",
           placeItems: "center",
-          borderRadius: "14px",
+          borderRadius: "18px",
           background: fondo,
-          fontSize: "23px",
+          fontSize: "28px",
         }}
       >
         {icono}
@@ -1263,8 +1234,10 @@ function ModuloCard({
 
       <h3
         style={{
-          margin: "18px 0 7px",
-          fontSize: "17px",
+          margin: "19px 0 7px",
+          fontSize: "21px",
+          lineHeight: 1.3,
+          fontWeight: 800,
           color: "#0f172a",
         }}
       >
@@ -1273,10 +1246,10 @@ function ModuloCard({
 
       <p
         style={{
-          margin: "0 0 18px",
+          margin: "0 0 22px",
           color: "#64748b",
-          fontSize: "11px",
-          lineHeight: 1.6,
+          fontSize: "13px",
+          lineHeight: 1.65,
         }}
       >
         {descripcion}
@@ -1287,13 +1260,15 @@ function ModuloCard({
         onClick={onClick}
         style={{
           width: "100%",
+          minHeight: "49px",
           marginTop: "auto",
-          padding: "11px 12px",
+          padding: "12px 15px",
           border: "none",
-          borderRadius: "10px",
+          borderRadius: "13px",
           background: fondo,
           color,
-          fontWeight: "900",
+          fontSize: "15px",
+          fontWeight: 800,
           cursor: "pointer",
         }}
       >
@@ -1319,27 +1294,24 @@ function InfoCard({
       style={{
         display: "flex",
         alignItems: "center",
-        gap: "12px",
-        padding: "17px",
+        gap: "13px",
+        padding: "18px",
         border: "1px solid #e2e8f0",
-        borderRadius: "15px",
+        borderRadius: "16px",
         background: "#ffffff",
         minWidth: 0,
       }}
     >
       <div
         style={{
-          width: "42px",
-          height: "42px",
+          width: "45px",
+          height: "45px",
           flexShrink: 0,
           display: "grid",
           placeItems: "center",
-          borderRadius: "12px",
-          background: hexToRgba(
-            color,
-            0.1
-          ),
-          fontSize: "18px",
+          borderRadius: "13px",
+          background: hexToRgba(color, 0.1),
+          fontSize: "20px",
         }}
       >
         {icono}
@@ -1353,7 +1325,7 @@ function InfoCard({
         <span
           style={{
             color: "#64748b",
-            fontSize: "10px",
+            fontSize: "11px",
           }}
         >
           {titulo}
@@ -1364,7 +1336,7 @@ function InfoCard({
             display: "block",
             marginTop: "3px",
             color: valorColor,
-            fontSize: "12px",
+            fontSize: "13px",
             overflowWrap: "anywhere",
           }}
         >
@@ -1372,6 +1344,58 @@ function InfoCard({
         </strong>
       </div>
     </article>
+  );
+}
+
+// =====================================================
+// CONTENEDOR DE MÓDULOS
+// =====================================================
+
+function ContenedorModulo({
+  children,
+  onVolver,
+}) {
+  return (
+    <main
+      style={{
+        minHeight: "100vh",
+        padding: "25px",
+        background: "#f1f5f9",
+        fontFamily:
+          'Inter, system-ui, "Segoe UI", sans-serif',
+      }}
+    >
+      <div
+        style={{
+          width: "100%",
+          maxWidth: "1450px",
+          margin: "0 auto",
+        }}
+      >
+        <button
+          type="button"
+          onClick={onVolver}
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "8px",
+            padding: "12px 20px",
+            marginBottom: "20px",
+            background: "#19385f",
+            color: "#ffffff",
+            border: "none",
+            borderRadius: "11px",
+            fontSize: "13px",
+            fontWeight: 700,
+            cursor: "pointer",
+          }}
+        >
+          ← Volver al Dashboard
+        </button>
+
+        {children}
+      </div>
+    </main>
   );
 }
 
@@ -1406,17 +1430,30 @@ function PantallaEstado({
       >
         <div
           style={{
-            fontSize: "40px",
+            fontSize: "43px",
+            marginBottom: "15px",
           }}
         >
           {icono}
         </div>
 
-        <h2>
+        <h2
+          style={{
+            color: "#15385f",
+            fontSize: "23px",
+            marginBottom: "10px",
+          }}
+        >
           {titulo}
         </h2>
 
-        <p>
+        <p
+          style={{
+            color: "#64748b",
+            fontSize: "13px",
+            lineHeight: 1.7,
+          }}
+        >
           {texto}
         </p>
       </section>
@@ -1470,20 +1507,9 @@ function hexToRgba(hex, alpha = 1) {
     return `rgba(37, 99, 235, ${alpha})`;
   }
 
-  const r = parseInt(
-    hex.slice(1, 3),
-    16
-  );
-
-  const g = parseInt(
-    hex.slice(3, 5),
-    16
-  );
-
-  const b = parseInt(
-    hex.slice(5, 7),
-    16
-  );
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
 
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
