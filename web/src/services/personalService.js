@@ -762,7 +762,7 @@ export async function restablecerPasswordPersonal(
 
   try {
     respuesta = await fetch(
-      "http://localhost:3001/cambiar-password",
+      "https://laboratorioclinicoproyectos1.onrender.com/cambiar-password",
       {
         method: "POST",
         headers: {

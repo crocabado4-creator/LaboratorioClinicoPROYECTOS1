@@ -38,6 +38,6 @@ function obtenerAPIURL(): string {
   return `http://${IP_PC}:${PUERTO}`;
 }
 
-export const API_URL = obtenerAPIURL();
+export const API_URL = "https://laboratorioclinicoproyectos1.onrender.com";
 
 console.log("BACKEND CONFIGURADO:", API_URL);

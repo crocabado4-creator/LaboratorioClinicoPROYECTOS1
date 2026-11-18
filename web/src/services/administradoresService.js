@@ -516,7 +516,7 @@ export async function restablecerPasswordUsuario(usuarioId, nuevaPassword) {
   let respuesta;
 
   try {
-    respuesta = await fetch("http://localhost:3001/cambiar-password", {
+    respuesta = await fetch("https://laboratorioclinicoproyectos1.onrender.com/cambiar-password", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
