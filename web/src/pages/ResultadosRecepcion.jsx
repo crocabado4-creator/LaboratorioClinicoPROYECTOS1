@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+
 import {
   collection,
   doc,
@@ -7,6 +8,7 @@ import {
   query,
   where,
 } from "firebase/firestore";
+
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 
@@ -14,7 +16,7 @@ import { db } from "../firebase/firebase";
 import "./ResultadosRecepcion.css";
 
 // ======================================================
-// UTILIDADES
+// UTILIDADES GENERALES
 // ======================================================
 
 const texto = (valor) => {
@@ -32,6 +34,7 @@ const primero = (...valores) => {
       return valor;
     }
   }
+
   return "";
 };
 
@@ -45,6 +48,40 @@ const normalizar = (valor) =>
     .replace(/[\u0300-\u036f]/g, "")
     .replace(/\s+/g, " ")
     .trim();
+
+const lista = (valor) => {
+  if (Array.isArray(valor)) {
+    return valor.filter(
+      (item) => item !== null && item !== undefined
+    );
+  }
+
+  if (valor && typeof valor === "object") {
+    return Object.entries(valor).map(([clave, dato]) => {
+      if (
+        dato &&
+        typeof dato === "object" &&
+        !Array.isArray(dato)
+      ) {
+        return {
+          ...dato,
+          _clave: clave,
+        };
+      }
+
+      return {
+        _clave: clave,
+        valor: dato,
+      };
+    });
+  }
+
+  return [];
+};
+
+// ======================================================
+// FECHAS
+// ======================================================
 
 const fechaObjeto = (valor) => {
   if (!valor) return null;
@@ -68,37 +105,23 @@ const fechaObjeto = (valor) => {
 
 const fechaTexto = (valor) => {
   const fecha = fechaObjeto(valor);
-  return fecha ? fecha.toLocaleString("es-BO") : "No registrada";
+
+  return fecha
+    ? fecha.toLocaleString("es-BO")
+    : "No registrada";
 };
 
 const fechaCorta = (valor) => {
   const fecha = fechaObjeto(valor);
-  return fecha ? fecha.toLocaleDateString("es-BO") : "No registrada";
+
+  return fecha
+    ? fecha.toLocaleDateString("es-BO")
+    : "No registrada";
 };
 
-const lista = (valor) => {
-  if (Array.isArray(valor)) {
-    return valor.filter((item) => item !== null && item !== undefined);
-  }
-
-  if (valor && typeof valor === "object") {
-    return Object.entries(valor).map(([clave, dato]) => {
-      if (dato && typeof dato === "object" && !Array.isArray(dato)) {
-        return {
-          ...dato,
-          _clave: clave,
-        };
-      }
-
-      return {
-        _clave: clave,
-        valor: dato,
-      };
-    });
-  }
-
-  return [];
-};
+// ======================================================
+// PACIENTES
+// ======================================================
 
 const nombrePaciente = (paciente) => {
   if (!paciente) return "Paciente no identificado";
@@ -110,10 +133,16 @@ const nombrePaciente = (paciente) => {
 
   if (completo) return texto(completo);
 
+  const nombres = texto(
+    primero(paciente.nombres, paciente.nombre)
+  );
+
+  const apellidos = texto(
+    primero(paciente.apellidos, paciente.apellido)
+  );
+
   return mostrar(
-    `${texto(primero(paciente.nombres, paciente.nombre))} ${texto(
-      primero(paciente.apellidos, paciente.apellido)
-    )}`.trim(),
+    `${nombres} ${apellidos}`.trim(),
     "Paciente no identificado"
   );
 };
@@ -137,39 +166,56 @@ const correoPaciente = (paciente) =>
   );
 
 const edadPaciente = (paciente) => {
-  const edad = primero(paciente?.edad, paciente?.edadAnios);
+  const edad = primero(
+    paciente?.edad,
+    paciente?.edadAnios
+  );
 
   if (edad !== "") return `${edad} años`;
 
-  const nacimiento = fechaObjeto(paciente?.fechaNacimiento);
+  const nacimiento = fechaObjeto(
+    paciente?.fechaNacimiento
+  );
 
   if (!nacimiento) return "No registrada";
 
   const hoy = new Date();
-  let anios = hoy.getFullYear() - nacimiento.getFullYear();
+
+  let anios =
+    hoy.getFullYear() - nacimiento.getFullYear();
 
   if (
     hoy.getMonth() < nacimiento.getMonth() ||
-    (hoy.getMonth() === nacimiento.getMonth() &&
-      hoy.getDate() < nacimiento.getDate())
+    (
+      hoy.getMonth() === nacimiento.getMonth() &&
+      hoy.getDate() < nacimiento.getDate()
+    )
   ) {
     anios--;
   }
 
-  return anios >= 0 ? `${anios} años` : "No registrada";
+  return anios >= 0
+    ? `${anios} años`
+    : "No registrada";
 };
+
+// ======================================================
+// MONEDA
+// ======================================================
 
 const moneda = (valor) => {
   const numero = Number(valor);
 
-  return (Number.isFinite(numero) ? numero : 0).toLocaleString("es-BO", {
+  return (
+    Number.isFinite(numero) ? numero : 0
+  ).toLocaleString("es-BO", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
 };
 
 // ======================================================
-// CAMPOS UTILIZADOS POR LOS RESULTADOS
+// CAMPOS DE RESULTADOS
 // ======================================================
 
 const CAMPOS_VALOR = [
@@ -243,6 +289,10 @@ const obtenerUnidad = (dato) =>
     )
   );
 
+// ======================================================
+// RANGOS DE REFERENCIA
+// ======================================================
+
 const obtenerRango = (dato, profundidad = 0) => {
   if (
     dato === null ||
@@ -253,11 +303,17 @@ const obtenerRango = (dato, profundidad = 0) => {
     return "";
   }
 
-  if (typeof dato === "string" || typeof dato === "number") {
+  if (
+    typeof dato === "string" ||
+    typeof dato === "number"
+  ) {
     return texto(dato);
   }
 
-  if (typeof dato !== "object" || Array.isArray(dato)) {
+  if (
+    typeof dato !== "object" ||
+    Array.isArray(dato)
+  ) {
     return "";
   }
 
@@ -269,8 +325,15 @@ const obtenerRango = (dato, profundidad = 0) => {
     dato.valoresReferencia
   );
 
-  if (referencia !== "" && referencia !== dato) {
-    const encontrado = obtenerRango(referencia, profundidad + 1);
+  if (
+    referencia !== "" &&
+    referencia !== dato
+  ) {
+    const encontrado = obtenerRango(
+      referencia,
+      profundidad + 1
+    );
+
     if (encontrado) return encontrado;
   }
 
@@ -304,6 +367,10 @@ const obtenerRango = (dato, profundidad = 0) => {
   );
 };
 
+// ======================================================
+// EXTRAER VALORES REGISTRADOS
+// ======================================================
+
 const extraerValor = (dato, profundidad = 0) => {
   if (
     dato === null ||
@@ -321,7 +388,10 @@ const extraerValor = (dato, profundidad = 0) => {
     return dato;
   }
 
-  if (Array.isArray(dato) || typeof dato !== "object") {
+  if (
+    Array.isArray(dato) ||
+    typeof dato !== "object"
+  ) {
     return "";
   }
 
@@ -333,7 +403,10 @@ const extraerValor = (dato, profundidad = 0) => {
       valor !== undefined &&
       valor !== ""
     ) {
-      const encontrado = extraerValor(valor, profundidad + 1);
+      const encontrado = extraerValor(
+        valor,
+        profundidad + 1
+      );
 
       if (encontrado !== "") return encontrado;
     }
@@ -343,7 +416,9 @@ const extraerValor = (dato, profundidad = 0) => {
 };
 
 const extraerRegistros = (documento) => {
-  if (!documento || typeof documento !== "object") return [];
+  if (!documento || typeof documento !== "object") {
+    return [];
+  }
 
   const encontrados = [];
 
@@ -366,16 +441,31 @@ const coincidenParametros = (a, b) => {
 
   if (idA && idB && idA === idB) return true;
 
-  const nombreA = normalizar(obtenerNombreParametro(a));
-  const nombreB = normalizar(obtenerNombreParametro(b));
+  const nombreA = normalizar(
+    obtenerNombreParametro(a)
+  );
 
-  return Boolean(nombreA && nombreB && nombreA === nombreB);
+  const nombreB = normalizar(
+    obtenerNombreParametro(b)
+  );
+
+  return Boolean(
+    nombreA &&
+    nombreB &&
+    nombreA === nombreB
+  );
 };
+
+// ======================================================
+// EVALUAR RANGOS
+// ======================================================
 
 const evaluarRango = (valor, rango) => {
   const numeroTexto = texto(valor).replace(",", ".");
 
-  if (!/^-?\d+(\.\d+)?$/.test(numeroTexto)) return null;
+  if (!/^-?\d+(\.\d+)?$/.test(numeroTexto)) {
+    return null;
+  }
 
   const referencia = texto(rango).replace(/,/g, ".");
 
@@ -393,7 +483,7 @@ const evaluarRango = (valor, rango) => {
 };
 
 // ======================================================
-// CONSTRUIR RESULTADOS REALES
+// CONSTRUIR PARÁMETROS REALES
 // ======================================================
 
 const construirParametros = (
@@ -413,7 +503,10 @@ const construirParametros = (
 
   const filas = [];
 
-  const agregarFila = (registro, configuracion = null) => {
+  const agregarFila = (
+    registro,
+    configuracion = null
+  ) => {
     const valor = extraerValor(registro);
 
     const nombre = primero(
@@ -434,18 +527,31 @@ const construirParametros = (
       obtenerRango(configuracion)
     );
 
-    const fila = {
+    filas.push({
       id: primero(
         obtenerIdParametro(registro),
         obtenerIdParametro(configuracion),
         nombre
       ),
-      nombre: mostrar(nombre, "Resultado clínico"),
-      valor: valor !== "" ? texto(valor) : "Sin resultado registrado",
+
+      nombre: mostrar(
+        nombre,
+        "Resultado clínico"
+      ),
+
+      valor:
+        valor !== ""
+          ? texto(valor)
+          : "Sin resultado registrado",
+
       unidad: mostrar(unidad, "-"),
       rango: mostrar(rango, "-"),
+
       registrado: valor !== "",
-      anormal: evaluarRango(valor, rango) === true,
+
+      anormal:
+        evaluarRango(valor, rango) === true,
+
       observacion: mostrar(
         primero(
           registro?.observacion,
@@ -453,21 +559,22 @@ const construirParametros = (
         ),
         "-"
       ),
-    };
-
-    filas.push(fila);
+    });
   };
 
-  // Prioridad 1: resultados efectivamente registrados.
+  // Resultados registrados.
+
   for (const registro of registrados) {
-    const configuracion = configurados.find((item) =>
-      coincidenParametros(item, registro)
+    const configuracion = configurados.find(
+      (item) =>
+        coincidenParametros(item, registro)
     );
 
     agregarFila(registro, configuracion);
   }
 
-  // Prioridad 2: resultado directo del documento clínico.
+  // Resultado directo.
+
   if (filas.length === 0) {
     const valorPrincipal = extraerValor(resultado);
 
@@ -479,15 +586,19 @@ const construirParametros = (
             analisis?.nombre,
             "Resultado principal"
           ),
+
           resultado: valorPrincipal,
+
           unidad: primero(
             resultado?.unidad,
             analisis?.unidad
           ),
+
           rangoReferencia: primero(
             resultado?.rangoReferencia,
             analisis?.rangoReferencia
           ),
+
           observacion: primero(
             resultado?.observacion,
             resultado?.observaciones
@@ -498,20 +609,24 @@ const construirParametros = (
     }
   }
 
-  // Prioridad 3: parámetros configurados sin resultado encontrado.
+  // Parámetros configurados.
+
   if (filas.length === 0) {
     configurados.forEach((parametro) => {
       agregarFila(parametro, parametro);
     });
   } else {
-    // Agregar únicamente parámetros configurados que no tengan registro.
     configurados.forEach((parametro) => {
       const existe = filas.some(
         (fila) =>
-          (obtenerIdParametro(parametro) &&
-            fila.id === obtenerIdParametro(parametro)) ||
+          (
+            obtenerIdParametro(parametro) &&
+            fila.id === obtenerIdParametro(parametro)
+          ) ||
           normalizar(fila.nombre) ===
-            normalizar(obtenerNombreParametro(parametro))
+            normalizar(
+              obtenerNombreParametro(parametro)
+            )
       );
 
       if (!existe) {
@@ -520,21 +635,21 @@ const construirParametros = (
     });
   }
 
-  // Evitar duplicados exactos.
-  return filas.filter((fila, indice, arreglo) => {
-    return (
+  // Eliminar duplicados exactos.
+
+  return filas.filter(
+    (fila, indice, arreglo) =>
       arreglo.findIndex(
         (item) =>
           item.id === fila.id &&
           item.nombre === fila.nombre &&
           item.valor === fila.valor
       ) === indice
-    );
-  });
+  );
 };
 
 // ======================================================
-// PDF
+// UTILIDADES DE PDF
 // ======================================================
 
 const colorPDF = (color) => {
@@ -552,15 +667,19 @@ const colorPDF = (color) => {
 };
 
 const cargarLogo = async (url) => {
-  if (!url || typeof url !== "string") return null;
+  if (!url || typeof url !== "string") {
+    return null;
+  }
 
   return new Promise((resolve) => {
     const imagen = new Image();
+
     imagen.crossOrigin = "anonymous";
 
     imagen.onload = () => {
       try {
-        const canvas = document.createElement("canvas");
+        const canvas =
+          document.createElement("canvas");
 
         canvas.width = imagen.naturalWidth;
         canvas.height = imagen.naturalHeight;
@@ -589,9 +708,21 @@ const cargarLogo = async (url) => {
   });
 };
 
-const encabezadoPDF = (pdf, laboratorio, logo, titulo) => {
+// ======================================================
+// ENCABEZADO INSTITUCIONAL DEL PDF
+// ======================================================
+
+const encabezadoPDF = (
+  pdf,
+  laboratorio,
+  logo,
+  titulo
+) => {
   const ancho = pdf.internal.pageSize.getWidth();
-  const color = colorPDF(laboratorio?.colorPrimario);
+
+  const color = colorPDF(
+    laboratorio?.colorPrimario
+  );
 
   pdf.setFillColor(...color);
   pdf.rect(0, 0, ancho, 5, "F");
@@ -605,11 +736,15 @@ const encabezadoPDF = (pdf, laboratorio, logo, titulo) => {
   if (logo) {
     try {
       let anchoLogo = 29;
-      let altoLogo = (29 * logo.alto) / logo.ancho;
+
+      let altoLogo =
+        (29 * logo.alto) / logo.ancho;
 
       if (altoLogo > 29) {
         altoLogo = 29;
-        anchoLogo = (29 * logo.ancho) / logo.alto;
+
+        anchoLogo =
+          (29 * logo.ancho) / logo.alto;
       }
 
       pdf.addImage(
@@ -621,12 +756,18 @@ const encabezadoPDF = (pdf, laboratorio, logo, titulo) => {
         altoLogo
       );
     } catch (error) {
-      console.warn("No se pudo dibujar el logo:", error);
+      console.warn(
+        "No se pudo dibujar el logo:",
+        error
+      );
     }
   }
 
   const nombre = mostrar(
-    primero(laboratorio?.nombreVisible, laboratorio?.nombre),
+    primero(
+      laboratorio?.nombreVisible,
+      laboratorio?.nombre
+    ),
     "LABORATORIO CLÍNICO"
   );
 
@@ -639,25 +780,39 @@ const encabezadoPDF = (pdf, laboratorio, logo, titulo) => {
     140
   );
 
-  pdf.text(lineasNombre.slice(0, 2), 51, 19);
+  pdf.text(
+    lineasNombre.slice(0, 2),
+    51,
+    19
+  );
 
   pdf.setFont("helvetica", "normal");
   pdf.setFontSize(7);
   pdf.setTextColor(65, 78, 91);
 
-  let y = lineasNombre.length > 1 ? 30 : 25;
+  let y =
+    lineasNombre.length > 1
+      ? 30
+      : 25;
 
   const datos = [
     laboratorio?.direccion,
+
     laboratorio?.telefono
       ? `Tel.: ${laboratorio.telefono}`
       : "",
-    primero(laboratorio?.email, laboratorio?.correo),
+
+    primero(
+      laboratorio?.email,
+      laboratorio?.correo
+    ),
   ].filter(Boolean);
 
   datos.forEach((dato) => {
     pdf.text(
-      pdf.splitTextToSize(texto(dato), 140).slice(0, 2),
+      pdf
+        .splitTextToSize(texto(dato), 140)
+        .slice(0, 2),
       51,
       y
     );
@@ -666,38 +821,76 @@ const encabezadoPDF = (pdf, laboratorio, logo, titulo) => {
   });
 
   pdf.setFillColor(...color);
-  pdf.roundedRect(12, 51, ancho - 24, 12, 2, 2, "F");
+
+  pdf.roundedRect(
+    12,
+    51,
+    ancho - 24,
+    12,
+    2,
+    2,
+    "F"
+  );
 
   pdf.setFont("helvetica", "bold");
   pdf.setFontSize(11);
   pdf.setTextColor(255, 255, 255);
 
-  pdf.text(titulo, ancho / 2, 58.5, {
-    align: "center",
-  });
+  pdf.text(
+    titulo,
+    ancho / 2,
+    58.5,
+    { align: "center" }
+  );
 };
 
+// ======================================================
+// PIE DE PÁGINA DEL PDF
+// ======================================================
+
 const piePDF = (pdf, laboratorio) => {
-  const paginas = pdf.internal.getNumberOfPages();
-  const ancho = pdf.internal.pageSize.getWidth();
-  const alto = pdf.internal.pageSize.getHeight();
+  const paginas =
+    pdf.internal.getNumberOfPages();
+
+  const ancho =
+    pdf.internal.pageSize.getWidth();
+
+  const alto =
+    pdf.internal.pageSize.getHeight();
 
   const nombre = mostrar(
-    primero(laboratorio?.nombreVisible, laboratorio?.nombre),
+    primero(
+      laboratorio?.nombreVisible,
+      laboratorio?.nombre
+    ),
     "Laboratorio Clínico"
   );
 
-  for (let pagina = 1; pagina <= paginas; pagina++) {
+  for (
+    let pagina = 1;
+    pagina <= paginas;
+    pagina++
+  ) {
     pdf.setPage(pagina);
 
     pdf.setDrawColor(210, 220, 230);
-    pdf.line(12, alto - 20, ancho - 12, alto - 20);
+
+    pdf.line(
+      12,
+      alto - 20,
+      ancho - 12,
+      alto - 20
+    );
 
     pdf.setFont("helvetica", "normal");
     pdf.setFontSize(7);
     pdf.setTextColor(100, 110, 120);
 
-    pdf.text(nombre.substring(0, 35), 12, alto - 14);
+    pdf.text(
+      nombre.substring(0, 35),
+      12,
+      alto - 14
+    );
 
     pdf.text(
       `Impreso: ${fechaTexto(new Date())}`,
@@ -706,9 +899,12 @@ const piePDF = (pdf, laboratorio) => {
       { align: "center" }
     );
 
-    pdf.text(`${pagina} / ${paginas}`, ancho - 12, alto - 14, {
-      align: "right",
-    });
+    pdf.text(
+      `${pagina} / ${paginas}`,
+      ancho - 12,
+      alto - 14,
+      { align: "right" }
+    );
 
     pdf.setFontSize(6.5);
 
@@ -721,15 +917,26 @@ const piePDF = (pdf, laboratorio) => {
   }
 };
 
-const datosPacientePDF = (pdf, paciente, fecha) => {
+// ======================================================
+// DATOS DEL PACIENTE EN EL PDF
+// ======================================================
+
+const datosPacientePDF = (
+  pdf,
+  paciente,
+  fecha
+) => {
   autoTable(pdf, {
     startY: 68,
+
     margin: {
       left: 12,
       right: 12,
       bottom: 25,
     },
+
     theme: "grid",
+
     body: [
       [
         "PACIENTE",
@@ -737,12 +944,14 @@ const datosPacientePDF = (pdf, paciente, fecha) => {
         "EDAD",
         edadPaciente(paciente),
       ],
+
       [
         "CI",
         ciPaciente(paciente),
         "SEXO",
         mostrar(paciente?.sexo),
       ],
+
       [
         "CORREO",
         correoPaciente(paciente),
@@ -750,6 +959,7 @@ const datosPacientePDF = (pdf, paciente, fecha) => {
         fechaCorta(fecha),
       ],
     ],
+
     styles: {
       fontSize: 8,
       cellPadding: 3,
@@ -757,15 +967,18 @@ const datosPacientePDF = (pdf, paciente, fecha) => {
       lineWidth: 0.2,
       textColor: [42, 55, 69],
     },
+
     columnStyles: {
       0: {
         fontStyle: "bold",
         fillColor: [242, 246, 250],
         cellWidth: 23,
       },
+
       1: {
         cellWidth: 75,
       },
+
       2: {
         fontStyle: "bold",
         fillColor: [242, 246, 250],
@@ -777,7 +990,16 @@ const datosPacientePDF = (pdf, paciente, fecha) => {
   return pdf.lastAutoTable.finalY;
 };
 
-const tituloSeccionPDF = (pdf, titulo, posicionY, color) => {
+// ======================================================
+// TÍTULOS DE SECCIONES DEL PDF
+// ======================================================
+
+const tituloSeccionPDF = (
+  pdf,
+  titulo,
+  posicionY,
+  color
+) => {
   let y = posicionY;
 
   if (y + 13 > 270) {
@@ -786,7 +1008,16 @@ const tituloSeccionPDF = (pdf, titulo, posicionY, color) => {
   }
 
   pdf.setFillColor(235, 242, 248);
-  pdf.roundedRect(12, y, 186, 9, 1.5, 1.5, "F");
+
+  pdf.roundedRect(
+    12,
+    y,
+    186,
+    9,
+    1.5,
+    1.5,
+    "F"
+  );
 
   pdf.setFillColor(...color);
   pdf.rect(12, y, 2.5, 9, "F");
@@ -796,7 +1027,11 @@ const tituloSeccionPDF = (pdf, titulo, posicionY, color) => {
   pdf.setTextColor(...color);
 
   pdf.text(
-    pdf.splitTextToSize(titulo.toUpperCase(), 170)[0],
+    pdf
+      .splitTextToSize(
+        titulo.toUpperCase(),
+        170
+      )[0],
     18,
     y + 6
   );
@@ -805,7 +1040,46 @@ const tituloSeccionPDF = (pdf, titulo, posicionY, color) => {
 };
 
 // ======================================================
-// ESTILOS
+// REFERENCIAS CON UNIDADES
+// ======================================================
+
+const referenciaPDF = (parametro) => {
+  const rango = texto(
+    primero(
+      parametro?.rango,
+      parametro?.rangoReferencia,
+      parametro?.referencia
+    )
+  );
+
+  const unidad = texto(
+    primero(
+      parametro?.unidad,
+      parametro?.unidadMedida
+    )
+  );
+
+  if (!rango || rango === "-") {
+    return "-";
+  }
+
+  if (!unidad || unidad === "-") {
+    return rango;
+  }
+
+  if (
+    rango
+      .toLowerCase()
+      .includes(unidad.toLowerCase())
+  ) {
+    return rango;
+  }
+
+  return `${rango} ${unidad}`;
+};
+
+// ======================================================
+// ESTILOS DE LA INTERFAZ
 // ======================================================
 
 const estilos = {
@@ -836,7 +1110,8 @@ const estilos = {
 
   grid: {
     display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))",
+    gridTemplateColumns:
+      "repeat(auto-fit, minmax(230px, 1fr))",
     gap: 15,
   },
 
@@ -903,6 +1178,10 @@ const estilos = {
   },
 };
 
+// ======================================================
+// COMPONENTE CAMPO
+// ======================================================
+
 function Campo({ titulo, valor }) {
   return (
     <div style={estilos.campo}>
@@ -925,8 +1204,17 @@ function Campo({ titulo, valor }) {
 // COMPONENTE PRINCIPAL
 // ======================================================
 
-export default function ResultadosRecepcion({ usuario, onVolver }) {
-  const laboratorioId = texto(usuario?.laboratorioId);
+export default function ResultadosRecepcion({
+  usuario,
+  onVolver,
+}) {
+  const laboratorioId = texto(
+    usuario?.laboratorioId
+  );
+
+  // ====================================================
+  // ESTADOS
+  // ====================================================
 
   const [pacientes, setPacientes] = useState([]);
   const [resultados, setResultados] = useState([]);
@@ -934,26 +1222,37 @@ export default function ResultadosRecepcion({ usuario, onVolver }) {
   const [analisis, setAnalisis] = useState([]);
   const [muestras, setMuestras] = useState([]);
 
-  const [laboratorio, setLaboratorio] = useState(null);
-
-  const [pacienteSeleccionado, setPacienteSeleccionado] =
+  const [laboratorio, setLaboratorio] =
     useState(null);
 
-  const [resultadoSeleccionado, setResultadoSeleccionado] =
-    useState(null);
+  const [
+    pacienteSeleccionado,
+    setPacienteSeleccionado,
+  ] = useState(null);
 
-  const [ventaSeleccionada, setVentaSeleccionada] =
-    useState(null);
+  const [
+    resultadoSeleccionado,
+    setResultadoSeleccionado,
+  ] = useState(null);
+
+  const [
+    ventaSeleccionada,
+    setVentaSeleccionada,
+  ] = useState(null);
 
   const [valores, setValores] = useState([]);
   const [busqueda, setBusqueda] = useState("");
 
   const [cargando, setCargando] = useState(true);
-  const [cargandoDetalle, setCargandoDetalle] = useState(false);
-  const [generandoPDF, setGenerandoPDF] = useState(false);
+  const [cargandoDetalle, setCargandoDetalle] =
+    useState(false);
+
+  const [generandoPDF, setGenerandoPDF] =
+    useState(false);
 
   const [error, setError] = useState("");
-  const [errorDetalle, setErrorDetalle] = useState("");
+  const [errorDetalle, setErrorDetalle] =
+    useState("");
 
   // ====================================================
   // CONSULTAR COLECCIONES
@@ -963,10 +1262,16 @@ export default function ResultadosRecepcion({ usuario, onVolver }) {
     async (nombre) => {
       const referencia = query(
         collection(db, nombre),
-        where("laboratorioId", "==", laboratorioId)
+        where(
+          "laboratorioId",
+          "==",
+          laboratorioId
+        )
       );
 
-      const snapshot = await getDocs(referencia);
+      const snapshot = await getDocs(
+        referencia
+      );
 
       return snapshot.docs.map((documento) => ({
         ...documento.data(),
@@ -976,9 +1281,16 @@ export default function ResultadosRecepcion({ usuario, onVolver }) {
     [laboratorioId]
   );
 
+  // ====================================================
+  // CARGAR DATOS
+  // ====================================================
+
   const cargarDatos = useCallback(async () => {
     if (!laboratorioId) {
-      setError("No se identificó el laboratorio.");
+      setError(
+        "No se identificó el laboratorio."
+      );
+
       setCargando(false);
       return;
     }
@@ -1005,16 +1317,26 @@ export default function ResultadosRecepcion({ usuario, onVolver }) {
       setAnalisis(analisisData);
 
       try {
-        const muestrasData = await consultarColeccion("muestras");
+        const muestrasData =
+          await consultarColeccion("muestras");
+
         setMuestras(muestrasData);
       } catch (err) {
-        console.warn("No se pudieron cargar las muestras:", err);
+        console.warn(
+          "No se pudieron cargar las muestras:",
+          err
+        );
+
         setMuestras([]);
       }
 
       try {
         const laboratorioDoc = await getDoc(
-          doc(db, "laboratorios", laboratorioId)
+          doc(
+            db,
+            "laboratorios",
+            laboratorioId
+          )
         );
 
         if (laboratorioDoc.exists()) {
@@ -1024,7 +1346,10 @@ export default function ResultadosRecepcion({ usuario, onVolver }) {
           });
         }
       } catch (err) {
-        console.warn("No se pudo cargar el laboratorio:", err);
+        console.warn(
+          "No se pudo cargar el laboratorio:",
+          err
+        );
       }
     } catch (err) {
       console.error(err);
@@ -1032,7 +1357,8 @@ export default function ResultadosRecepcion({ usuario, onVolver }) {
       setError(
         err?.code === "permission-denied"
           ? "No tienes permisos para consultar esta información."
-          : err?.message || "Error al cargar los datos."
+          : err?.message ||
+              "Error al cargar los datos."
       );
     } finally {
       setCargando(false);
@@ -1044,14 +1370,15 @@ export default function ResultadosRecepcion({ usuario, onVolver }) {
   }, [cargarDatos]);
 
   // ====================================================
-  // RELACIONES
+  // RELACIONES DE ANÁLISIS
   // ====================================================
 
   const obtenerAnalisis = useCallback(
     (resultado) =>
       analisis.find(
         (item) =>
-          texto(item.id) === texto(resultado?.analisisId)
+          texto(item.id) ===
+          texto(resultado?.analisisId)
       ),
     [analisis]
   );
@@ -1060,7 +1387,8 @@ export default function ResultadosRecepcion({ usuario, onVolver }) {
     (resultado) =>
       muestras.find(
         (item) =>
-          texto(item.id) === texto(resultado?.muestraId)
+          texto(item.id) ===
+          texto(resultado?.muestraId)
       ),
     [muestras]
   );
@@ -1117,7 +1445,7 @@ export default function ResultadosRecepcion({ usuario, onVolver }) {
   };
 
   // ====================================================
-  // LEER RESULTADOS REGISTRADOS
+  // CONSULTAR VALORES REGISTRADOS
   // ====================================================
 
   const consultarValoresResultado = useCallback(
@@ -1132,13 +1460,18 @@ export default function ResultadosRecepcion({ usuario, onVolver }) {
       const encontrados = [];
       const advertencias = [];
 
-      // 1. Datos que ya están dentro del documento resultado.
-      encontrados.push(...extraerRegistros(resultado));
+      encontrados.push(
+        ...extraerRegistros(resultado)
+      );
 
-      // 2. Subcolección principal de valores.
       try {
         const snapshot = await getDocs(
-          collection(db, "resultados", resultado.id, "valores")
+          collection(
+            db,
+            "resultados",
+            resultado.id,
+            "valores"
+          )
         );
 
         snapshot.docs.forEach((documento) => {
@@ -1153,18 +1486,25 @@ export default function ResultadosRecepcion({ usuario, onVolver }) {
         );
       }
 
-      // 3. Documento de muestra relacionado.
-      const muestraId = texto(resultado.muestraId);
+      const muestraId = texto(
+        resultado.muestraId
+      );
 
       if (muestraId) {
         try {
           const snapshot = await getDoc(
-            doc(db, "muestras", muestraId)
+            doc(
+              db,
+              "muestras",
+              muestraId
+            )
           );
 
           if (snapshot.exists()) {
             encontrados.push(
-              ...extraerRegistros(snapshot.data())
+              ...extraerRegistros(
+                snapshot.data()
+              )
             );
           }
         } catch (err) {
@@ -1174,9 +1514,6 @@ export default function ResultadosRecepcion({ usuario, onVolver }) {
         }
       }
 
-      // No se consultan subcolecciones adicionales sin conocer
-      // sus reglas de acceso y estructura real.
-
       return {
         valores: encontrados,
         advertencias,
@@ -1184,6 +1521,10 @@ export default function ResultadosRecepcion({ usuario, onVolver }) {
     },
     []
   );
+
+  // ====================================================
+  // CARGAR DETALLE
+  // ====================================================
 
   useEffect(() => {
     if (!resultadoSeleccionado) {
@@ -1200,28 +1541,33 @@ export default function ResultadosRecepcion({ usuario, onVolver }) {
       setErrorDetalle("");
 
       try {
-        const respuesta = await consultarValoresResultado(
-          resultadoSeleccionado
-        );
+        const respuesta =
+          await consultarValoresResultado(
+            resultadoSeleccionado
+          );
 
         if (!activo) return;
 
         setValores(respuesta.valores);
 
-        if (respuesta.advertencias.length > 0) {
-          setErrorDetalle(respuesta.advertencias.join(" | "));
+        if (
+          respuesta.advertencias.length > 0
+        ) {
+          setErrorDetalle(
+            respuesta.advertencias.join(" | ")
+          );
         }
-
-        console.log("RESULTADO FIRESTORE:", resultadoSeleccionado);
-        console.log("VALORES RECUPERADOS:", respuesta.valores);
       } catch (err) {
         if (activo) {
           setErrorDetalle(
-            err?.message || "No se pudieron consultar los valores."
+            err?.message ||
+              "No se pudieron consultar los valores."
           );
         }
       } finally {
-        if (activo) setCargandoDetalle(false);
+        if (activo) {
+          setCargandoDetalle(false);
+        }
       }
     };
 
@@ -1230,7 +1576,10 @@ export default function ResultadosRecepcion({ usuario, onVolver }) {
     return () => {
       activo = false;
     };
-  }, [resultadoSeleccionado, consultarValoresResultado]);
+  }, [
+    resultadoSeleccionado,
+    consultarValoresResultado,
+  ]);
 
   const parametrosCompletos = useMemo(() => {
     if (!resultadoSeleccionado) return [];
@@ -1240,7 +1589,11 @@ export default function ResultadosRecepcion({ usuario, onVolver }) {
       obtenerAnalisis(resultadoSeleccionado),
       valores
     );
-  }, [resultadoSeleccionado, obtenerAnalisis, valores]);
+  }, [
+    resultadoSeleccionado,
+    obtenerAnalisis,
+    valores,
+  ]);
 
   // ====================================================
   // FILTROS
@@ -1265,8 +1618,11 @@ export default function ResultadosRecepcion({ usuario, onVolver }) {
       (resultado) =>
         texto(resultado.pacienteId) ===
           texto(pacienteSeleccionado.id) &&
-        (normalizar(resultado.estado) === "validado" ||
-          resultado.validado === true)
+        (
+          normalizar(resultado.estado) ===
+            "validado" ||
+          resultado.validado === true
+        )
     );
   }, [resultados, pacienteSeleccionado]);
 
@@ -1281,7 +1637,10 @@ export default function ResultadosRecepcion({ usuario, onVolver }) {
   }, [ventas, pacienteSeleccionado]);
 
   // ====================================================
-  // PDF CLÍNICO
+  // PDF DE RESULTADOS CLÍNICOS
+  //
+  // SE CONSERVA LA INFORMACIÓN DE LA ORDEN
+  // SIN NÚMERO DE ORDEN NI NÚMERO DE MUESTRA
   // ====================================================
 
   const descargarResultado = async (resultado) => {
@@ -1290,7 +1649,8 @@ export default function ResultadosRecepcion({ usuario, onVolver }) {
     setGenerandoPDF(true);
 
     try {
-      const datosLaboratorio = laboratorio || {};
+      const datosLaboratorio =
+        laboratorio || {};
 
       const logo = await cargarLogo(
         primero(
@@ -1304,15 +1664,24 @@ export default function ResultadosRecepcion({ usuario, onVolver }) {
         orientation: "portrait",
         unit: "mm",
         format: "a4",
+        compress: true,
       });
 
-      const color = colorPDF(datosLaboratorio.colorPrimario);
+      const color = colorPDF(
+        datosLaboratorio.colorPrimario
+      );
 
-      const ordenId = texto(resultado.ordenId);
+      // Relación interna.
+      // El identificador no se imprime.
+
+      const ordenId = texto(
+        resultado.ordenId
+      );
 
       const resultadosInforme = ordenId
         ? resultadosPaciente.filter(
-            (item) => texto(item.ordenId) === ordenId
+            (item) =>
+              texto(item.ordenId) === ordenId
           )
         : [resultado];
 
@@ -1324,12 +1693,16 @@ export default function ResultadosRecepcion({ usuario, onVolver }) {
         resultadosInforme.push(resultado);
       }
 
+      // Consultar parámetros registrados.
+
       const detalles = await Promise.all(
         resultadosInforme.map(async (item) => {
-          const respuesta = await consultarValoresResultado(item);
+          const respuesta =
+            await consultarValoresResultado(item);
 
           return {
             resultado: item,
+
             parametros: construirParametros(
               item,
               obtenerAnalisis(item),
@@ -1338,6 +1711,8 @@ export default function ResultadosRecepcion({ usuario, onVolver }) {
           };
         })
       );
+
+      // Encabezado.
 
       encabezadoPDF(
         pdf,
@@ -1352,277 +1727,486 @@ export default function ResultadosRecepcion({ usuario, onVolver }) {
         resultado.fecha
       );
 
+      // Información del paciente.
+
       let y = datosPacientePDF(
         pdf,
         pacienteSeleccionado,
         fecha
       );
 
+      // ==================================================
+      // INFORMACIÓN DE LA ORDEN
+      // ==================================================
+
       y = tituloSeccionPDF(
         pdf,
         "Información de la orden",
-        y + 6,
+        y + 7,
         color
       );
 
-      const numerosMuestra = [
-        ...new Set(
-          resultadosInforme.map((item) =>
-            obtenerNumeroMuestra(item)
-          )
-        ),
-      ].join(", ");
-
       autoTable(pdf, {
         startY: y,
+
         margin: {
           left: 12,
           right: 12,
           bottom: 25,
         },
+
         theme: "grid",
+
         body: [
-          [
-            "N.º ORDEN",
-            obtenerNumeroOrden(resultado),
-            "N.º MUESTRA",
-            numerosMuestra,
-          ],
           [
             "REGISTRO",
             fechaTexto(
-              primero(resultado.fechaRegistro, resultado.fecha)
+              primero(
+                resultado.fechaRegistro,
+                resultado.fecha
+              )
             ),
+
             "VALIDACIÓN",
-            fechaTexto(resultado.fechaValidacion),
+            fechaTexto(
+              resultado.fechaValidacion
+            ),
           ],
+
           [
             "ESTADO",
-            mostrar(resultado.estado),
+            mostrar(
+              resultado.estado,
+              resultado.validado === true
+                ? "Validado"
+                : "No registrado"
+            ),
+
             "ANÁLISIS",
             String(detalles.length),
           ],
         ],
+
         styles: {
+          font: "helvetica",
           fontSize: 8,
-          cellPadding: 3,
+          cellPadding: 3.5,
           lineColor: [215, 225, 235],
           lineWidth: 0.2,
+          textColor: [40, 55, 70],
+          valign: "middle",
         },
+
         columnStyles: {
           0: {
             fontStyle: "bold",
             fillColor: [242, 246, 250],
-            cellWidth: 39,
+            cellWidth: 35,
           },
+
           1: {
-            cellWidth: 59,
+            cellWidth: 58,
           },
+
           2: {
             fontStyle: "bold",
             fillColor: [242, 246, 250],
-            cellWidth: 31,
+            cellWidth: 35,
+          },
+
+          3: {
+            cellWidth: 58,
           },
         },
       });
 
-      y = pdf.lastAutoTable.finalY + 8;
+      y = pdf.lastAutoTable.finalY + 12;
+
+      // ==================================================
+      // CONTROL DE ESPACIO
+      // ==================================================
+
+      const verificarEspacio = (altura) => {
+        if (y + altura > 265) {
+          pdf.addPage();
+          y = 22;
+        }
+      };
+
+      // ==================================================
+      // TÍTULO DE RESULTADOS
+      // ==================================================
+
+      verificarEspacio(23);
+
+      pdf.setFont("helvetica", "bold");
+      pdf.setFontSize(12);
+      pdf.setTextColor(...color);
+
+      pdf.text(
+        "RESULTADOS DE LABORATORIO",
+        14,
+        y
+      );
+
+      y += 5;
+
+      pdf.setDrawColor(...color);
+      pdf.setLineWidth(0.5);
+
+      pdf.line(14, y, 196, y);
+
+      y += 12;
+
+      // ==================================================
+      // ANÁLISIS
+      // ==================================================
 
       for (const detalle of detalles) {
         const item = detalle.resultado;
 
-        y = tituloSeccionPDF(
-          pdf,
-          obtenerNombreAnalisis(item),
-          y,
-          color
-        );
+        verificarEspacio(35);
 
-        autoTable(pdf, {
-          startY: y,
-          margin: {
-            left: 12,
-            right: 12,
-            bottom: 25,
-          },
-          theme: "plain",
-          body: [
-            [
-              `Muestra: ${obtenerTipoMuestra(item)}`,
-              `N.º: ${obtenerNumeroMuestra(item)}`,
-              `Fecha: ${fechaTexto(
-                primero(item.fechaRegistro, item.fecha)
-              )}`,
-            ],
-          ],
-          styles: {
-            fontSize: 7.5,
-            cellPadding: 2,
-            textColor: [90, 105, 120],
-          },
-        });
+        const nombreAnalisis =
+          obtenerNombreAnalisis(item);
 
-        y = pdf.lastAutoTable.finalY + 3;
+        pdf.setFont("helvetica", "bold");
+        pdf.setFontSize(11);
+        pdf.setTextColor(25, 56, 95);
+
+        const lineasAnalisis =
+          pdf.splitTextToSize(
+            nombreAnalisis.toUpperCase(),
+            180
+          );
+
+        pdf.text(lineasAnalisis, 14, y);
+
+        y += lineasAnalisis.length * 5 + 6;
+
+        // Tabla de tres columnas.
 
         const filas =
           detalle.parametros.length > 0
-            ? detalle.parametros.map((parametro) => [
-                parametro.nombre,
-                {
-                  content: parametro.valor,
-                  styles: {
-                    fontStyle: parametro.anormal
-                      ? "bold"
-                      : "normal",
-                    textColor: parametro.anormal
-                      ? [200, 35, 45]
-                      : [35, 50, 65],
+            ? detalle.parametros.map((parametro) => {
+                const nombre = mostrar(
+                  parametro.nombre
+                );
+
+                const valor = mostrar(
+                  parametro.valor
+                );
+
+                const referencia =
+                  referenciaPDF(parametro);
+
+                const anormal =
+                  parametro.anormal === true;
+
+                return [
+                  {
+                    content: nombre.toUpperCase(),
+                    styles: {
+                      fontStyle: "bold",
+                    },
                   },
-                },
-                parametro.unidad,
-                parametro.rango,
-                parametro.observacion,
-              ])
+
+                  {
+                    content: anormal
+                      ? `${valor} *`
+                      : valor,
+
+                    styles: {
+                      fontStyle: "bold",
+
+                      textColor: anormal
+                        ? [190, 35, 45]
+                        : [30, 41, 59],
+                    },
+                  },
+
+                  referencia,
+                ];
+              })
             : [
                 [
-                  obtenerNombreAnalisis(item),
+                  nombreAnalisis,
                   "Sin resultado registrado",
-                  "-",
-                  "-",
                   "-",
                 ],
               ];
 
         autoTable(pdf, {
           startY: y,
+
           margin: {
-            left: 12,
-            right: 12,
-            top: 18,
-            bottom: 25,
+            left: 14,
+            right: 14,
+            top: 20,
+            bottom: 30,
           },
+
+          tableWidth: 182,
+
+          theme: "plain",
+
           head: [
             [
-              "PARÁMETRO",
-              "RESULTADO",
-              "UNIDAD",
-              "REFERENCIA",
-              "OBS.",
+              "PARÁMETROS",
+              "RESULTADOS",
+              "VALORES DE REFERENCIA",
             ],
           ],
+
           body: filas,
-          theme: "grid",
-          headStyles: {
-            fillColor: color,
-            textColor: [255, 255, 255],
-            fontStyle: "bold",
-            fontSize: 7.5,
-            halign: "center",
-          },
+
           styles: {
-            fontSize: 8,
-            cellPadding: 3,
-            lineWidth: 0.15,
-            lineColor: [215, 225, 235],
-            textColor: [40, 55, 70],
+            font: "helvetica",
+            fontSize: 9,
+
+            cellPadding: {
+              top: 3,
+              right: 3,
+              bottom: 3,
+              left: 3,
+            },
+
+            textColor: [30, 41, 59],
             overflow: "linebreak",
+            valign: "middle",
+            lineWidth: 0,
           },
-          alternateRowStyles: {
-            fillColor: [248, 250, 253],
+
+          headStyles: {
+            fillColor: [255, 255, 255],
+            textColor: [25, 56, 95],
+            fontStyle: "bold",
+            fontSize: 9,
+
+            cellPadding: {
+              top: 5,
+              right: 3,
+              bottom: 5,
+              left: 3,
+            },
           },
+
+          bodyStyles: {
+            fillColor: [255, 255, 255],
+          },
+
           columnStyles: {
-            0: { cellWidth: 55 },
-            1: { cellWidth: 32, halign: "center" },
-            2: { cellWidth: 24, halign: "center" },
-            3: { cellWidth: 42, halign: "center" },
-            4: { cellWidth: 33 },
+            0: {
+              cellWidth: 70,
+              halign: "left",
+            },
+
+            1: {
+              cellWidth: 40,
+              halign: "center",
+            },
+
+            2: {
+              cellWidth: 72,
+              halign: "center",
+            },
+          },
+
+          didDrawCell: (data) => {
+            if (
+              data.section === "head" &&
+              data.column.index === 0
+            ) {
+              pdf.setDrawColor(
+                190,
+                205,
+                225
+              );
+
+              pdf.setLineWidth(0.3);
+
+              pdf.line(
+                data.cell.x,
+                data.cell.y + data.cell.height,
+                data.cell.x +
+                  data.table.columns.reduce(
+                    (total, columna) =>
+                      total + columna.width,
+                    0
+                  ),
+                data.cell.y + data.cell.height
+              );
+            }
           },
         });
 
-        y = pdf.lastAutoTable.finalY + 8;
+        y = pdf.lastAutoTable.finalY + 9;
 
-        const observaciones = texto(
-          primero(item.observaciones, item.observacion)
+        // ==================================================
+        // OBSERVACIONES
+        // ==================================================
+
+        const observacionesGenerales = texto(
+          primero(
+            item.observaciones,
+            item.observacion
+          )
         );
 
-        if (observaciones) {
-          const lineas = pdf.splitTextToSize(observaciones, 178);
+        const observacionesParametros =
+          detalle.parametros
+            .filter(
+              (parametro) =>
+                texto(parametro.observacion) !== "" &&
+                texto(parametro.observacion) !== "-"
+            )
+            .map(
+              (parametro) =>
+                `${mostrar(parametro.nombre)}: ${mostrar(
+                  parametro.observacion
+                )}`
+            );
 
-          if (y + lineas.length * 4 + 15 > 270) {
-            pdf.addPage();
-            y = 20;
+        const observaciones = [];
+
+        if (
+          observacionesGenerales &&
+          observacionesGenerales !== "-"
+        ) {
+          observaciones.push(
+            observacionesGenerales
+          );
+        }
+
+        observacionesParametros.forEach(
+          (observacion) => {
+            if (
+              !observaciones.includes(
+                observacion
+              )
+            ) {
+              observaciones.push(observacion);
+            }
           }
+        );
 
-          pdf.setFont("helvetica", "bold");
-          pdf.setFontSize(8);
-          pdf.setTextColor(...color);
-          pdf.text("OBSERVACIONES:", 12, y);
+        if (observaciones.length > 0) {
+          const contenido =
+            observaciones.join("\n");
 
           pdf.setFont("helvetica", "normal");
-          pdf.setTextColor(65, 75, 85);
-          pdf.text(lineas, 12, y + 5);
+          pdf.setFontSize(8.5);
 
-          y += lineas.length * 4 + 13;
+          const lineas =
+            pdf.splitTextToSize(
+              contenido,
+              174
+            );
+
+          verificarEspacio(
+            lineas.length * 4.5 + 15
+          );
+
+          pdf.setFont("helvetica", "bold");
+          pdf.setFontSize(9);
+          pdf.setTextColor(25, 56, 95);
+
+          pdf.text(
+            "Observaciones:",
+            14,
+            y
+          );
+
+          y += 6;
+
+          pdf.setFont("helvetica", "normal");
+          pdf.setFontSize(8.5);
+          pdf.setTextColor(65, 75, 90);
+
+          pdf.text(lineas, 14, y);
+
+          y += lineas.length * 4.5 + 9;
         }
 
-        if (y + 17 > 270) {
-          pdf.addPage();
-          y = 20;
-        }
+        // ==================================================
+        // VALIDACIÓN
+        // ==================================================
+
+        verificarEspacio(23);
 
         pdf.setDrawColor(220, 228, 236);
-        pdf.line(12, y, 198, y);
+        pdf.setLineWidth(0.3);
+
+        pdf.line(14, y, 196, y);
+
+        y += 6;
+
+        const profesional = mostrar(
+          primero(
+            item.validadoPorNombre,
+            item.nombreValidador
+          )
+        );
 
         pdf.setFont("helvetica", "normal");
-        pdf.setFontSize(7);
-        pdf.setTextColor(85, 95, 105);
+        pdf.setFontSize(8);
+        pdf.setTextColor(85, 95, 110);
+
+        const lineasProfesional =
+          pdf.splitTextToSize(
+            `Validado por: ${profesional}`,
+            100
+          );
 
         pdf.text(
-          `Validado por: ${mostrar(
-            primero(
-              item.validadoPorNombre,
-              item.nombreValidador
-            )
-          )}`,
-          12,
-          y + 5
+          lineasProfesional,
+          14,
+          y
         );
 
         pdf.text(
-          `Fecha: ${fechaTexto(item.fechaValidacion)}`,
-          198,
-          y + 5,
+          `Fecha: ${fechaTexto(
+            item.fechaValidacion
+          )}`,
+          196,
+          y,
           { align: "right" }
         );
 
-        y += 17;
+        y += Math.max(
+          18,
+          lineasProfesional.length * 4 + 8
+        );
       }
 
-      if (y + 22 > 270) {
-        pdf.addPage();
-        y = 20;
-      }
-
-      pdf.setDrawColor(...color);
-      pdf.line(12, y, 198, y);
-
-      pdf.setFont("helvetica", "bold");
-      pdf.setFontSize(8);
-      pdf.setTextColor(...color);
-
-      pdf.text("FIN DEL INFORME", 105, y + 8, {
-        align: "center",
-      });
+      // Pie de página.
 
       piePDF(pdf, datosLaboratorio);
 
-      const nombreArchivo = texto(
-        primero(resultado.ordenId, resultado.id, "clinico")
-      ).replace(/[\\/:*?"<>|]/g, "_");
+      // Nombre del archivo sin orden.
 
-      pdf.save(`Resultados_Orden_${nombreArchivo}.pdf`);
+      const nombre = nombrePaciente(
+        pacienteSeleccionado
+      );
+
+      const nombreSeguro = nombre
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[^a-zA-Z0-9_-]+/g, "_")
+        .replace(/^_+|_+$/g, "")
+        .slice(0, 60);
+
+      const fechaArchivo =
+        new Date().toISOString().slice(0, 10);
+
+      pdf.save(
+        `Informe_Resultados_${nombreSeguro}_${fechaArchivo}.pdf`
+      );
     } catch (err) {
-      console.error("Error generando PDF:", err);
+      console.error(
+        "Error al generar PDF:",
+        err
+      );
 
       alert(
         err?.message ||
@@ -1662,15 +2246,31 @@ export default function ResultadosRecepcion({ usuario, onVolver }) {
       const encontrado = analisis.find(
         (a) =>
           texto(a.id) ===
-          texto(primero(dato.analisisId, dato.idAnalisis))
+          texto(
+            primero(
+              dato.analisisId,
+              dato.idAnalisis
+            )
+          )
       );
 
-      const cantidad = Number(primero(dato.cantidad, 1)) || 1;
+      const cantidad =
+        Number(
+          primero(dato.cantidad, 1)
+        ) || 1;
+
       const precio =
-        Number(primero(dato.precioUnitario, dato.precio, 0)) || 0;
+        Number(
+          primero(
+            dato.precioUnitario,
+            dato.precio,
+            0
+          )
+        ) || 0;
 
       return {
         id: primero(dato.id, index),
+
         nombre: mostrar(
           primero(
             dato.nombreAnalisis,
@@ -1680,15 +2280,37 @@ export default function ResultadosRecepcion({ usuario, onVolver }) {
           ),
           "Análisis"
         ),
+
         cantidad,
         precio,
+
         subtotal:
           Number(
-            primero(dato.subtotal, dato.total, cantidad * precio)
+            primero(
+              dato.subtotal,
+              dato.total,
+              cantidad * precio
+            )
           ) || 0,
       };
     });
   };
+
+  // ====================================================
+  // PDF DE NOTA DE VENTA
+  //
+  // CORRECCIÓN:
+  // ELIMINAR N.º VENTA
+  // ELIMINAR N.º ORDEN
+  // ELIMINAR N.º SOLICITUD
+  //
+  // CONSERVAR:
+  // MÉTODO DE PAGO
+  // ESTADO
+  // FECHA
+  // DETALLE DE ANÁLISIS
+  // TOTAL
+  // ====================================================
 
   const descargarVenta = async (venta) => {
     if (!venta || generandoPDF) return;
@@ -1696,7 +2318,12 @@ export default function ResultadosRecepcion({ usuario, onVolver }) {
     setGenerandoPDF(true);
 
     try {
-      const datosLaboratorio = laboratorio || {};
+      // ==================================================
+      // DATOS DEL LABORATORIO
+      // ==================================================
+
+      const datosLaboratorio =
+        laboratorio || {};
 
       const logo = await cargarLogo(
         primero(
@@ -1706,12 +2333,22 @@ export default function ResultadosRecepcion({ usuario, onVolver }) {
         )
       );
 
+      // ==================================================
+      // CREAR DOCUMENTO
+      // ==================================================
+
       const pdf = new jsPDF({
         unit: "mm",
         format: "a4",
       });
 
-      const color = colorPDF(datosLaboratorio.colorPrimario);
+      const color = colorPDF(
+        datosLaboratorio.colorPrimario
+      );
+
+      // ==================================================
+      // ENCABEZADO INSTITUCIONAL
+      // ==================================================
 
       encabezadoPDF(
         pdf,
@@ -1720,17 +2357,29 @@ export default function ResultadosRecepcion({ usuario, onVolver }) {
         "NOTA DE VENTA"
       );
 
+      // ==================================================
+      // FECHA DE LA VENTA
+      // ==================================================
+
       const fecha = primero(
         venta.fechaVenta,
         venta.fecha,
         venta.createdAt
       );
 
+      // ==================================================
+      // DATOS DEL PACIENTE
+      // ==================================================
+
       let y = datosPacientePDF(
         pdf,
         pacienteSeleccionado,
         fecha
       );
+
+      // ==================================================
+      // INFORMACIÓN DE LA VENTA
+      // ==================================================
 
       y = tituloSeccionPDF(
         pdf,
@@ -1739,39 +2388,75 @@ export default function ResultadosRecepcion({ usuario, onVolver }) {
         color
       );
 
+      // ==================================================
+      // TABLA CORREGIDA
+      //
+      // YA NO SE MUESTRAN:
+      // N.º VENTA
+      // N.º ORDEN
+      // N.º SOLICITUD
+      // ==================================================
+
       autoTable(pdf, {
         startY: y,
+
         margin: {
           left: 12,
           right: 12,
           bottom: 25,
         },
+
         theme: "grid",
+
         body: [
           [
-            "N.º VENTA",
-            mostrar(primero(venta.ventaId, venta.id)),
+            "MÉTODO DE PAGO",
+            mostrar(
+              venta.metodoPago
+            ),
           ],
-          ["N.º ORDEN", mostrar(venta.ordenId)],
-          ["N.º SOLICITUD", mostrar(venta.solicitudId)],
-          ["MÉTODO DE PAGO", mostrar(venta.metodoPago)],
-          ["ESTADO", mostrar(venta.estado)],
-          ["FECHA", fechaTexto(fecha)],
+
+          [
+            "ESTADO",
+            mostrar(
+              venta.estado
+            ),
+          ],
+
+          [
+            "FECHA",
+            fechaTexto(fecha),
+          ],
         ],
+
         styles: {
+          font: "helvetica",
           fontSize: 8,
-          cellPadding: 3,
+          cellPadding: 3.5,
+
           lineColor: [215, 225, 235],
           lineWidth: 0.2,
+
+          textColor: [40, 55, 70],
+          valign: "middle",
         },
+
         columnStyles: {
           0: {
             fontStyle: "bold",
             fillColor: [242, 246, 250],
             cellWidth: 45,
           },
+
+          1: {
+            cellWidth: 141,
+          },
         },
       });
+
+      // ==================================================
+      // DETALLE DE ANÁLISIS
+      // ==================================================
 
       y = tituloSeccionPDF(
         pdf,
@@ -1780,7 +2465,8 @@ export default function ResultadosRecepcion({ usuario, onVolver }) {
         color
       );
 
-      const items = obtenerItemsVenta(venta);
+      const items =
+        obtenerItemsVenta(venta);
 
       const filas = items.map((item) => [
         item.nombre,
@@ -1790,87 +2476,199 @@ export default function ResultadosRecepcion({ usuario, onVolver }) {
       ]);
 
       if (filas.length === 0) {
-        filas.push(["Detalle no disponible", "-", "-", "-"]);
+        filas.push([
+          "Detalle no disponible",
+          "-",
+          "-",
+          "-",
+        ]);
       }
+
+      // ==================================================
+      // TABLA DE ANÁLISIS VENDIDOS
+      // ==================================================
 
       autoTable(pdf, {
         startY: y,
+
         margin: {
           left: 12,
           right: 12,
           top: 18,
           bottom: 25,
         },
+
         head: [
-          ["ANÁLISIS", "CANTIDAD", "PRECIO", "SUBTOTAL"],
+          [
+            "ANÁLISIS",
+            "CANTIDAD",
+            "PRECIO",
+            "SUBTOTAL",
+          ],
         ],
+
         body: filas,
+
         theme: "grid",
+
         headStyles: {
           fillColor: color,
           textColor: [255, 255, 255],
+          fontStyle: "bold",
         },
+
         styles: {
           fontSize: 8,
           cellPadding: 3,
           lineColor: [215, 225, 235],
           lineWidth: 0.2,
         },
+
         alternateRowStyles: {
           fillColor: [248, 250, 253],
         },
+
+        columnStyles: {
+          0: {
+            cellWidth: 78,
+          },
+
+          1: {
+            cellWidth: 35,
+            halign: "center",
+          },
+
+          2: {
+            cellWidth: 36,
+            halign: "right",
+          },
+
+          3: {
+            cellWidth: 37,
+            halign: "right",
+          },
+        },
       });
 
-      let totalY = pdf.lastAutoTable.finalY + 12;
+      // ==================================================
+      // TOTAL DE LA VENTA
+      // ==================================================
+
+      let totalY =
+        pdf.lastAutoTable.finalY + 12;
 
       if (totalY + 25 > 270) {
         pdf.addPage();
         totalY = 20;
       }
 
-      pdf.setFillColor(237, 245, 251);
-      pdf.roundedRect(110, totalY, 88, 17, 2, 2, "F");
+      pdf.setFillColor(
+        237,
+        245,
+        251
+      );
 
-      pdf.setFont("helvetica", "bold");
+      pdf.roundedRect(
+        110,
+        totalY,
+        88,
+        17,
+        2,
+        2,
+        "F"
+      );
+
+      pdf.setFont(
+        "helvetica",
+        "bold"
+      );
+
       pdf.setFontSize(12);
       pdf.setTextColor(...color);
 
       pdf.text(
         `TOTAL: Bs ${moneda(
-          primero(venta.total, venta.montoTotal, venta.totalVenta)
+          primero(
+            venta.total,
+            venta.montoTotal,
+            venta.totalVenta
+          )
         )}`,
         193,
         totalY + 11,
-        { align: "right" }
+        {
+          align: "right",
+        }
       );
 
-      piePDF(pdf, datosLaboratorio);
+      // ==================================================
+      // PIE DE PÁGINA
+      // ==================================================
+
+      piePDF(
+        pdf,
+        datosLaboratorio
+      );
+
+      // ==================================================
+      // NOMBRE DEL ARCHIVO
+      //
+      // SE CONSERVA EL IDENTIFICADOR INTERNAMENTE
+      // PARA EVITAR NOMBRES REPETIDOS.
+      // NO SE IMPRIME EN EL PDF.
+      // ==================================================
 
       const nombreArchivo = texto(
-        primero(venta.ventaId, venta.id, "venta")
-      ).replace(/[\\/:*?"<>|]/g, "_");
+        primero(
+          venta.ventaId,
+          venta.id,
+          "venta"
+        )
+      ).replace(
+        /[\\/:*?"<>|]/g,
+        "_"
+      );
 
-      pdf.save(`Nota_Venta_${nombreArchivo}.pdf`);
+      // ==================================================
+      // GUARDAR PDF
+      // ==================================================
+
+      pdf.save(
+        `Nota_Venta_${nombreArchivo}.pdf`
+      );
     } catch (err) {
-      console.error(err);
-      alert("No se pudo generar la nota de venta.");
+      console.error(
+        "Error al generar nota de venta:",
+        err
+      );
+
+      alert(
+        "No se pudo generar la nota de venta."
+      );
     } finally {
       setGenerandoPDF(false);
     }
   };
 
   // ====================================================
-  // INTERFAZ
+  // INTERFAZ PRINCIPAL
   // ====================================================
 
   return (
     <div style={estilos.pagina}>
+      {/* ==================================================
+          ENCABEZADO
+      ================================================== */}
+
       <header style={estilos.cabecera}>
-        <h1>Resultados de pacientes</h1>
+        <h1>
+          Resultados de pacientes
+        </h1>
 
         <p>
-          Consulta de resultados clínicos, parámetros,
-          rangos de referencia y notas de venta.
+          Consulta de resultados clínicos,
+          parámetros, rangos de referencia
+          y notas de venta.
         </p>
 
         {laboratorio && (
@@ -1897,9 +2695,15 @@ export default function ResultadosRecepcion({ usuario, onVolver }) {
         )}
       </header>
 
+      {/* ==================================================
+          ERRORES
+      ================================================== */}
+
       {error && (
         <div style={estilos.tarjeta}>
-          <p style={{ color: "red" }}>{error}</p>
+          <p style={{ color: "red" }}>
+            {error}
+          </p>
 
           <button
             type="button"
@@ -1911,19 +2715,27 @@ export default function ResultadosRecepcion({ usuario, onVolver }) {
         </div>
       )}
 
+      {/* ==================================================
+          LISTADO DE PACIENTES
+      ================================================== */}
+
       {cargando ? (
         <div style={estilos.tarjeta}>
           Cargando información...
         </div>
       ) : !pacienteSeleccionado ? (
         <div style={estilos.tarjeta}>
-          <h2>Buscar pacientes</h2>
+          <h2>
+            Buscar pacientes
+          </h2>
 
           <input
             type="text"
             placeholder="Buscar por nombre, CI o correo..."
             value={busqueda}
-            onChange={(e) => setBusqueda(e.target.value)}
+            onChange={(e) =>
+              setBusqueda(e.target.value)
+            }
             style={{
               width: "100%",
               padding: 13,
@@ -1935,45 +2747,60 @@ export default function ResultadosRecepcion({ usuario, onVolver }) {
           />
 
           <div style={estilos.grid}>
-            {pacientesFiltrados.map((paciente) => (
-              <div
-                key={paciente.id}
-                style={{
-                  ...estilos.tarjeta,
-                  marginBottom: 0,
-                }}
-              >
-                <h3>{nombrePaciente(paciente)}</h3>
-
-                <p>
-                  <strong>CI:</strong> {ciPaciente(paciente)}
-                </p>
-
-                <p>
-                  <strong>Correo:</strong> {correoPaciente(paciente)}
-                </p>
-
-                <button
-                  type="button"
-                  style={estilos.boton}
-                  onClick={() => {
-                    setPacienteSeleccionado(paciente);
-                    setResultadoSeleccionado(null);
-                    setVentaSeleccionada(null);
+            {pacientesFiltrados.map(
+              (paciente) => (
+                <div
+                  key={paciente.id}
+                  style={{
+                    ...estilos.tarjeta,
+                    marginBottom: 0,
                   }}
                 >
-                  Ver resultados
-                </button>
-              </div>
-            ))}
+                  <h3>
+                    {nombrePaciente(paciente)}
+                  </h3>
+
+                  <p>
+                    <strong>CI:</strong>{" "}
+                    {ciPaciente(paciente)}
+                  </p>
+
+                  <p>
+                    <strong>Correo:</strong>{" "}
+                    {correoPaciente(paciente)}
+                  </p>
+
+                  <button
+                    type="button"
+                    style={estilos.boton}
+                    onClick={() => {
+                      setPacienteSeleccionado(
+                        paciente
+                      );
+
+                      setResultadoSeleccionado(null);
+                      setVentaSeleccionada(null);
+                    }}
+                  >
+                    Ver resultados
+                  </button>
+                </div>
+              )
+            )}
           </div>
 
           {pacientesFiltrados.length === 0 && (
-            <p>No se encontraron pacientes.</p>
+            <p>
+              No se encontraron pacientes.
+            </p>
           )}
         </div>
       ) : (
         <>
+          {/* ==========================================
+              VOLVER A PACIENTES
+          ========================================== */}
+
           <button
             type="button"
             style={{
@@ -1989,181 +2816,266 @@ export default function ResultadosRecepcion({ usuario, onVolver }) {
             ← Volver a pacientes
           </button>
 
+          {/* ==========================================
+              DATOS DEL PACIENTE
+          ========================================== */}
+
           <div style={estilos.tarjeta}>
-            <h2>{nombrePaciente(pacienteSeleccionado)}</h2>
+            <h2>
+              {nombrePaciente(
+                pacienteSeleccionado
+              )}
+            </h2>
 
             <div style={estilos.grid}>
               <Campo
                 titulo="CI"
-                valor={ciPaciente(pacienteSeleccionado)}
+                valor={ciPaciente(
+                  pacienteSeleccionado
+                )}
               />
 
               <Campo
                 titulo="Edad"
-                valor={edadPaciente(pacienteSeleccionado)}
+                valor={edadPaciente(
+                  pacienteSeleccionado
+                )}
               />
 
               <Campo
                 titulo="Sexo"
-                valor={pacienteSeleccionado.sexo}
+                valor={
+                  pacienteSeleccionado.sexo
+                }
               />
 
               <Campo
                 titulo="Correo electrónico"
-                valor={correoPaciente(pacienteSeleccionado)}
+                valor={correoPaciente(
+                  pacienteSeleccionado
+                )}
               />
             </div>
           </div>
 
+          {/* ==========================================
+              RESULTADOS CLÍNICOS
+          ========================================== */}
+
           <div style={estilos.tarjeta}>
-            <h2>Resultados clínicos</h2>
-            <p>Resultados validados del paciente.</p>
+            <h2>
+              Resultados clínicos
+            </h2>
+
+            <p>
+              Resultados validados del paciente.
+            </p>
 
             {resultadosPaciente.length === 0 ? (
-              <p>No existen resultados validados.</p>
+              <p>
+                No existen resultados validados.
+              </p>
             ) : (
               <div style={estilos.grid}>
-                {resultadosPaciente.map((resultado) => (
-                  <div
-                    key={resultado.id}
-                    style={{
-                      ...estilos.tarjeta,
-                      marginBottom: 0,
-                    }}
-                  >
-                    <h3>{obtenerNombreAnalisis(resultado)}</h3>
-
-                    <p>
-                      <strong>N.º orden:</strong>{" "}
-                      {obtenerNumeroOrden(resultado)}
-                    </p>
-
-                    <p>
-                      <strong>N.º muestra:</strong>{" "}
-                      {obtenerNumeroMuestra(resultado)}
-                    </p>
-
-                    <p>
-                      <strong>Estado:</strong>{" "}
-                      {mostrar(resultado.estado)}
-                    </p>
-
-                    <p>
-                      <strong>Fecha:</strong>{" "}
-                      {fechaTexto(
-                        primero(
-                          resultado.fechaValidacion,
-                          resultado.fechaRegistro
-                        )
-                      )}
-                    </p>
-
+                {resultadosPaciente.map(
+                  (resultado) => (
                     <div
+                      key={resultado.id}
                       style={{
-                        display: "flex",
-                        gap: 10,
-                        flexWrap: "wrap",
+                        ...estilos.tarjeta,
+                        marginBottom: 0,
                       }}
                     >
-                      <button
-                        type="button"
-                        style={estilos.boton}
-                        onClick={() =>
-                          setResultadoSeleccionado(resultado)
-                        }
-                      >
-                        Ver resultado
-                      </button>
+                      <h3>
+                        {obtenerNombreAnalisis(
+                          resultado
+                        )}
+                      </h3>
 
-                      <button
-                        type="button"
-                        disabled={generandoPDF}
-                        style={estilos.secundario}
-                        onClick={() => descargarResultado(resultado)}
+                      <p>
+                        <strong>
+                          N.º orden:
+                        </strong>{" "}
+                        {obtenerNumeroOrden(
+                          resultado
+                        )}
+                      </p>
+
+                      <p>
+                        <strong>
+                          N.º muestra:
+                        </strong>{" "}
+                        {obtenerNumeroMuestra(
+                          resultado
+                        )}
+                      </p>
+
+                      <p>
+                        <strong>Estado:</strong>{" "}
+                        {mostrar(
+                          resultado.estado
+                        )}
+                      </p>
+
+                      <p>
+                        <strong>Fecha:</strong>{" "}
+                        {fechaTexto(
+                          primero(
+                            resultado.fechaValidacion,
+                            resultado.fechaRegistro
+                          )
+                        )}
+                      </p>
+
+                      <div
+                        style={{
+                          display: "flex",
+                          gap: 10,
+                          flexWrap: "wrap",
+                        }}
                       >
-                        {generandoPDF
-                          ? "Generando..."
-                          : "Descargar PDF"}
-                      </button>
+                        <button
+                          type="button"
+                          style={estilos.boton}
+                          onClick={() =>
+                            setResultadoSeleccionado(
+                              resultado
+                            )
+                          }
+                        >
+                          Ver resultado
+                        </button>
+
+                        <button
+                          type="button"
+                          disabled={generandoPDF}
+                          style={estilos.secundario}
+                          onClick={() =>
+                            descargarResultado(
+                              resultado
+                            )
+                          }
+                        >
+                          {generandoPDF
+                            ? "Generando..."
+                            : "Descargar PDF"}
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  )
+                )}
               </div>
             )}
           </div>
 
+          {/* ==========================================
+              NOTAS DE VENTA
+          ========================================== */}
+
           <div style={estilos.tarjeta}>
-            <h2>Notas de venta</h2>
+            <h2>
+              Notas de venta
+            </h2>
 
             {ventasPaciente.length === 0 ? (
-              <p>No existen notas de venta.</p>
+              <p>
+                No existen notas de venta.
+              </p>
             ) : (
               <div style={estilos.grid}>
-                {ventasPaciente.map((venta) => (
-                  <div
-                    key={venta.id}
-                    style={{
-                      ...estilos.tarjeta,
-                      marginBottom: 0,
-                    }}
-                  >
-                    <h3>
-                      Nota de venta{" "}
-                      {mostrar(primero(venta.ventaId, venta.id))}
-                    </h3>
-
-                    <p>
-                      <strong>Fecha:</strong>{" "}
-                      {fechaTexto(
-                        primero(venta.fechaVenta, venta.fecha)
-                      )}
-                    </p>
-
-                    <p>
-                      <strong>Total:</strong> Bs{" "}
-                      {moneda(
-                        primero(venta.total, venta.montoTotal)
-                      )}
-                    </p>
-
+                {ventasPaciente.map(
+                  (venta) => (
                     <div
+                      key={venta.id}
                       style={{
-                        display: "flex",
-                        gap: 10,
-                        flexWrap: "wrap",
+                        ...estilos.tarjeta,
+                        marginBottom: 0,
                       }}
                     >
-                      <button
-                        type="button"
-                        style={estilos.boton}
-                        onClick={() => setVentaSeleccionada(venta)}
-                      >
-                        Ver nota
-                      </button>
+                      <h3>
+                        Nota de venta{" "}
+                        {mostrar(
+                          primero(
+                            venta.ventaId,
+                            venta.id
+                          )
+                        )}
+                      </h3>
 
-                      <button
-                        type="button"
-                        style={estilos.secundario}
-                        disabled={generandoPDF}
-                        onClick={() => descargarVenta(venta)}
+                      <p>
+                        <strong>
+                          Fecha:
+                        </strong>{" "}
+                        {fechaTexto(
+                          primero(
+                            venta.fechaVenta,
+                            venta.fecha
+                          )
+                        )}
+                      </p>
+
+                      <p>
+                        <strong>
+                          Total:
+                        </strong>{" "}
+                        Bs{" "}
+                        {moneda(
+                          primero(
+                            venta.total,
+                            venta.montoTotal
+                          )
+                        )}
+                      </p>
+
+                      <div
+                        style={{
+                          display: "flex",
+                          gap: 10,
+                          flexWrap: "wrap",
+                        }}
                       >
-                        Descargar PDF
-                      </button>
+                        <button
+                          type="button"
+                          style={estilos.boton}
+                          onClick={() =>
+                            setVentaSeleccionada(
+                              venta
+                            )
+                          }
+                        >
+                          Ver nota
+                        </button>
+
+                        <button
+                          type="button"
+                          style={estilos.secundario}
+                          disabled={generandoPDF}
+                          onClick={() =>
+                            descargarVenta(venta)
+                          }
+                        >
+                          Descargar PDF
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  )
+                )}
               </div>
             )}
           </div>
         </>
       )}
 
-      {/* MODAL RESULTADO */}
+      {/* ==================================================
+          MODAL DE RESULTADO
+      ================================================== */}
 
       {resultadoSeleccionado && (
         <div
           style={estilos.fondoModal}
-          onClick={() => setResultadoSeleccionado(null)}
+          onClick={() =>
+            setResultadoSeleccionado(null)
+          }
         >
           <div
             style={estilos.modal}
@@ -2177,42 +3089,58 @@ export default function ResultadosRecepcion({ usuario, onVolver }) {
                 gap: 15,
               }}
             >
-              <h2>Detalle del resultado clínico</h2>
+              <h2>
+                Detalle del resultado clínico
+              </h2>
 
               <button
                 type="button"
                 style={estilos.secundario}
-                onClick={() => setResultadoSeleccionado(null)}
+                onClick={() =>
+                  setResultadoSeleccionado(null)
+                }
               >
                 Cerrar
               </button>
             </div>
 
-            <h3>Información del paciente</h3>
+            <h3>
+              Información del paciente
+            </h3>
 
             <div style={estilos.grid}>
               <Campo
                 titulo="Paciente"
-                valor={nombrePaciente(pacienteSeleccionado)}
+                valor={nombrePaciente(
+                  pacienteSeleccionado
+                )}
               />
 
               <Campo
                 titulo="CI"
-                valor={ciPaciente(pacienteSeleccionado)}
+                valor={ciPaciente(
+                  pacienteSeleccionado
+                )}
               />
 
               <Campo
                 titulo="Correo"
-                valor={correoPaciente(pacienteSeleccionado)}
+                valor={correoPaciente(
+                  pacienteSeleccionado
+                )}
               />
 
               <Campo
                 titulo="Edad"
-                valor={edadPaciente(pacienteSeleccionado)}
+                valor={edadPaciente(
+                  pacienteSeleccionado
+                )}
               />
             </div>
 
-            <h3>Información del análisis</h3>
+            <h3>
+              Información del análisis
+            </h3>
 
             <div style={estilos.grid}>
               <Campo
@@ -2244,24 +3172,37 @@ export default function ResultadosRecepcion({ usuario, onVolver }) {
               />
             </div>
 
-            <h3>Parámetros y resultados</h3>
+            <h3>
+              Parámetros y resultados
+            </h3>
 
             {cargandoDetalle ? (
-              <p>Cargando valores registrados...</p>
+              <p>
+                Cargando valores registrados...
+              </p>
             ) : (
               <>
                 {errorDetalle && (
-                  <p style={{ color: "#b45309" }}>
+                  <p
+                    style={{
+                      color: "#b45309",
+                    }}
+                  >
                     {errorDetalle}
                   </p>
                 )}
 
                 {parametrosCompletos.length === 0 ? (
                   <p>
-                    No se encontraron parámetros individuales.
+                    No se encontraron parámetros
+                    individuales.
                   </p>
                 ) : (
-                  <div style={{ overflowX: "auto" }}>
+                  <div
+                    style={{
+                      overflowX: "auto",
+                    }}
+                  >
                     <table style={estilos.tabla}>
                       <thead>
                         <tr>
@@ -2298,9 +3239,11 @@ export default function ResultadosRecepcion({ usuario, onVolver }) {
                               <td
                                 style={{
                                   ...estilos.celda,
+
                                   color: parametro.anormal
                                     ? "#dc2626"
                                     : "#17365d",
+
                                   fontWeight: parametro.anormal
                                     ? "bold"
                                     : "normal",
@@ -2330,7 +3273,9 @@ export default function ResultadosRecepcion({ usuario, onVolver }) {
               </>
             )}
 
-            <h3>Observaciones y validación</h3>
+            <h3>
+              Observaciones y validación
+            </h3>
 
             <div style={estilos.grid}>
               <Campo
@@ -2343,7 +3288,9 @@ export default function ResultadosRecepcion({ usuario, onVolver }) {
 
               <Campo
                 titulo="Estado"
-                valor={resultadoSeleccionado.estado}
+                valor={
+                  resultadoSeleccionado.estado
+                }
               />
 
               <Campo
@@ -2375,7 +3322,9 @@ export default function ResultadosRecepcion({ usuario, onVolver }) {
                 disabled={generandoPDF}
                 style={estilos.boton}
                 onClick={() =>
-                  descargarResultado(resultadoSeleccionado)
+                  descargarResultado(
+                    resultadoSeleccionado
+                  )
                 }
               >
                 {generandoPDF
@@ -2386,7 +3335,9 @@ export default function ResultadosRecepcion({ usuario, onVolver }) {
               <button
                 type="button"
                 style={estilos.secundario}
-                onClick={() => setResultadoSeleccionado(null)}
+                onClick={() =>
+                  setResultadoSeleccionado(null)
+                }
               >
                 Cerrar
               </button>
@@ -2395,12 +3346,16 @@ export default function ResultadosRecepcion({ usuario, onVolver }) {
         </div>
       )}
 
-      {/* MODAL VENTA */}
+      {/* ==================================================
+          MODAL DE NOTA DE VENTA
+      ================================================== */}
 
       {ventaSeleccionada && (
         <div
           style={estilos.fondoModal}
-          onClick={() => setVentaSeleccionada(null)}
+          onClick={() =>
+            setVentaSeleccionada(null)
+          }
         >
           <div
             style={{
@@ -2409,12 +3364,16 @@ export default function ResultadosRecepcion({ usuario, onVolver }) {
             }}
             onClick={(e) => e.stopPropagation()}
           >
-            <h2>Detalle de nota de venta</h2>
+            <h2>
+              Detalle de nota de venta
+            </h2>
 
             <div style={estilos.grid}>
               <Campo
                 titulo="Paciente"
-                valor={nombrePaciente(pacienteSeleccionado)}
+                valor={nombrePaciente(
+                  pacienteSeleccionado
+                )}
               />
 
               <Campo
@@ -2427,17 +3386,23 @@ export default function ResultadosRecepcion({ usuario, onVolver }) {
 
               <Campo
                 titulo="Número de orden"
-                valor={ventaSeleccionada.ordenId}
+                valor={
+                  ventaSeleccionada.ordenId
+                }
               />
 
               <Campo
                 titulo="Método de pago"
-                valor={ventaSeleccionada.metodoPago}
+                valor={
+                  ventaSeleccionada.metodoPago
+                }
               />
 
               <Campo
                 titulo="Estado"
-                valor={ventaSeleccionada.estado}
+                valor={
+                  ventaSeleccionada.estado
+                }
               />
 
               <Campo
@@ -2451,9 +3416,15 @@ export default function ResultadosRecepcion({ usuario, onVolver }) {
               />
             </div>
 
-            <h3>Detalle de análisis vendidos</h3>
+            <h3>
+              Detalle de análisis vendidos
+            </h3>
 
-            <div style={{ overflowX: "auto" }}>
+            <div
+              style={{
+                overflowX: "auto",
+              }}
+            >
               <table style={estilos.tabla}>
                 <thead>
                   <tr>
@@ -2477,27 +3448,27 @@ export default function ResultadosRecepcion({ usuario, onVolver }) {
                 </thead>
 
                 <tbody>
-                  {obtenerItemsVenta(ventaSeleccionada).map(
-                    (item, index) => (
-                      <tr key={index}>
-                        <td style={estilos.celda}>
-                          {item.nombre}
-                        </td>
+                  {obtenerItemsVenta(
+                    ventaSeleccionada
+                  ).map((item, index) => (
+                    <tr key={index}>
+                      <td style={estilos.celda}>
+                        {item.nombre}
+                      </td>
 
-                        <td style={estilos.celda}>
-                          {item.cantidad}
-                        </td>
+                      <td style={estilos.celda}>
+                        {item.cantidad}
+                      </td>
 
-                        <td style={estilos.celda}>
-                          Bs {moneda(item.precio)}
-                        </td>
+                      <td style={estilos.celda}>
+                        Bs {moneda(item.precio)}
+                      </td>
 
-                        <td style={estilos.celda}>
-                          Bs {moneda(item.subtotal)}
-                        </td>
-                      </tr>
-                    )
-                  )}
+                      <td style={estilos.celda}>
+                        Bs {moneda(item.subtotal)}
+                      </td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             </div>
@@ -2507,13 +3478,18 @@ export default function ResultadosRecepcion({ usuario, onVolver }) {
                 display: "flex",
                 gap: 12,
                 marginTop: 25,
+                flexWrap: "wrap",
               }}
             >
               <button
                 type="button"
                 style={estilos.boton}
                 disabled={generandoPDF}
-                onClick={() => descargarVenta(ventaSeleccionada)}
+                onClick={() =>
+                  descargarVenta(
+                    ventaSeleccionada
+                  )
+                }
               >
                 Descargar PDF
               </button>
@@ -2521,7 +3497,9 @@ export default function ResultadosRecepcion({ usuario, onVolver }) {
               <button
                 type="button"
                 style={estilos.secundario}
-                onClick={() => setVentaSeleccionada(null)}
+                onClick={() =>
+                  setVentaSeleccionada(null)
+                }
               >
                 Cerrar
               </button>
