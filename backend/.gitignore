@@ -8,3 +8,4 @@ serviceAccountKey.json
 *.key
 *.p12
 *.pfx
+*.bak
