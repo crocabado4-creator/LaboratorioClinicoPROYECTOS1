@@ -7,7 +7,6 @@ import React, {
 
 import {
   ActivityIndicator,
-  Alert,
   Image,
   KeyboardAvoidingView,
   Modal,
@@ -20,6 +19,7 @@ import {
   Text,
   TextInput,
   View,
+  useWindowDimensions,
 } from "react-native";
 
 import { useRouter } from "expo-router";
@@ -69,15 +69,6 @@ type UsuarioSistema = {
   requiereVerificacionEmail: boolean;
 };
 
-type ModuloProps = {
-  icono: string;
-  titulo: string;
-  descripcion: string;
-  fondo: string;
-  color: string;
-  onPress: () => void;
-};
-
 type ModuloSistema = {
   icono: string;
   titulo: string;
@@ -87,25 +78,49 @@ type ModuloSistema = {
   ruta: string;
 };
 
+type ModuloProps = {
+  modulo: ModuloSistema;
+  onPress: () => void;
+};
+
+// ======================================================
+// COLORES
+// ======================================================
+
+const C = {
+  primario: "#2563EB",
+  primarioOscuro: "#1D4ED8",
+  azulProfundo: "#17356C",
+  fondo: "#F3F7FC",
+  blanco: "#FFFFFF",
+  texto: "#17243D",
+  secundario: "#64748B",
+  borde: "#DFE7F2",
+  error: "#B91C1C",
+  errorFondo: "#FFF1F2",
+  verde: "#15803D",
+};
+
 // ======================================================
 // FUNCIONES GENERALES
 // ======================================================
 
-function normalizarRol(valor: unknown): string {
-  if (typeof valor !== "string") {
+function texto(valor: unknown): string {
+  if (valor === null || valor === undefined) {
     return "";
   }
 
-  return valor
-    .trim()
+  return String(valor).trim();
+}
+
+function normalizarRol(valor: unknown): string {
+  return texto(valor)
     .toLowerCase()
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "");
 }
 
-function esRolValido(
-  rol: string
-): rol is RolUsuario {
+function esRolValido(rol: string): rol is RolUsuario {
   return [
     "super_admin",
     "administrador",
@@ -114,7 +129,7 @@ function esRolValido(
   ].includes(rol);
 }
 
-function nombreRol(rol: string): string {
+function nombreRol(rol: RolUsuario): string {
   switch (rol) {
     case "super_admin":
       return "Super Administrador";
@@ -127,82 +142,121 @@ function nombreRol(rol: string): string {
 
     case "bioquimico":
       return "Bioquímico";
+  }
+}
+
+function codigoFirebase(error: unknown): string {
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error
+  ) {
+    return texto(
+      (error as { code?: string }).code
+    );
+  }
+
+  return "";
+}
+
+function mensajeAutenticacion(error: unknown): string {
+  switch (codigoFirebase(error)) {
+    case "auth/invalid-credential":
+    case "auth/wrong-password":
+    case "auth/user-not-found":
+    case "auth/invalid-login-credentials":
+      return "El correo electrónico o la contraseña son incorrectos.";
+
+    case "auth/invalid-email":
+      return "Ingresa un correo electrónico válido.";
+
+    case "auth/user-disabled":
+      return "Esta cuenta está deshabilitada. Contacta al administrador.";
+
+    case "auth/too-many-requests":
+      return "Demasiados intentos. Inténtalo nuevamente más tarde.";
+
+    case "auth/network-request-failed":
+      return "No se pudo establecer conexión. Revisa tu Internet.";
+
+    case "auth/operation-not-allowed":
+      return "El inicio de sesión con correo no está habilitado.";
 
     default:
-      return "Usuario";
+      return "No se pudo iniciar sesión. Comprueba tus datos e inténtalo nuevamente.";
   }
 }
 
-function mostrarMensaje(
-  titulo: string,
-  mensaje: string
-) {
-  if (Platform.OS === "web") {
-    if (typeof window !== "undefined") {
-      window.alert(`${titulo}\n\n${mensaje}`);
+function mensajeSistema(error: unknown): string {
+  if (error instanceof Error) {
+    if (
+      error.message.includes(
+        "Missing or insufficient permissions"
+      )
+    ) {
+      return "No tienes permisos suficientes para acceder al sistema.";
     }
 
-    return;
-  }
+    if (
+      error.message.includes("FirebaseError") ||
+      error.message.includes("Firebase:")
+    ) {
+      return "No se pudo consultar tu cuenta. Comprueba la conexión.";
+    }
 
-  Alert.alert(titulo, mensaje);
-}
-
-function mensajeError(error: unknown): string {
-  if (error instanceof Error) {
     return error.message;
   }
 
-  return "Ocurrió un error inesperado.";
+  return "Ocurrió un problema al verificar tu cuenta.";
 }
 
 // ======================================================
-// COMPONENTE DE MÓDULO
+// COMPONENTE TARJETA DE MÓDULO
 // ======================================================
 
 function Modulo({
-  icono,
-  titulo,
-  descripcion,
-  fondo,
-  color,
+  modulo,
   onPress,
 }: ModuloProps) {
   return (
     <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={`Abrir ${modulo.titulo}`}
       style={({ pressed }) => [
         styles.modulo,
         pressed && styles.moduloPresionado,
       ]}
-      onPress={onPress}
-      accessibilityRole="button"
-      accessibilityLabel={`Abrir ${titulo}`}
     >
       <View
         style={[
           styles.moduloIcono,
-          { backgroundColor: fondo },
+          {
+            backgroundColor: modulo.fondo,
+          },
         ]}
       >
         <Text style={styles.moduloEmoji}>
-          {icono}
+          {modulo.icono}
         </Text>
       </View>
 
       <View style={styles.moduloContenido}>
         <Text style={styles.moduloTitulo}>
-          {titulo}
+          {modulo.titulo}
         </Text>
 
         <Text style={styles.moduloDescripcion}>
-          {descripcion}
+          {modulo.descripcion}
         </Text>
       </View>
 
       <Text
         style={[
           styles.moduloFlecha,
-          { color },
+          {
+            color: modulo.color,
+          },
         ]}
       >
         ›
@@ -212,14 +266,18 @@ function Modulo({
 }
 
 // ======================================================
-// COMPONENTE PRINCIPAL
+// PANTALLA PRINCIPAL
 // ======================================================
 
 export default function Index() {
   const router = useRouter();
 
+  const { width } = useWindowDimensions();
+
+  const esEscritorio = width >= 850;
+
   // ====================================================
-  // ESTADOS DEL LOGIN
+  // ESTADOS DEL FORMULARIO
   // ====================================================
 
   const [email, setEmail] = useState("");
@@ -231,7 +289,7 @@ export default function Index() {
   ] = useState(false);
 
   // ====================================================
-  // ESTADOS DEL USUARIO
+  // ESTADOS DE SESIÓN
   // ====================================================
 
   const [
@@ -239,43 +297,27 @@ export default function Index() {
     setUsuario,
   ] = useState<UsuarioSistema | null>(null);
 
-  const [
-    permisos,
-    setPermisos,
-  ] = useState<string[]>([]);
+  const [permisos, setPermisos] = useState<string[]>([]);
 
   const [
     laboratorio,
     setLaboratorio,
-  ] = useState<PersonalizacionLaboratorio | null>(
-    null
-  );
-
-  // ====================================================
-  // ESTADOS GENERALES
-  // ====================================================
+  ] = useState<PersonalizacionLaboratorio | null>(null);
 
   const [cargando, setCargando] = useState(true);
-
-  const [
-    procesando,
-    setProcesando,
-  ] = useState(false);
+  const [procesando, setProcesando] = useState(false);
+  const [errorAcceso, setErrorAcceso] = useState("");
 
   const [
     mostrarCerrarSesion,
     setMostrarCerrarSesion,
   ] = useState(false);
 
-  const [
-    errorAcceso,
-    setErrorAcceso,
-  ] = useState("");
-
   const versionSesion = useRef(0);
+  const componenteActivo = useRef(false);
 
   // ====================================================
-  // LIMPIAR SESIÓN LOCAL
+  // LIMPIAR DATOS LOCALES
   // ====================================================
 
   const limpiarSesionLocal = useCallback(() => {
@@ -285,7 +327,7 @@ export default function Index() {
   }, []);
 
   // ====================================================
-  // CERRAR SESIÓN INTERNA
+  // CERRAR SESIÓN EN FIREBASE
   // ====================================================
 
   const cerrarSesionInterna = useCallback(
@@ -294,13 +336,11 @@ export default function Index() {
 
       try {
         await cerrarSesionFirebase();
-      } catch (error) {
-        console.error(
-          "Error cerrando sesión:",
-          error
-        );
       } finally {
-        limpiarSesionLocal();
+        if (componenteActivo.current) {
+          limpiarSesionLocal();
+          setCargando(false);
+        }
       }
     },
     [limpiarSesionLocal]
@@ -314,7 +354,7 @@ export default function Index() {
     async (
       firebaseUser: User,
       versionActual: number
-    ) => {
+    ): Promise<void> => {
       try {
         const usuarioRef = doc(
           db,
@@ -322,11 +362,10 @@ export default function Index() {
           firebaseUser.uid
         );
 
-        const usuarioSnap = await getDoc(
-          usuarioRef
-        );
+        const usuarioSnap = await getDoc(usuarioRef);
 
         if (
+          !componenteActivo.current ||
           versionActual !== versionSesion.current
         ) {
           return;
@@ -334,7 +373,7 @@ export default function Index() {
 
         if (!usuarioSnap.exists()) {
           throw new Error(
-            "No se encontró la cuenta en Firestore."
+            "No se encontró tu cuenta en Firestore."
           );
         }
 
@@ -346,181 +385,139 @@ export default function Index() {
           );
         }
 
-        const rol = normalizarRol(
-          datos.rol
-        );
+        const rol = normalizarRol(datos.rol);
 
         if (!esRolValido(rol)) {
           throw new Error(
-            "El usuario no tiene un rol válido."
+            "Tu cuenta no tiene un rol válido."
           );
         }
 
-        const laboratorioId = String(
-          datos.laboratorioId || ""
-        ).trim();
+        const laboratorioId = texto(
+          datos.laboratorioId
+        );
 
         if (
           rol !== "super_admin" &&
           !laboratorioId
         ) {
           throw new Error(
-            "El usuario no tiene un laboratorio asignado."
+            "Tu cuenta no tiene laboratorio asignado."
           );
         }
-
-        // ==========================================
-        // CONSTRUIR USUARIO
-        // ==========================================
 
         const usuarioSistema: UsuarioSistema = {
           id: usuarioSnap.id,
 
-          nombre: String(
-            datos.nombre || ""
-          ).trim(),
+          nombre: texto(
+            datos.nombre || datos.nombres
+          ),
 
-          apellido: String(
-            datos.apellido || ""
-          ).trim(),
+          apellido: texto(
+            datos.apellido || datos.apellidos
+          ),
 
-          email: String(
-            datos.email ||
-            firebaseUser.email ||
-            ""
-          )
-            .trim()
-            .toLowerCase(),
+          email: texto(
+            datos.email || firebaseUser.email
+          ).toLowerCase(),
 
           rol,
-
           laboratorioId,
-
           activo: true,
-
           requiereVerificacionEmail: false,
         };
 
-        if (
-          versionActual !== versionSesion.current
-        ) {
-          return;
-        }
+        // ============================================
+        // PERMISOS
+        // ============================================
 
-        setUsuario(usuarioSistema);
-        setErrorAcceso("");
-
-        // ==========================================
-        // CARGAR PERMISOS
-        // ==========================================
+        let permisosRol: string[] = [];
 
         try {
-          const permisosRol =
-            await obtenerPermisosRol(rol);
+          const respuesta = await obtenerPermisosRol(rol);
 
-          if (
-            versionActual !== versionSesion.current
-          ) {
-            return;
+          if (Array.isArray(respuesta)) {
+            permisosRol = respuesta;
           }
-
-          setPermisos(
-            Array.isArray(permisosRol)
-              ? permisosRol
-              : []
-          );
-        } catch (error) {
-          console.error(
-            "Error consultando permisos:",
-            error
-          );
-
-          if (
-            versionActual === versionSesion.current
-          ) {
-            setPermisos([]);
-          }
+        } catch {
+          permisosRol = [];
         }
 
-        // ==========================================
-        // CARGAR PERSONALIZACIÓN
-        // ==========================================
+        // ============================================
+        // PERSONALIZACIÓN
+        // ============================================
+
+        let identidad:
+          | PersonalizacionLaboratorio
+          | null = null;
 
         if (laboratorioId) {
           try {
-            const identidad =
-              await obtenerPersonalizacion(
-                laboratorioId
-              );
-
-            if (
-              versionActual !== versionSesion.current
-            ) {
-              return;
-            }
-
-            setLaboratorio(identidad);
-          } catch (error) {
-            console.error(
-              "Error de personalización:",
-              error
+            identidad = await obtenerPersonalizacion(
+              laboratorioId
             );
-
-            if (
-              versionActual === versionSesion.current
-            ) {
-              setLaboratorio(null);
-            }
+          } catch {
+            identidad = null;
           }
-        } else {
-          setLaboratorio(null);
         }
 
-        console.log(
-          "Acceso completado:",
-          rol
-        );
-      } catch (error) {
         if (
+          !componenteActivo.current ||
           versionActual !== versionSesion.current
         ) {
           return;
         }
 
-        console.error(
-          "Error cargando usuario:",
-          error
-        );
+        setPermisos(permisosRol);
+        setLaboratorio(identidad);
+        setUsuario(usuarioSistema);
 
-        const mensaje = mensajeError(error);
+        setErrorAcceso("");
+      } catch (error: unknown) {
+        if (
+          !componenteActivo.current ||
+          versionActual !== versionSesion.current
+        ) {
+          return;
+        }
 
+        const mensaje = mensajeSistema(error);
+
+        limpiarSesionLocal();
         setErrorAcceso(mensaje);
 
-        await cerrarSesionInterna();
+        // Cerrar únicamente la sesión no autorizada.
+        // Se conserva el mensaje para el usuario.
 
-        mostrarMensaje(
-          "Error de acceso",
-          mensaje
-        );
+        try {
+          await cerrarSesionFirebase();
+        } catch {
+          // No mostrar errores internos al usuario.
+        }
+
+        if (componenteActivo.current) {
+          setCargando(false);
+        }
       }
     },
-    [cerrarSesionInterna]
+    [limpiarSesionLocal]
   );
 
   // ====================================================
-  // OBSERVAR AUTENTICACIÓN
+  // OBSERVADOR DE AUTENTICACIÓN
   // ====================================================
 
   useEffect(() => {
-    let componenteActivo = true;
+    componenteActivo.current = true;
 
     const cancelar = onAuthStateChanged(
       auth,
+
       async (firebaseUser) => {
         const versionActual =
           ++versionSesion.current;
 
-        if (!componenteActivo) {
+        if (!componenteActivo.current) {
           return;
         }
 
@@ -536,30 +533,42 @@ export default function Index() {
             firebaseUser,
             versionActual
           );
-        } catch (error) {
-          console.error(
-            "Error observando autenticación:",
-            error
-          );
+        } catch {
+          if (componenteActivo.current) {
+            limpiarSesionLocal();
+
+            setErrorAcceso(
+              "No se pudo verificar tu sesión."
+            );
+          }
         } finally {
           if (
-            componenteActivo &&
-            versionActual ===
-              versionSesion.current
-          ) {
-            setCargando(false);
-          } else if (
-            componenteActivo &&
-            !auth.currentUser
+            componenteActivo.current &&
+            (
+              versionActual === versionSesion.current ||
+              !auth.currentUser
+            )
           ) {
             setCargando(false);
           }
+        }
+      },
+
+      () => {
+        if (componenteActivo.current) {
+          limpiarSesionLocal();
+
+          setErrorAcceso(
+            "No se pudo comprobar la sesión actual."
+          );
+
+          setCargando(false);
         }
       }
     );
 
     return () => {
-      componenteActivo = false;
+      componenteActivo.current = false;
       versionSesion.current += 1;
       cancelar();
     };
@@ -573,7 +582,7 @@ export default function Index() {
   // ====================================================
 
   const iniciarSesion = async () => {
-    if (procesando) {
+    if (procesando || cargando) {
       return;
     }
 
@@ -581,25 +590,26 @@ export default function Index() {
       .trim()
       .toLowerCase();
 
-    if (!correo || !password) {
-      mostrarMensaje(
-        "Campos incompletos",
-        "Ingresa tu correo y contraseña."
+    if (!correo) {
+      setErrorAcceso(
+        "Debes ingresar tu correo electrónico."
       );
-
       return;
     }
 
     if (
-      !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(
-        correo
-      )
+      !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(correo)
     ) {
-      mostrarMensaje(
-        "Correo inválido",
+      setErrorAcceso(
         "Ingresa un correo electrónico válido."
       );
+      return;
+    }
 
+    if (!password) {
+      setErrorAcceso(
+        "Debes ingresar tu contraseña."
+      );
       return;
     }
 
@@ -615,66 +625,36 @@ export default function Index() {
 
       setPassword("");
     } catch (error: unknown) {
-      console.error(
-        "Error iniciando sesión:",
-        error
-      );
+      // Errores esperados de autenticación.
+      // No usar console.error aquí.
 
-      let codigo = "";
-
-      if (
-        typeof error === "object" &&
-        error !== null &&
-        "code" in error
-      ) {
-        codigo = String(
-          (error as { code?: string }).code || ""
-        );
-      }
-
-      let mensaje =
-        "No se pudo iniciar sesión.";
-
-      switch (codigo) {
-        case "auth/invalid-credential":
-        case "auth/wrong-password":
-        case "auth/user-not-found":
-          mensaje =
-            "El correo o la contraseña son incorrectos.";
-          break;
-
-        case "auth/invalid-email":
-          mensaje =
-            "El correo electrónico no es válido.";
-          break;
-
-        case "auth/user-disabled":
-          mensaje =
-            "Esta cuenta se encuentra deshabilitada.";
-          break;
-
-        case "auth/too-many-requests":
-          mensaje =
-            "Demasiados intentos. Intenta más tarde.";
-          break;
-
-        case "auth/network-request-failed":
-          mensaje =
-            "No se pudo conectar con Firebase. Revisa Internet.";
-          break;
-
-        default:
-          mensaje = mensajeError(error);
-      }
-
-      setErrorAcceso(mensaje);
-
-      mostrarMensaje(
-        "Error de inicio de sesión",
-        mensaje
+      setErrorAcceso(
+        mensajeAutenticacion(error)
       );
     } finally {
-      setProcesando(false);
+      if (componenteActivo.current) {
+        setProcesando(false);
+      }
+    }
+  };
+
+  // ====================================================
+  // CAMPOS
+  // ====================================================
+
+  const cambiarCorreo = (valor: string) => {
+    setEmail(valor);
+
+    if (errorAcceso) {
+      setErrorAcceso("");
+    }
+  };
+
+  const cambiarPassword = (valor: string) => {
+    setPassword(valor);
+
+    if (errorAcceso) {
+      setErrorAcceso("");
     }
   };
 
@@ -689,7 +669,6 @@ export default function Index() {
 
     try {
       setProcesando(true);
-
       setMostrarCerrarSesion(false);
 
       await cerrarSesionInterna();
@@ -700,18 +679,14 @@ export default function Index() {
       setErrorAcceso("");
 
       router.replace("/");
-    } catch (error) {
-      console.error(
-        "Error cerrando sesión:",
-        error
-      );
-
-      mostrarMensaje(
-        "Error",
+    } catch {
+      setErrorAcceso(
         "No se pudo cerrar la sesión."
       );
     } finally {
-      setProcesando(false);
+      if (componenteActivo.current) {
+        setProcesando(false);
+      }
     }
   };
 
@@ -738,19 +713,7 @@ export default function Index() {
   // ====================================================
 
   const abrirModulo = (ruta: string) => {
-    try {
-      router.push(ruta as never);
-    } catch (error) {
-      console.error(
-        "Error navegando:",
-        error
-      );
-
-      mostrarMensaje(
-        "Error",
-        "No se pudo abrir el módulo."
-      );
-    }
+    router.push(ruta as never);
   };
 
   // ====================================================
@@ -759,11 +722,13 @@ export default function Index() {
 
   const colorPrimario =
     laboratorio?.colorPrimario ||
-    PERSONALIZACION_DEFAULT.colorPrimario;
+    PERSONALIZACION_DEFAULT.colorPrimario ||
+    C.primario;
 
   const colorSecundario =
     laboratorio?.colorSecundario ||
-    PERSONALIZACION_DEFAULT.colorSecundario;
+    PERSONALIZACION_DEFAULT.colorSecundario ||
+    "#60A5FA";
 
   const nombreLaboratorio =
     laboratorio?.nombreVisible ||
@@ -771,7 +736,7 @@ export default function Index() {
     "Laboratorio Clínico";
 
   // ====================================================
-  // OBTENER MÓDULOS DEL DASHBOARD
+  // MÓDULOS DEL DASHBOARD
   // ====================================================
 
   const obtenerModulos = (): ModuloSistema[] => {
@@ -781,9 +746,7 @@ export default function Index() {
 
     const lista: ModuloSistema[] = [];
 
-    const agregar = (
-      modulo: ModuloSistema
-    ) => {
+    const agregar = (modulo: ModuloSistema) => {
       lista.push(modulo);
     };
 
@@ -844,7 +807,9 @@ export default function Index() {
         });
       }
 
-      if (tienePermiso("roles.ver")) {
+      if (
+        tienePermiso("roles.ver")
+      ) {
         agregar({
           icono: "🛡️",
           titulo: "Roles",
@@ -933,16 +898,14 @@ export default function Index() {
     }
 
     // ==================================================
-    // HISTORIAL DE PACIENTES ELIMINADO
+    // HISTORIAL DE PACIENTES
     // ==================================================
+
+    // Se respeta el cambio integrado en develop:
+    // no mostrar el módulo independiente en el Dashboard.
     //
-    // Se ha retirado el módulo independiente
-    // "Historial de pacientes" del Dashboard.
-    //
-    // No se elimina la pantalla de historial
-    // individual ni los datos de Firestore.
-    //
-    // ==================================================
+    // No se modifican la pantalla, Firestore
+    // ni los registros históricos de pacientes.
 
     // ==================================================
     // ANÁLISIS CLÍNICOS
@@ -1019,7 +982,7 @@ export default function Index() {
     }
 
     // ==================================================
-    // RECEPCIONISTA - NOTIFICACIONES
+    // RECEPCIONISTA
     // ==================================================
 
     if (usuario.rol === "recepcionista") {
@@ -1033,15 +996,11 @@ export default function Index() {
         ruta: "/notificaciones-recepcion",
       });
 
-      // ================================================
-      // RESULTADOS Y NOTAS DE VENTA
-      // ================================================
-
       agregar({
         icono: "📄",
         titulo: "Resultados y notas de venta",
         descripcion:
-          "Busca pacientes, consulta los resultados clínicos disponibles y descarga sus notas de venta.",
+          "Busca pacientes, consulta resultados clínicos y descarga sus notas de venta.",
         fondo: "#DCFCE7",
         color: "#00853D",
         ruta: "/resultados-notas-venta",
@@ -1049,7 +1008,7 @@ export default function Index() {
     }
 
     // ==================================================
-    // BIOQUÍMICO - MUESTRAS
+    // BIOQUÍMICO
     // ==================================================
 
     if (usuario.rol === "bioquimico") {
@@ -1105,9 +1064,7 @@ export default function Index() {
     // ==================================================
 
     if (
-      tienePermiso(
-        "auditoria.ver_global"
-      )
+      tienePermiso("auditoria.ver_global")
     ) {
       agregar({
         icono: "📜",
@@ -1132,19 +1089,25 @@ export default function Index() {
       <SafeAreaView style={styles.loadingPage}>
         <StatusBar
           barStyle="dark-content"
-          backgroundColor="#F8FAFC"
+          backgroundColor={C.fondo}
         />
+
+        <View style={styles.loadingIcono}>
+          <Text style={styles.loadingEmoji}>
+            🧪
+          </Text>
+        </View>
 
         <ActivityIndicator
           size="large"
-          color="#2563EB"
+          color={C.primario}
         />
 
-        <Text style={styles.loadingTitle}>
+        <Text style={styles.loadingTitulo}>
           Laboratorio Clínico
         </Text>
 
-        <Text style={styles.loadingText}>
+        <Text style={styles.loadingTexto}>
           Preparando tu espacio de trabajo...
         </Text>
       </SafeAreaView>
@@ -1152,7 +1115,7 @@ export default function Index() {
   }
 
   // ====================================================
-  // LOGIN
+  // INICIO DE SESIÓN
   // ====================================================
 
   if (!usuario) {
@@ -1160,7 +1123,7 @@ export default function Index() {
       <SafeAreaView style={styles.loginPage}>
         <StatusBar
           barStyle="dark-content"
-          backgroundColor="#F8FAFC"
+          backgroundColor={C.fondo}
         />
 
         <KeyboardAvoidingView
@@ -1172,120 +1135,269 @@ export default function Index() {
           }
         >
           <ScrollView
-            contentContainerStyle={
-              styles.loginScroll
-            }
+            contentContainerStyle={[
+              styles.loginScroll,
+              esEscritorio &&
+                styles.loginScrollDesktop,
+            ]}
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
           >
-            <View style={styles.loginBrand}>
-              <View style={styles.brandIcon}>
-                <Text style={styles.brandEmoji}>
-                  🧪
-                </Text>
-              </View>
+            <View
+              style={[
+                styles.loginWrapper,
+                esEscritorio &&
+                  styles.loginWrapperDesktop,
+              ]}
+            >
+              {/* PANEL INSTITUCIONAL */}
 
-              <Text style={styles.brandTitle}>
-                Laboratorio Clínico
-              </Text>
-
-              <Text style={styles.brandSubtitle}>
-                Gestión segura de tu laboratorio
-              </Text>
-            </View>
-
-            <View style={styles.loginCard}>
-              <Text style={styles.loginTitle}>
-                Bienvenido
-              </Text>
-
-              <Text
-                style={styles.loginDescription}
+              <View
+                style={[
+                  styles.panelInstitucional,
+                  esEscritorio &&
+                    styles.panelInstitucionalDesktop,
+                ]}
               >
-                Ingresa con las credenciales
-                de tu cuenta.
-              </Text>
+                <View style={styles.marcaFila}>
+                  <View style={styles.marcaIcono}>
+                    <Text style={styles.marcaEmoji}>
+                      🧪
+                    </Text>
+                  </View>
 
-              <Text style={styles.label}>
-                Correo electrónico
-              </Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.marcaTitulo}>
+                      LABORATORIO CLÍNICO
+                    </Text>
 
-              <TextInput
-                style={styles.input}
-                value={email}
-                onChangeText={setEmail}
-                placeholder="correo@ejemplo.com"
-                placeholderTextColor="#94A3B8"
-                keyboardType="email-address"
-                autoCapitalize="none"
-                autoCorrect={false}
-                editable={!procesando}
-              />
+                    <Text style={styles.marcaSubtitulo}>
+                      SISTEMA DE GESTIÓN
+                    </Text>
+                  </View>
+                </View>
 
-              <Text style={styles.label}>
-                Contraseña
-              </Text>
+                <Text style={styles.presentacionEtiqueta}>
+                  PLATAFORMA CLÍNICA
+                </Text>
 
-              <View style={styles.passwordRow}>
-                <TextInput
-                  style={styles.passwordInput}
-                  value={password}
-                  onChangeText={setPassword}
-                  secureTextEntry={!mostrarPassword}
-                  placeholder="Contraseña"
-                  placeholderTextColor="#94A3B8"
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  editable={!procesando}
-                  onSubmitEditing={iniciarSesion}
-                />
+                <Text style={styles.presentacionTitulo}>
+                  Tu laboratorio,
+                  {"\n"}
+                  más conectado.
+                </Text>
 
-                <Pressable
-                  onPress={() =>
-                    setMostrarPassword(
-                      !mostrarPassword
-                    )
-                  }
-                  disabled={procesando}
-                >
-                  <Text style={styles.showText}>
-                    {mostrarPassword
-                      ? "Ocultar"
-                      : "Ver"}
-                  </Text>
-                </Pressable>
-              </View>
+                <Text style={styles.presentacionTexto}>
+                  Gestiona pacientes, análisis,
+                  resultados clínicos y operaciones
+                  desde una sola plataforma.
+                </Text>
 
-              {errorAcceso !== "" && (
-                <View style={styles.errorBox}>
-                  <Text style={styles.errorText}>
-                    {errorAcceso}
+                <View style={styles.presentacionLinea} />
+
+                <View style={styles.beneficioFila}>
+                  <View style={styles.beneficioMarca}>
+                    <Text style={styles.beneficioMarcaTexto}>
+                      ✓
+                    </Text>
+                  </View>
+
+                  <Text style={styles.beneficioTexto}>
+                    Acceso seguro según roles y permisos
                   </Text>
                 </View>
-              )}
 
-              <Pressable
-                style={[
-                  styles.loginButton,
-                  procesando &&
-                    styles.buttonDisabled,
-                ]}
-                onPress={iniciarSesion}
-                disabled={procesando}
-              >
-                {procesando ? (
-                  <ActivityIndicator
-                    color="#FFFFFF"
-                  />
-                ) : (
-                  <Text
-                    style={styles.loginButtonText}
-                  >
-                    Iniciar sesión
+                <View style={styles.beneficioFila}>
+                  <View style={styles.beneficioMarca}>
+                    <Text style={styles.beneficioMarcaTexto}>
+                      ✓
+                    </Text>
+                  </View>
+
+                  <Text style={styles.beneficioTexto}>
+                    Gestión de pacientes y análisis
                   </Text>
+                </View>
+
+                <View style={styles.beneficioFila}>
+                  <View style={styles.beneficioMarca}>
+                    <Text style={styles.beneficioMarcaTexto}>
+                      ✓
+                    </Text>
+                  </View>
+
+                  <Text style={styles.beneficioTexto}>
+                    Informes y resultados clínicos
+                  </Text>
+                </View>
+              </View>
+
+              {/* FORMULARIO */}
+
+              <View
+                style={[
+                  styles.loginCard,
+                  esEscritorio &&
+                    styles.loginCardDesktop,
+                ]}
+              >
+                <View style={styles.loginBadge}>
+                  <Text style={styles.loginBadgeTexto}>
+                    ACCESO AL SISTEMA
+                  </Text>
+                </View>
+
+                <Text style={styles.loginTitulo}>
+                  Bienvenido
+                </Text>
+
+                <Text style={styles.loginDescripcion}>
+                  Ingresa tus credenciales para
+                  acceder a tu espacio de trabajo.
+                </Text>
+
+                {/* CORREO */}
+
+                <Text style={styles.label}>
+                  Correo electrónico
+                </Text>
+
+                <View style={styles.inputContainer}>
+                  <Text style={styles.inputIcono}>
+                    @
+                  </Text>
+
+                  <TextInput
+                    style={styles.input}
+                    value={email}
+                    onChangeText={cambiarCorreo}
+                    placeholder="correo@laboratorio.com"
+                    placeholderTextColor="#94A3B8"
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    autoComplete="email"
+                    editable={!procesando}
+                    returnKeyType="next"
+                  />
+                </View>
+
+                {/* CONTRASEÑA */}
+
+                <Text style={styles.label}>
+                  Contraseña
+                </Text>
+
+                <View style={styles.inputContainer}>
+                  <Text style={styles.inputIcono}>
+                    ●
+                  </Text>
+
+                  <TextInput
+                    style={styles.passwordInput}
+                    value={password}
+                    onChangeText={cambiarPassword}
+                    placeholder="Ingresa tu contraseña"
+                    placeholderTextColor="#94A3B8"
+                    secureTextEntry={!mostrarPassword}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    editable={!procesando}
+                    returnKeyType="go"
+                    onSubmitEditing={iniciarSesion}
+                  />
+
+                  <Pressable
+                    style={styles.verPassword}
+                    onPress={() =>
+                      setMostrarPassword(
+                        !mostrarPassword
+                      )
+                    }
+                    disabled={procesando}
+                    accessibilityRole="button"
+                    accessibilityLabel={
+                      mostrarPassword
+                        ? "Ocultar contraseña"
+                        : "Mostrar contraseña"
+                    }
+                  >
+                    <Text style={styles.verPasswordTexto}>
+                      {mostrarPassword
+                        ? "Ocultar"
+                        : "Ver"}
+                    </Text>
+                  </Pressable>
+                </View>
+
+                {/* MENSAJES DE ERROR */}
+
+                {errorAcceso !== "" && (
+                  <View
+                    style={styles.errorBox}
+                    accessibilityRole="alert"
+                  >
+                    <View style={styles.errorIcono}>
+                      <Text style={styles.errorIconoTexto}>
+                        !
+                      </Text>
+                    </View>
+
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.errorTitulo}>
+                        No se pudo iniciar sesión
+                      </Text>
+
+                      <Text style={styles.errorTexto}>
+                        {errorAcceso}
+                      </Text>
+                    </View>
+                  </View>
                 )}
-              </Pressable>
+
+                {/* BOTÓN */}
+
+                <Pressable
+                  onPress={iniciarSesion}
+                  disabled={procesando}
+                  accessibilityRole="button"
+                  style={({ pressed }) => [
+                    styles.loginBoton,
+                    pressed &&
+                      styles.loginBotonPresionado,
+                    procesando &&
+                      styles.botonDeshabilitado,
+                  ]}
+                >
+                  {procesando ? (
+                    <View style={styles.botonCargando}>
+                      <ActivityIndicator
+                        size="small"
+                        color="#FFFFFF"
+                      />
+
+                      <Text style={styles.loginBotonTexto}>
+                        Verificando...
+                      </Text>
+                    </View>
+                  ) : (
+                    <Text style={styles.loginBotonTexto}>
+                      Iniciar sesión →
+                    </Text>
+                  )}
+                </Pressable>
+
+                <View style={styles.formularioPie}>
+                  <Text style={styles.formularioPieTexto}>
+                    Acceso exclusivo para personal autorizado
+                  </Text>
+                </View>
+              </View>
             </View>
+
+            <Text style={styles.pieGeneral}>
+              Sistema de Gestión de Laboratorio Clínico
+            </Text>
           </ScrollView>
         </KeyboardAvoidingView>
       </SafeAreaView>
@@ -1293,7 +1405,7 @@ export default function Index() {
   }
 
   // ====================================================
-  // DASHBOARD PRINCIPAL
+  // DASHBOARD
   // ====================================================
 
   const modulos = obtenerModulos();
@@ -1306,14 +1418,10 @@ export default function Index() {
       />
 
       <ScrollView
-        contentContainerStyle={
-          styles.dashboardScroll
-        }
+        contentContainerStyle={styles.dashboardScroll}
         showsVerticalScrollIndicator={false}
       >
-        {/* =========================================== */}
         {/* ENCABEZADO */}
-        {/* =========================================== */}
 
         <View
           style={[
@@ -1325,22 +1433,21 @@ export default function Index() {
         >
           <View
             style={[
-              styles.heroDecoration,
+              styles.heroDecoracion,
               {
-                backgroundColor:
-                  colorSecundario,
+                backgroundColor: colorSecundario,
               },
             ]}
           />
 
-          <View style={styles.heroContent}>
+          <View style={styles.heroContenido}>
             <View style={styles.heroLogo}>
               {laboratorio?.logoUrl ? (
                 <Image
                   source={{
                     uri: laboratorio.logoUrl,
                   }}
-                  style={styles.heroLogoImage}
+                  style={styles.heroLogoImagen}
                   resizeMode="contain"
                 />
               ) : (
@@ -1351,38 +1458,35 @@ export default function Index() {
             </View>
 
             <View style={{ flex: 1 }}>
-              <Text style={styles.heroSmall}>
+              <Text style={styles.heroLaboratorio}>
                 {nombreLaboratorio}
               </Text>
 
-              <Text style={styles.heroTitle}>
+              <Text style={styles.heroTitulo}>
                 Hola, {usuario.nombre || "Usuario"}
               </Text>
 
-              <Text style={styles.heroSubtitle}>
+              <Text style={styles.heroSubtitulo}>
                 {nombreRol(usuario.rol)}
               </Text>
             </View>
           </View>
         </View>
 
-        {/* =========================================== */}
         {/* PERFIL */}
-        {/* =========================================== */}
 
-        <View style={styles.profileCard}>
+        <View style={styles.perfil}>
           <View
             style={[
-              styles.profileAvatar,
+              styles.perfilAvatar,
               {
-                backgroundColor:
-                  `${colorPrimario}18`,
+                backgroundColor: `${colorPrimario}18`,
               },
             ]}
           >
             <Text
               style={[
-                styles.profileLetter,
+                styles.perfilInicial,
                 {
                   color: colorPrimario,
                 },
@@ -1395,17 +1499,17 @@ export default function Index() {
           </View>
 
           <View style={{ flex: 1 }}>
-            <Text style={styles.profileName}>
+            <Text style={styles.perfilNombre}>
               {usuario.nombre} {usuario.apellido}
             </Text>
 
-            <Text style={styles.profileEmail}>
+            <Text style={styles.perfilCorreo}>
               {usuario.email}
             </Text>
 
             <Text
               style={[
-                styles.profileRole,
+                styles.perfilRol,
                 {
                   color: colorPrimario,
                 },
@@ -1416,14 +1520,12 @@ export default function Index() {
           </View>
         </View>
 
-        {/* =========================================== */}
-        {/* TÍTULO */}
-        {/* =========================================== */}
+        {/* MÓDULOS */}
 
-        <View style={styles.sectionHeader}>
+        <View style={styles.seccionTitulo}>
           <Text
             style={[
-              styles.sectionEyebrow,
+              styles.seccionEtiqueta,
               {
                 color: colorPrimario,
               },
@@ -1432,31 +1534,21 @@ export default function Index() {
             ÁREA DE TRABAJO
           </Text>
 
-          <Text style={styles.sectionTitle}>
+          <Text style={styles.seccionNombre}>
             Módulos disponibles
           </Text>
 
-          <Text
-            style={styles.sectionDescription}
-          >
-            Accede a las funciones
-            autorizadas para tu cuenta.
+          <Text style={styles.seccionDescripcion}>
+            Accede a las funciones autorizadas
+            para tu cuenta.
           </Text>
         </View>
 
-        {/* =========================================== */}
-        {/* MÓDULOS */}
-        {/* =========================================== */}
-
-        <View style={styles.modules}>
+        <View style={styles.modulos}>
           {modulos.map((modulo) => (
             <Modulo
               key={modulo.ruta}
-              icono={modulo.icono}
-              titulo={modulo.titulo}
-              descripcion={modulo.descripcion}
-              fondo={modulo.fondo}
-              color={modulo.color}
+              modulo={modulo}
               onPress={() =>
                 abrirModulo(modulo.ruta)
               }
@@ -1465,60 +1557,51 @@ export default function Index() {
 
           {modulos.length === 0 && (
             <View style={styles.sinModulos}>
-              <Text
-                style={styles.sinModulosTitulo}
-              >
+              <Text style={styles.sinModulosTitulo}>
                 No hay módulos disponibles
               </Text>
 
-              <Text
-                style={styles.sinModulosTexto}
-              >
+              <Text style={styles.sinModulosTexto}>
                 Tu cuenta inició sesión,
-                pero no se pudieron cargar
-                los permisos necesarios
-                para mostrar los módulos.
+                pero no se pudieron cargar los permisos
+                necesarios para mostrar los módulos.
               </Text>
             </View>
           )}
         </View>
 
-        {/* =========================================== */}
-        {/* SESIÓN ACTIVA */}
-        {/* =========================================== */}
+        {/* SESIÓN */}
 
-        <View style={styles.sessionCard}>
+        <View style={styles.sesion}>
           <View style={{ flex: 1 }}>
-            <Text style={styles.sessionTitle}>
+            <Text style={styles.sesionTitulo}>
               ● Sesión activa
             </Text>
 
-            <Text style={styles.sessionEmail}>
+            <Text style={styles.sesionCorreo}>
               {usuario.email}
             </Text>
           </View>
 
           <Pressable
             style={[
-              styles.logoutButton,
+              styles.cerrarBoton,
               procesando &&
-                styles.buttonDisabled,
+                styles.botonDeshabilitado,
             ]}
             onPress={() =>
               setMostrarCerrarSesion(true)
             }
             disabled={procesando}
           >
-            <Text style={styles.logoutText}>
+            <Text style={styles.cerrarTexto}>
               Cerrar sesión
             </Text>
           </Pressable>
         </View>
       </ScrollView>
 
-      {/* ============================================= */}
-      {/* MODAL CERRAR SESIÓN */}
-      {/* ============================================= */}
+      {/* MODAL DE CIERRE DE SESIÓN */}
 
       <Modal
         visible={mostrarCerrarSesion}
@@ -1528,41 +1611,37 @@ export default function Index() {
           setMostrarCerrarSesion(false)
         }
       >
-        <View style={styles.logoutOverlay}>
-          <View style={styles.logoutModal}>
-            <View style={styles.logoutIcon}>
-              <Text style={{ fontSize: 25 }}>
+        <View style={styles.modalFondo}>
+          <View style={styles.modalTarjeta}>
+            <View style={styles.modalIcono}>
+              <Text style={styles.modalEmoji}>
                 ↪
               </Text>
             </View>
 
-            <Text style={styles.logoutTitle}>
+            <Text style={styles.modalTitulo}>
               Cerrar sesión
             </Text>
 
-            <Text
-              style={styles.logoutDescription}
-            >
+            <Text style={styles.modalDescripcion}>
               ¿Deseas cerrar tu sesión actual?
             </Text>
 
-            <View style={styles.logoutActions}>
+            <View style={styles.modalAcciones}>
               <Pressable
-                style={styles.cancelLogout}
+                style={styles.modalCancelar}
                 onPress={() =>
                   setMostrarCerrarSesion(false)
                 }
                 disabled={procesando}
               >
-                <Text
-                  style={styles.cancelLogoutText}
-                >
+                <Text style={styles.modalCancelarTexto}>
                   Cancelar
                 </Text>
               </Pressable>
 
               <Pressable
-                style={styles.confirmLogout}
+                style={styles.modalConfirmar}
                 onPress={ejecutarCerrarSesion}
                 disabled={procesando}
               >
@@ -1571,9 +1650,7 @@ export default function Index() {
                     color="#FFFFFF"
                   />
                 ) : (
-                  <Text
-                    style={styles.confirmLogoutText}
-                  >
+                  <Text style={styles.modalConfirmarTexto}>
                     Cerrar sesión
                   </Text>
                 )}
@@ -1591,196 +1668,389 @@ export default function Index() {
 // ======================================================
 
 const styles = StyleSheet.create({
-  // ====================================================
   // CARGA
-  // ====================================================
 
   loadingPage: {
     flex: 1,
-    backgroundColor: "#F8FAFC",
+    backgroundColor: C.fondo,
     justifyContent: "center",
     alignItems: "center",
     padding: 24,
   },
 
-  loadingTitle: {
+  loadingIcono: {
+    width: 80,
+    height: 80,
+    borderRadius: 22,
+    backgroundColor: "#DBEAFE",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 20,
+  },
+
+  loadingEmoji: {
+    fontSize: 40,
+  },
+
+  loadingTitulo: {
     marginTop: 20,
     fontSize: 23,
     fontWeight: "800",
-    color: "#0F172A",
+    color: C.texto,
   },
 
-  loadingText: {
+  loadingTexto: {
     marginTop: 8,
     fontSize: 14,
-    color: "#64748B",
+    color: C.secundario,
     textAlign: "center",
   },
 
-  // ====================================================
   // LOGIN
-  // ====================================================
 
   loginPage: {
     flex: 1,
-    backgroundColor: "#F8FAFC",
+    backgroundColor: C.fondo,
   },
 
   loginScroll: {
     flexGrow: 1,
     justifyContent: "center",
     alignItems: "center",
-    paddingHorizontal: 20,
-    paddingVertical: 40,
+    paddingHorizontal: 18,
+    paddingVertical: 30,
   },
 
-  loginBrand: {
+  loginScrollDesktop: {
+    paddingHorizontal: 30,
+    paddingVertical: 45,
+  },
+
+  loginWrapper: {
+    width: "100%",
+    maxWidth: 480,
+  },
+
+  loginWrapperDesktop: {
+    maxWidth: 1100,
+    flexDirection: "row",
+    alignItems: "stretch",
+    justifyContent: "center",
+  },
+
+  // PANEL INSTITUCIONAL
+
+  panelInstitucional: {
+    backgroundColor: C.primarioOscuro,
+    borderRadius: 20,
+    padding: 27,
+    marginBottom: 16,
+    overflow: "hidden",
+  },
+
+  panelInstitucionalDesktop: {
+    width: "52%",
+    borderTopRightRadius: 0,
+    borderBottomRightRadius: 0,
+    marginBottom: 0,
+    padding: 42,
+    justifyContent: "center",
+  },
+
+  marcaFila: {
+    flexDirection: "row",
     alignItems: "center",
-    marginBottom: 30,
+    marginBottom: 35,
   },
 
-  brandIcon: {
-    width: 85,
-    height: 85,
-    borderRadius: 24,
-    backgroundColor: "#DBEAFE",
+  marcaIcono: {
+    width: 46,
+    height: 46,
+    borderRadius: 13,
+    backgroundColor: "rgba(255,255,255,0.17)",
     alignItems: "center",
     justifyContent: "center",
+    marginRight: 12,
+  },
+
+  marcaEmoji: {
+    fontSize: 25,
+  },
+
+  marcaTitulo: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontWeight: "900",
+    letterSpacing: 0.8,
+  },
+
+  marcaSubtitulo: {
+    color: "#BFDBFE",
+    fontSize: 10,
+    fontWeight: "700",
+    letterSpacing: 1,
+    marginTop: 5,
+  },
+
+  presentacionEtiqueta: {
+    color: "#BFDBFE",
+    fontSize: 10,
+    fontWeight: "900",
+    letterSpacing: 1.4,
+    marginBottom: 15,
+  },
+
+  presentacionTitulo: {
+    color: "#FFFFFF",
+    fontSize: 35,
+    fontWeight: "900",
+    lineHeight: 43,
     marginBottom: 18,
   },
 
-  brandEmoji: {
-    fontSize: 43,
-  },
-
-  brandTitle: {
-    fontSize: 27,
-    fontWeight: "800",
-    color: "#0F172A",
-    textAlign: "center",
-  },
-
-  brandSubtitle: {
+  presentacionTexto: {
+    color: "#DBEAFE",
     fontSize: 14,
-    color: "#64748B",
-    marginTop: 8,
-    textAlign: "center",
+    lineHeight: 23,
+    maxWidth: 390,
   },
+
+  presentacionLinea: {
+    height: 1,
+    backgroundColor: "rgba(255,255,255,0.2)",
+    marginVertical: 28,
+  },
+
+  beneficioFila: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 16,
+  },
+
+  beneficioMarca: {
+    width: 22,
+    height: 22,
+    backgroundColor: "rgba(255,255,255,0.16)",
+    borderRadius: 7,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 11,
+  },
+
+  beneficioMarcaTexto: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontWeight: "900",
+  },
+
+  beneficioTexto: {
+    color: "#E0F2FE",
+    fontSize: 13,
+    flex: 1,
+  },
+
+  // FORMULARIO
 
   loginCard: {
     width: "100%",
-    maxWidth: 430,
-    backgroundColor: "#FFFFFF",
+    backgroundColor: C.blanco,
     borderRadius: 20,
-    padding: 26,
+    padding: 27,
     borderWidth: 1,
-    borderColor: "#E2E8F0",
+    borderColor: C.borde,
     elevation: 3,
-    shadowColor: "#000000",
+    shadowColor: "#0F172A",
     shadowOffset: {
       width: 0,
-      height: 5,
+      height: 8,
     },
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
+    shadowOpacity: 0.06,
+    shadowRadius: 20,
   },
 
-  loginTitle: {
-    fontSize: 24,
-    fontWeight: "800",
-    color: "#0F172A",
-    textAlign: "center",
+  loginCardDesktop: {
+    flex: 1,
+    borderTopLeftRadius: 0,
+    borderBottomLeftRadius: 0,
+    justifyContent: "center",
+    padding: 40,
   },
 
-  loginDescription: {
-    fontSize: 14,
-    color: "#64748B",
-    textAlign: "center",
-    marginTop: 8,
-    marginBottom: 28,
+  loginBadge: {
+    alignSelf: "flex-start",
+    backgroundColor: "#EFF6FF",
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginBottom: 25,
+  },
+
+  loginBadgeTexto: {
+    color: C.primario,
+    fontSize: 10,
+    fontWeight: "900",
+    letterSpacing: 1,
+  },
+
+  loginTitulo: {
+    fontSize: 29,
+    fontWeight: "900",
+    color: C.texto,
+  },
+
+  loginDescripcion: {
+    fontSize: 13,
+    color: C.secundario,
+    marginTop: 9,
+    marginBottom: 30,
     lineHeight: 21,
   },
 
   label: {
-    fontSize: 14,
-    fontWeight: "700",
+    fontSize: 13,
+    fontWeight: "800",
     color: "#334155",
     marginBottom: 9,
   },
 
-  input: {
-    height: 51,
+  inputContainer: {
     borderWidth: 1,
-    borderColor: "#CBD5E1",
-    borderRadius: 10,
-    paddingHorizontal: 15,
-    fontSize: 15,
-    color: "#0F172A",
-    backgroundColor: "#FFFFFF",
-    marginBottom: 20,
-  },
-
-  passwordRow: {
-    height: 51,
-    borderWidth: 1,
-    borderColor: "#CBD5E1",
-    borderRadius: 10,
+    borderColor: "#D7E1ED",
+    borderRadius: 11,
+    minHeight: 54,
+    paddingHorizontal: 13,
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 14,
-    marginBottom: 23,
+    backgroundColor: "#FAFCFF",
+    marginBottom: 22,
+  },
+
+  inputIcono: {
+    color: C.secundario,
+    fontSize: 15,
+    fontWeight: "900",
+    marginRight: 11,
+  },
+
+  input: {
+    flex: 1,
+    minHeight: 52,
+    color: C.texto,
+    fontSize: 14,
   },
 
   passwordInput: {
     flex: 1,
-    fontSize: 15,
-    color: "#0F172A",
-    height: "100%",
+    minHeight: 52,
+    color: C.texto,
+    fontSize: 14,
   },
 
-  showText: {
-    color: "#2563EB",
-    fontSize: 13,
-    fontWeight: "700",
-    marginLeft: 10,
+  verPassword: {
+    paddingVertical: 10,
+    paddingLeft: 8,
   },
 
-  loginButton: {
-    backgroundColor: "#2563EB",
-    height: 53,
-    borderRadius: 11,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  loginButtonText: {
-    color: "#FFFFFF",
-    fontSize: 16,
+  verPasswordTexto: {
+    color: C.primario,
+    fontSize: 12,
     fontWeight: "800",
   },
 
-  buttonDisabled: {
-    opacity: 0.6,
-  },
+  // ERROR
 
   errorBox: {
-    padding: 12,
-    backgroundColor: "#FEF2F2",
+    backgroundColor: C.errorFondo,
     borderWidth: 1,
-    borderColor: "#FECACA",
-    borderRadius: 9,
-    marginBottom: 18,
+    borderColor: "#FECDD3",
+    borderRadius: 11,
+    padding: 13,
+    flexDirection: "row",
+    alignItems: "flex-start",
+    marginBottom: 20,
   },
 
-  errorText: {
-    color: "#B91C1C",
-    fontSize: 13,
+  errorIcono: {
+    width: 23,
+    height: 23,
+    borderRadius: 12,
+    backgroundColor: "#FEE2E2",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 11,
+  },
+
+  errorIconoTexto: {
+    color: "#DC2626",
+    fontSize: 14,
+    fontWeight: "900",
+  },
+
+  errorTitulo: {
+    fontSize: 12,
+    fontWeight: "900",
+    color: C.error,
+    marginBottom: 4,
+  },
+
+  errorTexto: {
+    color: C.error,
+    fontSize: 12,
     lineHeight: 19,
   },
 
-  // ====================================================
+  // BOTÓN
+
+  loginBoton: {
+    backgroundColor: C.primario,
+    minHeight: 54,
+    borderRadius: 11,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+
+  loginBotonPresionado: {
+    backgroundColor: C.primarioOscuro,
+  },
+
+  loginBotonTexto: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    fontWeight: "900",
+  },
+
+  botonDeshabilitado: {
+    opacity: 0.6,
+  },
+
+  botonCargando: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+
+  formularioPie: {
+    marginTop: 25,
+    paddingTop: 18,
+    borderTopWidth: 1,
+    borderTopColor: "#EDF2F7",
+    alignItems: "center",
+  },
+
+  formularioPieTexto: {
+    color: "#94A3B8",
+    fontSize: 11,
+    textAlign: "center",
+  },
+
+  pieGeneral: {
+    marginTop: 25,
+    color: "#94A3B8",
+    fontSize: 11,
+    textAlign: "center",
+  },
+
   // DASHBOARD
-  // ====================================================
 
   dashboardPage: {
     flex: 1,
@@ -1800,7 +2070,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
 
-  heroDecoration: {
+  heroDecoracion: {
     position: "absolute",
     width: 240,
     height: 240,
@@ -1810,7 +2080,7 @@ const styles = StyleSheet.create({
     opacity: 0.3,
   },
 
-  heroContent: {
+  heroContenido: {
     flexDirection: "row",
     alignItems: "center",
   },
@@ -1826,7 +2096,7 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
 
-  heroLogoImage: {
+  heroLogoImagen: {
     width: 56,
     height: 56,
   },
@@ -1835,31 +2105,29 @@ const styles = StyleSheet.create({
     fontSize: 33,
   },
 
-  heroSmall: {
+  heroLaboratorio: {
     color: "#DBEAFE",
     fontSize: 13,
     fontWeight: "600",
     marginBottom: 5,
   },
 
-  heroTitle: {
+  heroTitulo: {
     color: "#FFFFFF",
     fontSize: 25,
     fontWeight: "800",
   },
 
-  heroSubtitle: {
+  heroSubtitulo: {
     color: "#E0F2FE",
     fontSize: 14,
     marginTop: 6,
     fontWeight: "600",
   },
 
-  // ====================================================
   // PERFIL
-  // ====================================================
 
-  profileCard: {
+  perfil: {
     backgroundColor: "#FFFFFF",
     borderRadius: 16,
     padding: 18,
@@ -1870,16 +2138,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#E2E8F0",
     elevation: 2,
-    shadowColor: "#000000",
-    shadowOffset: {
-      width: 0,
-      height: 3,
-    },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
   },
 
-  profileAvatar: {
+  perfilAvatar: {
     width: 54,
     height: 54,
     borderRadius: 15,
@@ -1888,64 +2149,58 @@ const styles = StyleSheet.create({
     marginRight: 14,
   },
 
-  profileLetter: {
+  perfilInicial: {
     fontSize: 25,
     fontWeight: "800",
   },
 
-  profileName: {
+  perfilNombre: {
     fontSize: 16,
     fontWeight: "800",
     color: "#0F172A",
   },
 
-  profileEmail: {
+  perfilCorreo: {
     fontSize: 12,
-    color: "#64748B",
+    color: C.secundario,
     marginTop: 4,
   },
 
-  profileRole: {
+  perfilRol: {
     fontSize: 12,
     fontWeight: "700",
     marginTop: 6,
   },
 
-  // ====================================================
-  // SECCIÓN
-  // ====================================================
+  // MÓDULOS
 
-  sectionHeader: {
+  seccionTitulo: {
     paddingHorizontal: 21,
     paddingTop: 30,
     paddingBottom: 18,
   },
 
-  sectionEyebrow: {
+  seccionEtiqueta: {
     fontSize: 11,
     fontWeight: "800",
     letterSpacing: 1.5,
     marginBottom: 7,
   },
 
-  sectionTitle: {
+  seccionNombre: {
     fontSize: 23,
     fontWeight: "800",
     color: "#0F172A",
   },
 
-  sectionDescription: {
+  seccionDescripcion: {
     fontSize: 13,
-    color: "#64748B",
+    color: C.secundario,
     marginTop: 7,
     lineHeight: 20,
   },
 
-  // ====================================================
-  // MÓDULOS
-  // ====================================================
-
-  modules: {
+  modulos: {
     paddingHorizontal: 18,
   },
 
@@ -1959,13 +2214,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#E2E8F0",
     elevation: 1,
-    shadowColor: "#000000",
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.04,
-    shadowRadius: 5,
   },
 
   moduloPresionado: {
@@ -1998,7 +2246,7 @@ const styles = StyleSheet.create({
 
   moduloDescripcion: {
     fontSize: 12,
-    color: "#64748B",
+    color: C.secundario,
     lineHeight: 18,
   },
 
@@ -2026,17 +2274,15 @@ const styles = StyleSheet.create({
 
   sinModulosTexto: {
     fontSize: 13,
-    color: "#64748B",
+    color: C.secundario,
     textAlign: "center",
     marginTop: 10,
     lineHeight: 20,
   },
 
-  // ====================================================
   // SESIÓN
-  // ====================================================
 
-  sessionCard: {
+  sesion: {
     backgroundColor: "#FFFFFF",
     marginHorizontal: 18,
     marginTop: 22,
@@ -2048,19 +2294,19 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
 
-  sessionTitle: {
+  sesionTitulo: {
     fontSize: 14,
     fontWeight: "800",
-    color: "#16A34A",
+    color: C.verde,
   },
 
-  sessionEmail: {
+  sesionCorreo: {
     fontSize: 12,
-    color: "#64748B",
+    color: C.secundario,
     marginTop: 6,
   },
 
-  logoutButton: {
+  cerrarBoton: {
     backgroundColor: "#FEE2E2",
     paddingHorizontal: 15,
     paddingVertical: 12,
@@ -2068,17 +2314,15 @@ const styles = StyleSheet.create({
     marginLeft: 10,
   },
 
-  logoutText: {
+  cerrarTexto: {
     fontSize: 12,
     fontWeight: "800",
-    color: "#B91C1C",
+    color: C.error,
   },
 
-  // ====================================================
-  // MODAL CERRAR SESIÓN
-  // ====================================================
+  // MODAL
 
-  logoutOverlay: {
+  modalFondo: {
     flex: 1,
     backgroundColor: "rgba(15,23,42,0.55)",
     justifyContent: "center",
@@ -2086,7 +2330,7 @@ const styles = StyleSheet.create({
     padding: 22,
   },
 
-  logoutModal: {
+  modalTarjeta: {
     width: "100%",
     maxWidth: 390,
     backgroundColor: "#FFFFFF",
@@ -2095,7 +2339,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
 
-  logoutIcon: {
+  modalIcono: {
     width: 65,
     height: 65,
     borderRadius: 33,
@@ -2105,26 +2349,30 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
 
-  logoutTitle: {
+  modalEmoji: {
+    fontSize: 25,
+  },
+
+  modalTitulo: {
     fontSize: 22,
     fontWeight: "800",
     color: "#0F172A",
   },
 
-  logoutDescription: {
+  modalDescripcion: {
     fontSize: 14,
-    color: "#64748B",
+    color: C.secundario,
     textAlign: "center",
     marginTop: 10,
     marginBottom: 25,
   },
 
-  logoutActions: {
+  modalAcciones: {
     flexDirection: "row",
     width: "100%",
   },
 
-  cancelLogout: {
+  modalCancelar: {
     flex: 1,
     paddingVertical: 14,
     backgroundColor: "#F1F5F9",
@@ -2133,13 +2381,13 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
 
-  cancelLogoutText: {
+  modalCancelarTexto: {
     fontSize: 14,
     fontWeight: "800",
     color: "#475569",
   },
 
-  confirmLogout: {
+  modalConfirmar: {
     flex: 1,
     paddingVertical: 14,
     backgroundColor: "#DC2626",
@@ -2148,7 +2396,7 @@ const styles = StyleSheet.create({
     marginLeft: 8,
   },
 
-  confirmLogoutText: {
+  modalConfirmarTexto: {
     fontSize: 14,
     fontWeight: "800",
     color: "#FFFFFF",
