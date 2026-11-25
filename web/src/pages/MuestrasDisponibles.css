@@ -1,0 +1,809 @@
+/* ======================================================
+   LABORATORIO CLÍNICO
+   MÓDULO RESULTADOS
+   MUESTRAS DISPONIBLES
+   DISEÑO CLINICAL PREMIUM
+====================================================== */
+
+/* ======================================================
+   VARIABLES Y CONTENEDOR
+====================================================== */
+
+.md-page {
+  --md-primary: #15385f;
+  --md-primary-dark: #102b4b;
+  --md-blue: #2563eb;
+  --md-cyan: #0891b2;
+  --md-green: #059669;
+
+  --md-background: #f3f7fc;
+  --md-white: #ffffff;
+
+  --md-border: #e1e9f3;
+  --md-text: #172b4d;
+  --md-muted: #6b7f99;
+
+  width: 100%;
+  min-height: 100vh;
+
+  padding: 30px;
+
+  background:
+    radial-gradient(
+      circle at 95% 5%,
+      rgba(37, 99, 235, 0.045),
+      transparent 30%
+    ),
+    #f3f7fc;
+
+  font-family:
+    Inter,
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    sans-serif;
+
+  color: var(--md-text);
+}
+
+.md-page *,
+.md-page *::before,
+.md-page *::after {
+  box-sizing: border-box;
+}
+
+/* ======================================================
+   ENCABEZADO
+====================================================== */
+
+.md-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+
+  gap: 20px;
+
+  margin-bottom: 24px;
+  padding: 28px 30px;
+
+  background: #ffffff;
+
+  border: 1px solid var(--md-border);
+  border-radius: 20px;
+
+  box-shadow:
+    0 8px 25px rgba(15, 38, 68, 0.035);
+
+  position: relative;
+  overflow: hidden;
+}
+
+.md-heading::before {
+  content: "";
+
+  position: absolute;
+  left: 0;
+  top: 0;
+
+  width: 5px;
+  height: 100%;
+
+  background: linear-gradient(
+    180deg,
+    #2563eb,
+    #0891b2,
+    #14b8a6
+  );
+}
+
+.md-heading-content {
+  min-width: 0;
+}
+
+.md-eyebrow {
+  display: inline-block;
+
+  margin-bottom: 9px;
+
+  font-size: 10px;
+  font-weight: 800;
+
+  letter-spacing: 1.6px;
+
+  color: #0891b2;
+}
+
+.md-heading h1 {
+  margin: 0 0 10px;
+
+  color: #102b4b;
+
+  font-size: clamp(25px, 2.5vw, 33px);
+  font-weight: 800;
+
+  letter-spacing: -0.7px;
+  line-height: 1.2;
+}
+
+.md-heading p {
+  margin: 0;
+
+  color: #687e9a;
+
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+/* ======================================================
+   BOTÓN VOLVER
+====================================================== */
+
+.md-back {
+  min-width: 100px;
+
+  padding: 13px 20px;
+
+  border: none;
+  border-radius: 11px;
+
+  background: linear-gradient(
+    135deg,
+    #19385f,
+    #102b4b
+  );
+
+  color: #ffffff;
+
+  font-size: 12px;
+  font-weight: 700;
+
+  cursor: pointer;
+
+  transition: all 0.25s ease;
+}
+
+.md-back:hover {
+  transform: translateY(-2px);
+
+  box-shadow:
+    0 8px 18px rgba(25, 56, 95, 0.18);
+}
+
+/* ======================================================
+   TARJETAS PRINCIPALES
+====================================================== */
+
+.md-box {
+  background: #ffffff;
+
+  border: 1px solid var(--md-border);
+  border-radius: 20px;
+
+  padding: 28px;
+
+  margin-bottom: 22px;
+
+  box-shadow:
+    0 5px 22px rgba(15, 38, 68, 0.025);
+}
+
+/* ======================================================
+   ENCABEZADOS DE SECCIONES
+====================================================== */
+
+.md-search-heading,
+.md-results-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+
+  flex-wrap: wrap;
+  gap: 15px;
+
+  margin-bottom: 22px;
+}
+
+.md-section-label {
+  display: block;
+
+  margin-bottom: 6px;
+
+  color: #0891b2;
+
+  font-size: 10px;
+  font-weight: 800;
+
+  letter-spacing: 1.3px;
+}
+
+.md-search-heading h2,
+.md-results-heading h2 {
+  margin: 0 0 5px;
+
+  color: #15385f;
+
+  font-size: 20px;
+  font-weight: 800;
+
+  letter-spacing: -0.4px;
+}
+
+.md-search-heading p,
+.md-results-heading p {
+  margin: 0;
+
+  color: #71849d;
+
+  font-size: 12px;
+}
+
+.md-counter,
+.md-total {
+  display: inline-flex;
+  align-items: center;
+
+  padding: 9px 13px;
+
+  background: #edf5ff;
+
+  border: 1px solid #dce9fa;
+  border-radius: 9px;
+
+  color: #2563eb;
+
+  font-size: 12px;
+  font-weight: 700;
+}
+
+/* ======================================================
+   BUSCADOR
+====================================================== */
+
+.md-search-container {
+  width: 100%;
+}
+
+.md-search-container input {
+  width: 100%;
+  min-height: 52px;
+
+  padding: 14px 18px;
+
+  background: #fbfdff;
+
+  border: 1px solid #d2deec;
+  border-radius: 12px;
+
+  color: #19385f;
+
+  font-family: inherit;
+  font-size: 13px;
+
+  outline: none;
+
+  transition: all 0.25s ease;
+}
+
+.md-search-container input::placeholder {
+  color: #91a2ba;
+}
+
+.md-search-container input:focus {
+  background: #ffffff;
+
+  border-color: #2563eb;
+
+  box-shadow:
+    0 0 0 4px rgba(37, 99, 235, 0.08);
+}
+
+/* ======================================================
+   ACCIONES DEL BUSCADOR
+====================================================== */
+
+.md-search-actions {
+  display: flex;
+  align-items: center;
+
+  flex-wrap: wrap;
+  gap: 12px;
+
+  margin-top: 18px;
+}
+
+.md-refresh {
+  min-height: 43px;
+
+  padding: 11px 19px;
+
+  background: #e6eff9;
+
+  border: 1px solid #d4e3f3;
+  border-radius: 10px;
+
+  color: #19385f;
+
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+
+  cursor: pointer;
+
+  transition: all 0.25s ease;
+}
+
+.md-refresh:hover:not(:disabled) {
+  background: #d9e9fa;
+
+  transform: translateY(-1px);
+}
+
+.md-refresh:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.md-clear {
+  min-height: 43px;
+
+  padding: 11px 19px;
+
+  background: #ffffff;
+
+  border: 1px solid #dce5f0;
+  border-radius: 10px;
+
+  color: #526987;
+
+  font-size: 12px;
+  font-weight: 700;
+
+  cursor: pointer;
+}
+
+.md-clear:hover {
+  background: #f4f7fb;
+}
+
+/* ======================================================
+   LISTADO
+====================================================== */
+
+.md-list {
+  display: flex;
+  flex-direction: column;
+
+  gap: 16px;
+}
+
+/* ======================================================
+   TARJETAS DE MUESTRAS
+====================================================== */
+
+.md-sample {
+  position: relative;
+
+  padding: 24px;
+
+  background: #ffffff;
+
+  border: 1px solid #e0e9f4;
+  border-radius: 16px;
+
+  box-shadow:
+    0 3px 12px rgba(15, 38, 68, 0.025);
+
+  transition:
+    transform 0.25s ease,
+    box-shadow 0.25s ease,
+    border-color 0.25s ease;
+
+  overflow: hidden;
+}
+
+.md-sample::before {
+  content: "";
+
+  position: absolute;
+
+  top: 20px;
+  bottom: 20px;
+  left: 0;
+
+  width: 4px;
+
+  background: linear-gradient(
+    180deg,
+    #2563eb,
+    #0891b2
+  );
+
+  border-radius: 0 5px 5px 0;
+}
+
+.md-sample:hover {
+  transform: translateY(-3px);
+
+  border-color: #bfd3e9;
+
+  box-shadow:
+    0 12px 30px rgba(15, 38, 68, 0.065);
+}
+
+/* ======================================================
+   CABECERA DE CADA MUESTRA
+====================================================== */
+
+.md-sample-header {
+  display: flex;
+  align-items: center;
+
+  gap: 14px;
+
+  padding-bottom: 18px;
+  margin-bottom: 19px;
+
+  border-bottom: 1px solid #edf2f8;
+}
+
+.md-sample-icon {
+  display: grid;
+  place-items: center;
+
+  flex-shrink: 0;
+
+  width: 46px;
+  height: 46px;
+
+  background: #e9f3ff;
+
+  border-radius: 13px;
+
+  color: #2563eb;
+
+  font-size: 25px;
+  font-weight: 700;
+}
+
+.md-sample-title {
+  flex: 1;
+  min-width: 0;
+}
+
+.md-sample-label {
+  display: block;
+
+  margin-bottom: 4px;
+
+  color: #8ba0b8;
+
+  font-size: 10px;
+  font-weight: 800;
+
+  letter-spacing: 1px;
+}
+
+.md-sample-title h3 {
+  margin: 0;
+
+  color: #15385f;
+
+  font-size: 17px;
+  font-weight: 800;
+
+  overflow-wrap: anywhere;
+}
+
+/* ======================================================
+   ESTADO
+====================================================== */
+
+.md-status {
+  display: inline-flex;
+  align-items: center;
+
+  padding: 8px 13px;
+
+  background: #eafaf3;
+
+  border: 1px solid #ccefe1;
+  border-radius: 30px;
+
+  color: #059669;
+
+  font-size: 11px;
+  font-weight: 800;
+}
+
+/* ======================================================
+   INFORMACIÓN DE LA MUESTRA
+====================================================== */
+
+.md-sample-grid {
+  display: grid;
+
+  grid-template-columns:
+    repeat(2, minmax(0, 1fr));
+
+  gap: 20px 25px;
+}
+
+.md-data {
+  display: flex;
+  flex-direction: column;
+
+  gap: 5px;
+
+  min-width: 0;
+}
+
+.md-data span {
+  color: #8395ad;
+
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.md-data strong {
+  color: #263f60;
+
+  font-size: 13px;
+  font-weight: 700;
+
+  overflow-wrap: anywhere;
+}
+
+/* ======================================================
+   PIE DE TARJETA
+====================================================== */
+
+.md-sample-footer {
+  display: flex;
+  align-items: center;
+
+  flex-wrap: wrap;
+  gap: 7px;
+
+  margin-top: 22px;
+  padding-top: 15px;
+
+  border-top: 1px solid #edf2f8;
+
+  color: #69809c;
+
+  font-size: 12px;
+}
+
+.md-sample-footer strong {
+  color: #059669;
+  font-weight: 800;
+}
+
+.md-status-dot {
+  display: inline-block;
+
+  width: 8px;
+  height: 8px;
+
+  border-radius: 50%;
+
+  background: #059669;
+
+  box-shadow:
+    0 0 0 4px rgba(5, 150, 105, 0.09);
+}
+
+/* ======================================================
+   ESTADO VACÍO
+====================================================== */
+
+.md-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+
+  min-height: 220px;
+
+  padding: 35px 20px;
+
+  background: #f9fbfe;
+
+  border: 1px dashed #d5e1ef;
+  border-radius: 15px;
+
+  text-align: center;
+}
+
+.md-empty-icon {
+  display: grid;
+  place-items: center;
+
+  width: 55px;
+  height: 55px;
+
+  margin-bottom: 14px;
+
+  background: #e9f3ff;
+
+  border-radius: 15px;
+
+  color: #2563eb;
+
+  font-size: 27px;
+  font-weight: 800;
+}
+
+.md-empty h3 {
+  margin: 0 0 9px;
+
+  color: #15385f;
+
+  font-size: 16px;
+}
+
+.md-empty p {
+  max-width: 400px;
+
+  margin: 0;
+
+  color: #7c90aa;
+
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+/* ======================================================
+   SPINNER
+====================================================== */
+
+.md-spinner {
+  width: 38px;
+  height: 38px;
+
+  margin-bottom: 17px;
+
+  border: 3px solid #dce9f9;
+  border-top-color: #2563eb;
+
+  border-radius: 50%;
+
+  animation: mdGirar 0.8s linear infinite;
+}
+
+@keyframes mdGirar {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ======================================================
+   MENSAJES DE ERROR
+====================================================== */
+
+.md-error {
+  margin-bottom: 20px;
+
+  padding: 15px 19px;
+
+  background: #fff1f2;
+
+  border: 1px solid #fecdd3;
+  border-left: 4px solid #dc2626;
+  border-radius: 12px;
+
+  color: #be123c;
+
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* ======================================================
+   ACCESIBILIDAD
+====================================================== */
+
+.md-page button:focus-visible,
+.md-page input:focus-visible {
+  outline: 3px solid rgba(37, 99, 235, 0.3);
+  outline-offset: 2px;
+}
+
+/* ======================================================
+   RESPONSIVE
+====================================================== */
+
+@media (max-width: 1024px) {
+  .md-page {
+    padding: 22px;
+  }
+
+  .md-heading {
+    padding: 23px;
+  }
+
+  .md-box {
+    padding: 23px;
+  }
+}
+
+@media (max-width: 640px) {
+  .md-page {
+    padding: 13px;
+  }
+
+  .md-heading {
+    flex-direction: column;
+    align-items: stretch;
+
+    padding: 22px 19px;
+  }
+
+  .md-heading h1 {
+    font-size: 25px;
+  }
+
+  .md-back {
+    width: 100%;
+  }
+
+  .md-box {
+    padding: 19px 16px;
+    border-radius: 15px;
+  }
+
+  .md-search-heading,
+  .md-results-heading {
+    align-items: flex-start;
+  }
+
+  .md-search-heading h2,
+  .md-results-heading h2 {
+    font-size: 17px;
+  }
+
+  .md-counter,
+  .md-total {
+    font-size: 11px;
+  }
+
+  .md-search-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .md-refresh,
+  .md-clear {
+    width: 100%;
+  }
+
+  .md-sample {
+    padding: 19px 16px 19px 20px;
+  }
+
+  .md-sample-header {
+    flex-wrap: wrap;
+  }
+
+  .md-sample-title h3 {
+    font-size: 15px;
+  }
+
+  .md-status {
+    margin-left: 0;
+  }
+
+  .md-sample-grid {
+    grid-template-columns: 1fr;
+
+    gap: 15px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .md-page *,
+  .md-page *::before,
+  .md-page *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

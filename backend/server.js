@@ -1,7 +1,7 @@
 const express = require("express");
 const cors = require("cors");
 
-const { initializeApp, cert, getApps } = require("firebase-admin/app");
+const { initializeApp, applicationDefault, getApps } = require("firebase-admin/app");
 const { getAuth } = require("firebase-admin/auth");
 const { getFirestore } = require("firebase-admin/firestore");
 
@@ -9,11 +9,10 @@ const { getFirestore } = require("firebase-admin/firestore");
 // CONFIGURACIÓN DE FIREBASE ADMIN
 // =====================================================
 
-const serviceAccount = require("./serviceAccountKey.json");
-
 if (getApps().length === 0) {
   initializeApp({
-    credential: cert(serviceAccount)
+    credential: applicationDefault(),
+    projectId: "laboratorio1clinico1proyectos1"
   });
 }
 
@@ -31,7 +30,9 @@ app.use(cors({
     "http://localhost:5173",
     "http://127.0.0.1:5173",
     "http://localhost:8081",
-    "http://127.0.0.1:8081"
+    "http://127.0.0.1:8081",
+    "https://laboratorio1clinico1proyectos1.web.app",
+    "https://laboratorio1clinico1proyectos1.firebaseapp.com"
   ],
   methods: ["GET", "POST", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"]

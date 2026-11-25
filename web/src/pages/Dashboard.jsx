@@ -15,12 +15,13 @@ import GestionPacientes from "./GestionPacientes";
 import GestionAnalisis from "./GestionAnalisis";
 import GestionSolicitudes from "./GestionSolicitudes";
 import GestionVentas from "./GestionVentas";
+
 import ModuloMuestras from "./ModuloMuestras";
 import ModuloAdministracionSprint3 from "./ModuloAdministracionSprint3";
 import NotificacionesRecepcion from "./NotificacionesRecepcion";
 
 // =====================================================
-// NUEVOS MÓDULOS PARA RECEPCIONISTA
+// MÓDULOS DE RECEPCIÓN
 // =====================================================
 
 import HistorialPacientes from "./HistorialPacientes";
@@ -39,48 +40,106 @@ import SuperAdminRoles from "./SuperAdminRoles";
 import SuperAdminAuditoria from "./SuperAdminAuditoria";
 
 // =====================================================
-// DASHBOARD PRINCIPAL
+// COMPONENTE PRINCIPAL
 // =====================================================
 
 function Dashboard({ usuario, onLogout }) {
+
   const [permisos, setPermisos] = useState([]);
-  const [cargandoPermisos, setCargandoPermisos] = useState(true);
+
+  const [cargandoPermisos, setCargandoPermisos] =
+    useState(true);
 
   const [vista, setVista] = useState("dashboard");
 
   const [laboratorio, setLaboratorio] = useState(null);
+
+  const [cerrandoSesion, setCerrandoSesion] =
+    useState(false);
+
+  // =====================================================
+  // IDENTIFICAR ROLES
+  // =====================================================
+
+  const rolOriginal =
+    typeof usuario?.rol === "object"
+      ? usuario.rol?.id ||
+        usuario.rol?.nombre ||
+        usuario.rol?.nombreRol ||
+        ""
+      : usuario?.rol || "";
+
+  const rol = String(rolOriginal)
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+
+  const esSuperAdmin = rol === "super_admin";
+
+  const esAdministrador = rol === "administrador";
+
+  const esRecepcionista = rol === "recepcionista";
+
+  const esBioquimico = rol === "bioquimico";
 
   // =====================================================
   // CARGAR PERMISOS
   // =====================================================
 
   useEffect(() => {
+
     let activo = true;
 
     async function cargarPermisos() {
+
       if (!usuario?.rol) {
+
         setPermisos([]);
         setCargandoPermisos(false);
+
         return;
       }
 
       try {
+
         setCargandoPermisos(true);
 
-        const resultado = await obtenerPermisosRol(usuario.rol);
+        const resultado = await obtenerPermisosRol(
+          usuario.rol
+        );
 
         if (!activo) return;
 
-        setPermisos(
-          Array.isArray(resultado) ? resultado : []
-        );
+        if (Array.isArray(resultado)) {
+
+          setPermisos(resultado);
+
+        } else if (
+          resultado &&
+          Array.isArray(resultado.permisos)
+        ) {
+
+          setPermisos(resultado.permisos);
+
+        } else {
+
+          setPermisos([]);
+        }
+
       } catch (error) {
-        console.error("Error al cargar permisos:", error);
+
+        console.error(
+          "Error al cargar permisos:",
+          error
+        );
 
         if (activo) {
           setPermisos([]);
         }
+
       } finally {
+
         if (activo) {
           setCargandoPermisos(false);
         }
@@ -92,6 +151,7 @@ function Dashboard({ usuario, onLogout }) {
     return () => {
       activo = false;
     };
+
   }, [usuario?.rol]);
 
   // =====================================================
@@ -99,15 +159,19 @@ function Dashboard({ usuario, onLogout }) {
   // =====================================================
 
   useEffect(() => {
+
     let activo = true;
 
     async function cargarLaboratorio() {
+
       if (!usuario?.laboratorioId) {
+
         setLaboratorio(null);
         return;
       }
 
       try {
+
         const datos = await obtenerPersonalizacion(
           usuario.laboratorioId
         );
@@ -115,7 +179,9 @@ function Dashboard({ usuario, onLogout }) {
         if (activo) {
           setLaboratorio(datos || null);
         }
+
       } catch (error) {
+
         console.error(
           "Error al cargar laboratorio:",
           error
@@ -132,10 +198,11 @@ function Dashboard({ usuario, onLogout }) {
     return () => {
       activo = false;
     };
-  }, [usuario?.laboratorioId, vista]);
+
+  }, [usuario?.laboratorioId]);
 
   // =====================================================
-  // PERMISOS
+  // VERIFICAR PERMISOS
   // =====================================================
 
   const tienePermiso = (permiso) => {
@@ -149,27 +216,26 @@ function Dashboard({ usuario, onLogout }) {
   };
 
   // =====================================================
-  // ROLES
-  // =====================================================
-
-  const esSuperAdmin = usuario?.rol === "super_admin";
-
-  const esAdministrador = usuario?.rol === "administrador";
-
-  const esRecepcionista = usuario?.rol === "recepcionista";
-
-  const esBioquimico = usuario?.rol === "bioquimico";
-
-  // =====================================================
   // NAVEGACIÓN
   // =====================================================
 
   const irDashboard = () => {
     setVista("dashboard");
+
+    window.scrollTo({
+      top: 0,
+      behavior: "smooth",
+    });
   };
 
   const navegar = (modulo) => {
+
     setVista(modulo);
+
+    window.scrollTo({
+      top: 0,
+      behavior: "smooth",
+    });
   };
 
   // =====================================================
@@ -177,6 +243,9 @@ function Dashboard({ usuario, onLogout }) {
   // =====================================================
 
   const cerrarSesion = async () => {
+
+    if (cerrandoSesion) return;
+
     const confirmar = window.confirm(
       "¿Deseas cerrar sesión?"
     );
@@ -184,12 +253,17 @@ function Dashboard({ usuario, onLogout }) {
     if (!confirmar) return;
 
     try {
+
+      setCerrandoSesion(true);
+
       await cerrarSesionFirebase();
 
       if (typeof onLogout === "function") {
         onLogout();
       }
+
     } catch (error) {
+
       console.error(
         "Error al cerrar sesión:",
         error
@@ -198,17 +272,22 @@ function Dashboard({ usuario, onLogout }) {
       window.alert(
         "No se pudo cerrar la sesión."
       );
+
+    } finally {
+
+      setCerrandoSesion(false);
     }
   };
 
   // =====================================================
-  // VALIDAR SESIÓN
+  // VALIDAR USUARIO
   // =====================================================
 
   if (!usuario) {
+
     return (
       <PantallaEstado
-        icono="⚠️"
+        icono="!"
         titulo="Sesión no disponible"
         texto="No fue posible cargar la información de tu cuenta."
       />
@@ -216,6 +295,7 @@ function Dashboard({ usuario, onLogout }) {
   }
 
   if (cargandoPermisos) {
+
     return (
       <PantallaEstado
         icono="🧪"
@@ -230,7 +310,9 @@ function Dashboard({ usuario, onLogout }) {
   // =====================================================
 
   if (esSuperAdmin) {
+
     if (vista === "laboratorios") {
+
       return (
         <SuperAdminLaboratorios
           permisos={permisos}
@@ -240,6 +322,7 @@ function Dashboard({ usuario, onLogout }) {
     }
 
     if (vista === "personalizacion") {
+
       return (
         <SuperAdminPersonalizacion
           permisos={permisos}
@@ -249,6 +332,7 @@ function Dashboard({ usuario, onLogout }) {
     }
 
     if (vista === "administradores") {
+
       return (
         <SuperAdminAdministradores
           permisos={permisos}
@@ -258,6 +342,7 @@ function Dashboard({ usuario, onLogout }) {
     }
 
     if (vista === "usuarios") {
+
       return (
         <SuperAdminUsuarios
           volver={irDashboard}
@@ -266,6 +351,7 @@ function Dashboard({ usuario, onLogout }) {
     }
 
     if (vista === "roles") {
+
       return (
         <SuperAdminRoles
           volver={irDashboard}
@@ -274,6 +360,7 @@ function Dashboard({ usuario, onLogout }) {
     }
 
     if (vista === "auditoria") {
+
       return (
         <SuperAdminAuditoria
           volver={irDashboard}
@@ -291,14 +378,15 @@ function Dashboard({ usuario, onLogout }) {
   }
 
   // =====================================================
-  // ADMINISTRADOR - ROLES
+  // GESTIÓN DE ROLES
   // =====================================================
 
   if (
-    esAdministrador &&
     vista === "roles" &&
+    esAdministrador &&
     tienePermiso("roles.asignar")
   ) {
+
     return (
       <GestionRoles
         usuario={usuario}
@@ -308,14 +396,15 @@ function Dashboard({ usuario, onLogout }) {
   }
 
   // =====================================================
-  // ADMINISTRADOR - CONFIGURACIÓN
+  // CONFIGURACIÓN DEL LABORATORIO
   // =====================================================
 
   if (
-    esAdministrador &&
     vista === "configuracion" &&
+    esAdministrador &&
     tienePermiso("configuracion.editar")
   ) {
+
     return (
       <ConfiguracionLaboratorio
         usuario={usuario}
@@ -325,12 +414,12 @@ function Dashboard({ usuario, onLogout }) {
   }
 
   // =====================================================
-  // ADMINISTRADOR - PERSONAL
+  // GESTIÓN DE PERSONAL
   // =====================================================
 
   if (
-    esAdministrador &&
     vista === "personal" &&
+    esAdministrador &&
     tieneAlgunPermiso([
       "empleados.crear",
       "empleados.ver",
@@ -338,6 +427,7 @@ function Dashboard({ usuario, onLogout }) {
       "empleados.desactivar",
     ])
   ) {
+
     return (
       <GestionPersonal
         usuario={usuario}
@@ -359,6 +449,7 @@ function Dashboard({ usuario, onLogout }) {
       "pacientes.ver",
     ])
   ) {
+
     return (
       <GestionPacientes
         usuario={usuario}
@@ -369,7 +460,7 @@ function Dashboard({ usuario, onLogout }) {
   }
 
   // =====================================================
-  // ANÁLISIS CLÍNICOS
+  // GESTIÓN DE ANÁLISIS
   // =====================================================
 
   if (
@@ -380,6 +471,7 @@ function Dashboard({ usuario, onLogout }) {
       "analisis.ver",
     ])
   ) {
+
     return (
       <GestionAnalisis
         usuario={usuario}
@@ -390,13 +482,14 @@ function Dashboard({ usuario, onLogout }) {
   }
 
   // =====================================================
-  // SOLICITUDES - RECEPCIONISTA
+  // SOLICITUDES DE ANÁLISIS
   // =====================================================
 
   if (
     vista === "solicitudes" &&
     esRecepcionista
   ) {
+
     return (
       <GestionSolicitudes
         usuario={usuario}
@@ -406,10 +499,14 @@ function Dashboard({ usuario, onLogout }) {
   }
 
   // =====================================================
-  // VENTAS
+  // GESTIÓN DE VENTAS
   // =====================================================
 
-  if (vista === "ventas") {
+  if (
+    vista === "ventas" &&
+    tienePermiso("ventas.ver")
+  ) {
+
     return (
       <GestionVentas
         usuario={usuario}
@@ -419,13 +516,17 @@ function Dashboard({ usuario, onLogout }) {
   }
 
   // =====================================================
-  // MUESTRAS - BIOQUÍMICO
+  // MÓDULO DE MUESTRAS
   // =====================================================
 
   if (
     vista === "muestras" &&
-    esBioquimico
+    (
+      esBioquimico ||
+      esRecepcionista
+    )
   ) {
+
     return (
       <ModuloMuestras
         usuario={usuario}
@@ -436,168 +537,20 @@ function Dashboard({ usuario, onLogout }) {
   }
 
   // =====================================================
-  // NOTIFICACIONES - RECEPCIONISTA
-  // =====================================================
-
-  if (
-    vista === "notificaciones_recepcion" &&
-    esRecepcionista
-  ) {
-    return (
-      <div
-        style={{
-          minHeight: "100vh",
-          padding: "30px",
-          background: "#f1f5f9",
-        }}
-      >
-        <div
-          style={{
-            maxWidth: "1200px",
-            margin: "0 auto",
-          }}
-        >
-          <button
-            type="button"
-            onClick={irDashboard}
-            style={{
-              padding: "12px 20px",
-              marginBottom: "20px",
-              background: "#2563eb",
-              color: "#ffffff",
-              border: "none",
-              borderRadius: "10px",
-              cursor: "pointer",
-              fontWeight: "bold",
-            }}
-          >
-            ← Volver al Dashboard
-          </button>
-
-          <NotificacionesRecepcion
-            laboratorioId={usuario.laboratorioId}
-            usuarioId={usuario.uid}
-          />
-        </div>
-      </div>
-    );
-  }
-
-  // =====================================================
-  // NUEVO MÓDULO: HISTORIAL DE PACIENTES
-  // RECEPCIONISTA
-  // =====================================================
-
-  if (
-    vista === "historial_pacientes" &&
-    esRecepcionista
-  ) {
-    return (
-      <div
-        style={{
-          minHeight: "100vh",
-          background: "#f1f5f9",
-          padding: "25px",
-        }}
-      >
-        <div
-          style={{
-            maxWidth: "1450px",
-            margin: "0 auto",
-          }}
-        >
-          <BotonVolver
-            onClick={irDashboard}
-          />
-
-          <HistorialPacientes
-            usuario={usuario}
-          />
-        </div>
-      </div>
-    );
-  }
-
-  // =====================================================
-  // NUEVO MÓDULO: RESULTADOS DE RECEPCIÓN
-  // =====================================================
-
-  if (
-    vista === "resultados_recepcion" &&
-    esRecepcionista
-  ) {
-    return (
-      <div
-        style={{
-          minHeight: "100vh",
-          background: "#f1f5f9",
-          padding: "25px",
-        }}
-      >
-        <div
-          style={{
-            maxWidth: "1450px",
-            margin: "0 auto",
-          }}
-        >
-          <BotonVolver
-            onClick={irDashboard}
-          />
-
-          <ResultadosRecepcion
-            usuario={usuario}
-          />
-        </div>
-      </div>
-    );
-  }
-
-  // =====================================================
-  // PANEL ADMINISTRADOR - SPRINT 3
-  // =====================================================
-
-  if (
-    vista === "sprint3Admin" &&
-    esAdministrador
-  ) {
-    return (
-      <ModuloAdministracionSprint3
-        usuario={usuario}
-        permisos={permisos}
-        onVolver={irDashboard}
-        volver={irDashboard}
-      />
-    );
-  }
-
-  // =====================================================
-  // RESULTADOS - ADMINISTRADOR
+  // MÓDULO DE RESULTADOS
   // =====================================================
 
   if (
     vista === "resultados" &&
-    esAdministrador &&
-    tienePermiso("resultados.ver")
+    (
+      esRecepcionista ||
+      (
+        (esAdministrador || esBioquimico) &&
+        tienePermiso("resultados.ver")
+      )
+    )
   ) {
-    return (
-      <ModuloAdministracionSprint3
-        usuario={usuario}
-        permisos={permisos}
-        onVolver={irDashboard}
-        volver={irDashboard}
-      />
-    );
-  }
 
-  // =====================================================
-  // RESULTADOS - BIOQUÍMICO
-  // =====================================================
-
-  if (
-    vista === "resultados" &&
-    esBioquimico &&
-    tienePermiso("resultados.ver")
-  ) {
     return (
       <ModuloMuestras
         usuario={usuario}
@@ -608,173 +561,970 @@ function Dashboard({ usuario, onLogout }) {
   }
 
   // =====================================================
-  // PERSONALIZACIÓN DEL LABORATORIO
+  // NOTIFICACIONES
+  // =====================================================
+
+  if (
+    vista === "notificaciones_recepcion" &&
+    esRecepcionista
+  ) {
+
+    return (
+      <ContenedorModulo onVolver={irDashboard}>
+
+        <NotificacionesRecepcion
+          laboratorioId={usuario.laboratorioId}
+          usuarioId={usuario.uid}
+        />
+
+      </ContenedorModulo>
+    );
+  }
+
+  // =====================================================
+  // HISTORIAL DE PACIENTES
+  // =====================================================
+
+  if (
+    vista === "historial_pacientes" &&
+    esRecepcionista
+  ) {
+
+    return (
+      <ContenedorModulo onVolver={irDashboard}>
+
+        <HistorialPacientes
+          usuario={usuario}
+        />
+
+      </ContenedorModulo>
+    );
+  }
+
+  // =====================================================
+  // RESULTADOS DE RECEPCIÓN
+  // =====================================================
+
+  if (
+    vista === "resultados_recepcion" &&
+    esRecepcionista
+  ) {
+
+    return (
+      <ContenedorModulo onVolver={irDashboard}>
+
+        <ResultadosRecepcion
+          usuario={usuario}
+        />
+
+      </ContenedorModulo>
+    );
+  }
+
+  // =====================================================
+  // PANEL ADMINISTRATIVO
+  // =====================================================
+
+  if (
+    vista === "sprint3Admin" &&
+    esAdministrador
+  ) {
+
+    return (
+      <ModuloAdministracionSprint3
+        usuario={usuario}
+        permisos={permisos}
+        onVolver={irDashboard}
+        volver={irDashboard}
+      />
+    );
+  }
+
+  // =====================================================
+  // PERSONALIZACIÓN
   // =====================================================
 
   const colorPrimario = validarColor(
     laboratorio?.colorPrimario
   )
     ? laboratorio.colorPrimario
-    : "#2563EB";
+    : "#2563eb";
 
   const colorSecundario = validarColor(
     laboratorio?.colorSecundario
   )
     ? laboratorio.colorSecundario
-    : "#0EA5E9";
+    : "#0ea5e9";
 
   const nombreLaboratorio =
     laboratorio?.nombreVisible ||
     laboratorio?.nombre ||
     "Laboratorio Clínico";
 
+  const nombreUsuario = [
+    usuario?.nombre,
+    usuario?.apellido,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .trim();
+
   // =====================================================
-  // DASHBOARD PRINCIPAL
+  // MÓDULOS DISPONIBLES
+  // =====================================================
+
+  const modulosDisponibles = [];
+
+  // ROLES
+
+  if (
+    esAdministrador &&
+    tienePermiso("roles.asignar")
+  ) {
+
+    modulosDisponibles.push({
+      id: "roles",
+      icono: "🛡️",
+      titulo: "Roles y permisos",
+      descripcion:
+        "Gestiona los roles y permisos del personal del laboratorio.",
+      fondo: "#eef2ff",
+      color: "#4338ca",
+      categoria: "Administración",
+    });
+  }
+
+  // CONFIGURACIÓN
+
+  if (
+    esAdministrador &&
+    tienePermiso("configuracion.editar")
+  ) {
+
+    modulosDisponibles.push({
+      id: "configuracion",
+      icono: "⚙️",
+      titulo: "Configuración",
+      descripcion:
+        "Administra la información y configuración institucional.",
+      fondo: "#e0f2fe",
+      color: "#0369a1",
+      categoria: "Administración",
+    });
+  }
+
+  // PERSONAL
+
+  if (
+    esAdministrador &&
+    tieneAlgunPermiso([
+      "empleados.crear",
+      "empleados.ver",
+      "empleados.editar",
+      "empleados.desactivar",
+    ])
+  ) {
+
+    modulosDisponibles.push({
+      id: "personal",
+      icono: "👥",
+      titulo: "Personal",
+      descripcion:
+        "Gestiona administrativamente al personal del laboratorio.",
+      fondo: "#ccfbf1",
+      color: "#0f766e",
+      categoria: "Administración",
+    });
+  }
+
+  // PACIENTES
+
+  if (
+    tieneAlgunPermiso([
+      "pacientes.crear",
+      "pacientes.editar",
+      "pacientes.ver",
+    ])
+  ) {
+
+    modulosDisponibles.push({
+      id: "pacientes",
+      icono: "🧑‍⚕️",
+      titulo: "Pacientes",
+      descripcion:
+        "Registra, consulta y administra la información de los pacientes.",
+      fondo: "#dcfce7",
+      color: "#15803d",
+      categoria: "Gestión clínica",
+    });
+  }
+
+  // ANÁLISIS
+
+  if (
+    tieneAlgunPermiso([
+      "analisis.crear",
+      "analisis.editar",
+      "analisis.ver",
+    ])
+  ) {
+
+    modulosDisponibles.push({
+      id: "analisis",
+      icono: "🔬",
+      titulo: "Análisis clínicos",
+      descripcion:
+        "Consulta y administra el catálogo de análisis clínicos.",
+      fondo: "#cffafe",
+      color: "#0e7490",
+      categoria: "Gestión clínica",
+    });
+  }
+
+  // SOLICITUDES
+
+  if (esRecepcionista) {
+
+    modulosDisponibles.push({
+      id: "solicitudes",
+      icono: "📋",
+      titulo: "Solicitudes de análisis",
+      descripcion:
+        "Registra y consulta las solicitudes de análisis clínicos.",
+      fondo: "#ede9fe",
+      color: "#6d28d9",
+      categoria: "Recepción",
+    });
+  }
+
+  // VENTAS
+
+  if (tienePermiso("ventas.ver")) {
+
+    modulosDisponibles.push({
+      id: "ventas",
+      icono: "💳",
+      titulo: "Ventas",
+      descripcion:
+        "Consulta las ventas, órdenes y pagos registrados.",
+      fondo: "#fef3c7",
+      color: "#a16207",
+      categoria: "Recepción",
+    });
+  }
+
+  // MUESTRAS
+
+  if (
+    esBioquimico ||
+    esRecepcionista
+  ) {
+
+    modulosDisponibles.push({
+      id: "muestras",
+      icono: "🧪",
+      titulo: "Muestras",
+      descripcion:
+        "Registro, recepción, validación y seguimiento de muestras clínicas.",
+      fondo: "#ccfbf1",
+      color: "#0f766e",
+      categoria: "Laboratorio",
+      destacado: true,
+    });
+  }
+
+  // RESULTADOS
+
+  if (
+    esRecepcionista ||
+    (
+      (esAdministrador || esBioquimico) &&
+      tienePermiso("resultados.ver")
+    )
+  ) {
+
+    modulosDisponibles.push({
+      id: "resultados",
+      icono: "📊",
+      titulo: "Resultados",
+      descripcion:
+        "Registro, estado, validación, informes e historial de resultados clínicos.",
+      fondo: "#dbeafe",
+      color: "#1d4ed8",
+      categoria: "Laboratorio",
+      destacado: true,
+    });
+  }
+
+  // NOTIFICACIONES
+
+  if (esRecepcionista) {
+
+    modulosDisponibles.push({
+      id: "notificaciones_recepcion",
+      icono: "🔔",
+      titulo: "Notificaciones",
+      descripcion:
+        "Consulta las notificaciones relacionadas con el laboratorio.",
+      fondo: "#fee2e2",
+      color: "#b91c1c",
+      categoria: "Recepción",
+    });
+  }
+
+  // HISTORIAL DE PACIENTES
+
+  if (esRecepcionista) {
+
+    modulosDisponibles.push({
+      id: "historial_pacientes",
+      icono: "📚",
+      titulo: "Historial de pacientes",
+      descripcion:
+        "Consulta los antecedentes y registros clínicos de los pacientes.",
+      fondo: "#e0f2fe",
+      color: "#0369a1",
+      categoria: "Recepción",
+    });
+  }
+
+  // RESULTADOS DE RECEPCIÓN
+
+  if (esRecepcionista) {
+
+    modulosDisponibles.push({
+      id: "resultados_recepcion",
+      icono: "📄",
+      titulo: "Resultados y notas de venta",
+      descripcion:
+        "Consulta resultados disponibles y documentos de los pacientes.",
+      fondo: "#dcfce7",
+      color: "#15803d",
+      categoria: "Recepción",
+    });
+  }
+
+  // ADMINISTRACIÓN
+
+  if (esAdministrador) {
+
+    modulosDisponibles.push({
+      id: "sprint3Admin",
+      icono: "📈",
+      titulo: "Panel del laboratorio",
+      descripcion:
+        "Consulta estadísticas, reportes y funciones administrativas.",
+      fondo: "#ede9fe",
+      color: "#7c3aed",
+      categoria: "Administración",
+    });
+  }
+
+  // =====================================================
+  // INTERFAZ PRINCIPAL SIN BARRA SUPERIOR
   // =====================================================
 
   return (
-    <main
-      style={{
-        minHeight: "100vh",
-        padding: "32px",
-        background:
-          "linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%)",
-        color: "#0f172a",
-        fontFamily: "Inter, Arial, sans-serif",
-      }}
-    >
-      <div
-        style={{
-          width: "100%",
-          maxWidth: "1450px",
-          margin: "0 auto",
-        }}
-      >
-        {/* ==========================================
-            CABECERA
-        ========================================== */}
+    <main className="dashboard-page">
+
+      <style>
+        {`
+
+          .dashboard-page {
+            --dash-primary: #19385f;
+            --dash-blue: #2563eb;
+            --dash-border: #e2e8f0;
+
+            min-height: 100vh;
+
+            padding:
+              30px
+              clamp(16px, 4vw, 55px)
+              55px;
+
+            background:
+              linear-gradient(
+                180deg,
+                #f8fafc,
+                #eef3f9
+              );
+
+            font-family:
+              Inter,
+              system-ui,
+              -apple-system,
+              "Segoe UI",
+              sans-serif;
+
+            color: #0f172a;
+          }
+
+          .dashboard-page *,
+          .dashboard-page *::before,
+          .dashboard-page *::after {
+            box-sizing: border-box;
+          }
+
+          .dashboard-container {
+            width: 100%;
+            max-width: 1500px;
+            margin: 0 auto;
+          }
+
+          /* ==========================================
+             PRESENTACIÓN PRINCIPAL
+          ========================================== */
+
+          .dashboard-hero {
+            position: relative;
+
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+
+            gap: 25px;
+            flex-wrap: wrap;
+
+            min-height: 240px;
+
+            padding: 35px;
+
+            border-radius: 23px;
+
+            color: #ffffff;
+
+            overflow: hidden;
+          }
+
+          .dashboard-hero-content {
+            position: relative;
+            z-index: 2;
+
+            flex: 1 1 300px;
+            max-width: 750px;
+          }
+
+          .dashboard-hero-label {
+            display: inline-block;
+
+            padding: 8px 13px;
+
+            background: rgba(255,255,255,0.15);
+
+            border: 1px solid rgba(255,255,255,0.20);
+            border-radius: 25px;
+
+            font-size: 10px;
+            font-weight: 800;
+            letter-spacing: 1.4px;
+          }
+
+          .dashboard-hero h1 {
+            margin: 19px 0 13px;
+
+            color: #ffffff;
+
+            font-size: clamp(27px, 4vw, 43px);
+            font-weight: 850;
+
+            letter-spacing: -1px;
+          }
+
+          .dashboard-hero p {
+            margin: 0;
+
+            font-size: 14px;
+            line-height: 1.8;
+
+            color: #f1f5f9;
+          }
+
+          .dashboard-hero-icon {
+            position: relative;
+            z-index: 2;
+
+            width: 130px;
+            height: 130px;
+
+            flex-shrink: 0;
+
+            display: grid;
+            place-items: center;
+
+            border: 1px solid rgba(255,255,255,0.25);
+            border-radius: 28px;
+
+            background: rgba(255,255,255,0.15);
+
+            font-size: 62px;
+
+            overflow: hidden;
+          }
+
+          .dashboard-hero-badges {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+
+            margin-top: 23px;
+          }
+
+          .dashboard-hero-badges span {
+            padding: 9px 14px;
+
+            background: rgba(255,255,255,0.15);
+
+            border-radius: 25px;
+
+            font-size: 12px;
+            font-weight: 700;
+          }
+
+          /* ==========================================
+             INFORMACIÓN DEL USUARIO
+          ========================================== */
+
+          .dashboard-information {
+            display: grid;
+
+            grid-template-columns:
+              repeat(
+                auto-fit,
+                minmax(210px, 1fr)
+              );
+
+            gap: 15px;
+            margin-top: 23px;
+          }
+
+          .dashboard-info-card {
+            display: flex;
+            align-items: center;
+
+            gap: 13px;
+
+            min-width: 0;
+
+            padding: 20px;
+
+            background: #ffffff;
+
+            border: 1px solid #e2e8f0;
+            border-radius: 16px;
+
+            box-shadow:
+              0 4px 15px rgba(15,23,42,0.035);
+          }
+
+          .dashboard-info-icon {
+            width: 48px;
+            height: 48px;
+
+            flex-shrink: 0;
+
+            display: grid;
+            place-items: center;
+
+            background: #eff6ff;
+            border-radius: 13px;
+
+            font-size: 22px;
+          }
+
+          .dashboard-info-text {
+            min-width: 0;
+          }
+
+          .dashboard-info-text span {
+            display: block;
+
+            margin-bottom: 6px;
+
+            color: #64748b;
+
+            font-size: 10px;
+            font-weight: 800;
+
+            letter-spacing: 0.5px;
+          }
+
+          .dashboard-info-text strong {
+            display: block;
+
+            color: #19385f;
+
+            font-size: 13px;
+            font-weight: 800;
+
+            overflow-wrap: anywhere;
+          }
+
+          /* ==========================================
+             ENCABEZADO DE MÓDULOS
+          ========================================== */
+
+          .dashboard-section {
+            margin-top: 38px;
+          }
+
+          .dashboard-section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+
+            gap: 15px;
+            flex-wrap: wrap;
+
+            margin-bottom: 23px;
+          }
+
+          .dashboard-section-label {
+            display: block;
+
+            color: #2563eb;
+
+            font-size: 10px;
+            font-weight: 900;
+
+            letter-spacing: 1.5px;
+          }
+
+          .dashboard-section h2 {
+            margin: 8px 0;
+
+            color: #19385f;
+
+            font-size: 27px;
+            font-weight: 850;
+          }
+
+          .dashboard-section-description {
+            margin: 0;
+
+            color: #64748b;
+
+            font-size: 13px;
+            line-height: 1.7;
+          }
+
+          .dashboard-count {
+            padding: 10px 15px;
+
+            background: #ffffff;
+
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+
+            color: #475569;
+
+            font-size: 12px;
+            font-weight: 800;
+          }
+
+          /* ==========================================
+             TARJETAS DE MÓDULOS
+          ========================================== */
+
+          .dashboard-modules {
+            display: grid;
+
+            grid-template-columns:
+              repeat(
+                auto-fit,
+                minmax(260px, 1fr)
+              );
+
+            gap: 19px;
+          }
+
+          .dashboard-module {
+            display: flex;
+            flex-direction: column;
+
+            min-height: 270px;
+
+            padding: 24px;
+
+            background: #ffffff;
+
+            border: 1px solid #e2e8f0;
+            border-radius: 20px;
+
+            box-shadow:
+              0 5px 23px rgba(15,23,42,0.04);
+
+            transition:
+              transform 0.2s,
+              box-shadow 0.2s,
+              border-color 0.2s;
+          }
+
+          .dashboard-module:hover {
+            transform: translateY(-4px);
+
+            border-color: #bfdbfe;
+
+            box-shadow:
+              0 18px 40px rgba(15,23,42,0.09);
+          }
+
+          .dashboard-module-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+
+            gap: 10px;
+          }
+
+          .dashboard-module-icon {
+            width: 60px;
+            height: 60px;
+
+            display: grid;
+            place-items: center;
+
+            border-radius: 16px;
+
+            font-size: 28px;
+          }
+
+          .dashboard-module-category {
+            padding: 7px 11px;
+
+            background: #f8fafc;
+            border-radius: 20px;
+
+            color: #64748b;
+
+            font-size: 10px;
+            font-weight: 800;
+          }
+
+          .dashboard-module h3 {
+            margin: 20px 0 10px;
+
+            color: #19385f;
+
+            font-size: 20px;
+            font-weight: 850;
+          }
+
+          .dashboard-module p {
+            margin: 0 0 24px;
+
+            color: #64748b;
+
+            font-size: 13px;
+            line-height: 1.7;
+
+            flex-grow: 1;
+          }
+
+          .dashboard-module-button {
+            width: 100%;
+            min-height: 46px;
+
+            border: none;
+            border-radius: 11px;
+
+            font-size: 12px;
+            font-weight: 850;
+
+            cursor: pointer;
+
+            transition: 0.2s;
+          }
+
+          .dashboard-module-button:hover {
+            filter: brightness(0.95);
+          }
+
+          /* ==========================================
+             PIE DE PÁGINA
+          ========================================== */
+
+          .dashboard-footer {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+
+            gap: 15px;
+            flex-wrap: wrap;
+
+            margin-top: 40px;
+            padding: 23px;
+
+            background: #ffffff;
+
+            border: 1px solid #e2e8f0;
+            border-radius: 18px;
+          }
+
+          .dashboard-footer strong {
+            display: block;
+
+            color: #19385f;
+
+            font-size: 14px;
+          }
+
+          .dashboard-footer span {
+            display: block;
+
+            margin-top: 6px;
+
+            color: #64748b;
+
+            font-size: 12px;
+          }
+
+          .dashboard-logout {
+            padding: 12px 19px;
+
+            border: 1px solid #fecaca;
+            border-radius: 11px;
+
+            background: #fff1f2;
+
+            color: #dc2626;
+
+            font-size: 12px;
+            font-weight: 800;
+
+            cursor: pointer;
+          }
+
+          .dashboard-logout:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+          }
+
+          /* ==========================================
+             RESPONSIVE
+          ========================================== */
+
+          @media (max-width: 768px) {
+
+            .dashboard-page {
+              padding: 18px 13px 40px;
+            }
+
+            .dashboard-hero {
+              padding: 25px;
+            }
+
+            .dashboard-hero-icon {
+              width: 85px;
+              height: 85px;
+
+              font-size: 40px;
+            }
+
+            .dashboard-modules {
+              grid-template-columns:
+                repeat(
+                  auto-fit,
+                  minmax(230px, 1fr)
+                );
+            }
+          }
+
+          @media (max-width: 500px) {
+
+            .dashboard-hero h1 {
+              font-size: 27px;
+            }
+
+            .dashboard-hero-icon {
+              display: none;
+            }
+
+            .dashboard-modules {
+              grid-template-columns: 1fr;
+            }
+
+            .dashboard-footer {
+              flex-direction: column;
+              align-items: stretch;
+            }
+
+            .dashboard-logout {
+              width: 100%;
+            }
+          }
+
+        `}
+      </style>
+
+      <div className="dashboard-container">
+
+        {/* ================================================
+            ENCABEZADO PRINCIPAL
+
+            AQUÍ YA NO EXISTEN:
+            - ClinicalLab
+            - Sistema activo
+            - Botón Menú
+            - Barra Inicio / Pacientes / Muestras / Resultados
+        ================================================ */}
 
         <section
+          className="dashboard-hero"
           style={{
-            position: "relative",
-            overflow: "hidden",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            flexWrap: "wrap",
-            gap: "30px",
-            minHeight: "250px",
-            padding: "38px 42px",
-            borderRadius: "26px",
             background: `linear-gradient(
-              125deg,
-              ${colorPrimario} 0%,
-              ${colorSecundario} 100%
+              120deg,
+              ${colorPrimario},
+              ${colorSecundario}
             )`,
-            color: "#ffffff",
-            boxShadow: `0 24px 55px ${hexToRgba(
-              colorPrimario,
-              0.22
-            )}`,
+
+            boxShadow:
+              `0 20px 45px ${hexToRgba(
+                colorPrimario,
+                0.16
+              )}`,
           }}
         >
-          <div
-            style={{
-              position: "relative",
-              zIndex: 2,
-              maxWidth: "720px",
-            }}
-          >
-            <span
-              style={{
-                display: "inline-flex",
-                padding: "7px 11px",
-                marginBottom: "15px",
-                borderRadius: "30px",
-                background: "rgba(255,255,255,.12)",
-                fontSize: "10px",
-                fontWeight: "800",
-                letterSpacing: "1px",
-              }}
-            >
+
+          <div className="dashboard-hero-content">
+
+            <span className="dashboard-hero-label">
               PANEL PRINCIPAL
             </span>
 
-            <h1
-              style={{
-                margin: 0,
-                fontSize: "clamp(30px, 4vw, 48px)",
-                lineHeight: 1.15,
-              }}
-            >
+            <h1>
               {nombreLaboratorio}
             </h1>
 
-            <p
-              style={{
-                margin: "14px 0 0",
-                fontSize: "14px",
-              }}
-            >
+            <p>
               Bienvenido,{" "}
               <strong>
-                {usuario.nombre} {usuario.apellido}
-              </strong>
+                {nombreUsuario || "Usuario"}
+              </strong>.
+              <br />
+
+              Administra las actividades y consulta
+              la información de tu laboratorio desde
+              un espacio de trabajo centralizado.
             </p>
 
-            <p
-              style={{
-                margin: "5px 0 0",
-                fontSize: "11px",
-              }}
-            >
-              {nombreRol(usuario.rol)}
-            </p>
+            <div className="dashboard-hero-badges">
 
-            {/* NOTIFICACIONES RECEPCIONISTA */}
+              <span>
+                {nombreRol(rol)}
+              </span>
 
-            {esRecepcionista && (
-              <button
-                type="button"
-                onClick={() =>
-                  navegar("notificaciones_recepcion")
-                }
-                style={{
-                  marginTop: "20px",
-                  padding: "12px 18px",
-                  border:
-                    "1px solid rgba(255,255,255,.4)",
-                  borderRadius: "12px",
-                  background:
-                    "rgba(255,255,255,.2)",
-                  color: "#ffffff",
-                  cursor: "pointer",
-                  fontWeight: "bold",
-                }}
-              >
-                🔔 Ver notificaciones
-              </button>
-            )}
+              <span>
+                {modulosDisponibles.length} módulos
+              </span>
+
+            </div>
+
           </div>
 
-          {/* LOGOTIPO */}
+          <div className="dashboard-hero-icon">
 
-          <div
-            style={{
-              position: "relative",
-              zIndex: 2,
-              width: "135px",
-              height: "135px",
-              flexShrink: 0,
-              display: "grid",
-              placeItems: "center",
-              overflow: "hidden",
-              borderRadius: "30px",
-              background:
-                "rgba(255,255,255,.16)",
-            }}
-          >
             {laboratorio?.logoUrl ? (
+
               <img
                 src={laboratorio.logoUrl}
                 alt="Logo del laboratorio"
@@ -782,440 +1532,170 @@ function Dashboard({ usuario, onLogout }) {
                   width: "100%",
                   height: "100%",
                   objectFit: "contain",
-                  padding: "13px",
-                  boxSizing: "border-box",
-                  background:
-                    "rgba(255,255,255,.93)",
+                  padding: "12px",
+                  background: "rgba(255,255,255,0.9)",
                 }}
               />
+
             ) : (
-              <span
-                style={{
-                  fontSize: "58px",
-                }}
-              >
-                🧪
-              </span>
+
+              <span>🧬</span>
+
             )}
+
           </div>
+
         </section>
 
-        {/* ==========================================
+        {/* ================================================
             INFORMACIÓN DEL USUARIO
-        ========================================== */}
+        ================================================ */}
 
-        <section
-          style={{
-            display: "grid",
-            gridTemplateColumns:
-              "repeat(auto-fit, minmax(210px, 1fr))",
-            gap: "14px",
-            marginTop: "22px",
-          }}
-        >
+        <section className="dashboard-information">
+
           <InfoCard
-            titulo="Usuario"
-            valor={`${usuario.nombre || ""} ${
-              usuario.apellido || ""
-            }`.trim()}
+            titulo="USUARIO"
+            valor={nombreUsuario || "Sin nombre"}
             icono="👤"
-            color={colorPrimario}
           />
 
           <InfoCard
-            titulo="Correo"
-            valor={usuario.email || "Sin correo"}
+            titulo="CORREO ELECTRÓNICO"
+            valor={usuario.email || "No registrado"}
             icono="✉️"
-            color={colorPrimario}
           />
 
           <InfoCard
-            titulo="Rol"
-            valor={nombreRol(usuario.rol)}
+            titulo="ROL ASIGNADO"
+            valor={nombreRol(rol)}
             icono="🛡️"
-            color={colorPrimario}
           />
 
           <InfoCard
-            titulo="Estado"
+            titulo="ESTADO DE CUENTA"
             valor="Activo"
             icono="●"
             valorColor="#059669"
-            color={colorPrimario}
           />
+
         </section>
 
-        {/* ==========================================
+        {/* ================================================
             MÓDULOS DISPONIBLES
-        ========================================== */}
+        ================================================ */}
 
-        <section
-          style={{
-            marginTop: "36px",
-          }}
-        >
-          <div
-            style={{
-              marginBottom: "20px",
-            }}
-          >
-            <span
-              style={{
-                color: colorPrimario,
-                fontSize: "10px",
-                fontWeight: "900",
-                letterSpacing: "1.2px",
-              }}
-            >
-              ÁREA DE TRABAJO
+        <section className="dashboard-section">
+
+          <div className="dashboard-section-header">
+
+            <div>
+
+              <span className="dashboard-section-label">
+                ÁREA DE TRABAJO
+              </span>
+
+              <h2>
+                Módulos disponibles
+              </h2>
+
+              <p className="dashboard-section-description">
+                Selecciona el módulo que deseas utilizar.
+                Las operaciones están protegidas según
+                los permisos de tu cuenta.
+              </p>
+
+            </div>
+
+            <span className="dashboard-count">
+              {modulosDisponibles.length} módulos
             </span>
 
-            <h2
-              style={{
-                margin: "5px 0 5px",
-                fontSize: "25px",
-              }}
-            >
-              Módulos disponibles
-            </h2>
-
-            <p
-              style={{
-                color: "#64748b",
-                fontSize: "12px",
-              }}
-            >
-              Accede a las funciones disponibles
-              para tu cuenta.
-            </p>
           </div>
 
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns:
-                "repeat(auto-fit, minmax(250px, 1fr))",
-              gap: "16px",
-            }}
-          >
-            {/* ======================================
-                ROLES Y PERMISOS
-            ====================================== */}
+          <div className="dashboard-modules">
 
-            {esAdministrador &&
-              tienePermiso("roles.asignar") && (
-                <ModuloCard
-                  icono="🛡️"
-                  titulo="Roles y permisos"
-                  descripcion="Gestiona los roles asignados al personal de tu laboratorio."
-                  fondo="#EEF2FF"
-                  color="#4338CA"
-                  onClick={() => navegar("roles")}
-                />
-              )}
+            {modulosDisponibles.map((modulo) => (
 
-            {/* ======================================
-                CONFIGURACIÓN
-            ====================================== */}
-
-            {esAdministrador &&
-              tienePermiso(
-                "configuracion.editar"
-              ) && (
-                <ModuloCard
-                  icono="⚙️"
-                  titulo="Configuración"
-                  descripcion="Actualiza los datos generales del laboratorio."
-                  fondo="#E0F2FE"
-                  color="#0369A1"
-                  onClick={() =>
-                    navegar("configuracion")
-                  }
-                />
-              )}
-
-            {/* ======================================
-                PERSONAL
-            ====================================== */}
-
-            {esAdministrador &&
-              tieneAlgunPermiso([
-                "empleados.crear",
-                "empleados.ver",
-                "empleados.editar",
-                "empleados.desactivar",
-              ]) && (
-                <ModuloCard
-                  icono="👥"
-                  titulo="Personal"
-                  descripcion="Administra Recepcionistas y Bioquímicos."
-                  fondo="#CCFBF1"
-                  color="#0F766E"
-                  onClick={() => navegar("personal")}
-                />
-              )}
-
-            {/* ======================================
-                PACIENTES
-            ====================================== */}
-
-            {tieneAlgunPermiso([
-              "pacientes.crear",
-              "pacientes.editar",
-              "pacientes.ver",
-            ]) && (
               <ModuloCard
-                icono="🧑‍⚕️"
-                titulo="Pacientes"
-                descripcion="Gestiona los pacientes del laboratorio."
-                fondo="#DCFCE7"
-                color="#15803D"
-                onClick={() => navegar("pacientes")}
+                key={modulo.id}
+                modulo={modulo}
+                onClick={() => navegar(modulo.id)}
               />
-            )}
 
-            {/* ======================================
-                ANÁLISIS CLÍNICOS
-            ====================================== */}
+            ))}
 
-            {tieneAlgunPermiso([
-              "analisis.crear",
-              "analisis.editar",
-              "analisis.ver",
-            ]) && (
-              <ModuloCard
-                icono="🔬"
-                titulo="Análisis clínicos"
-                descripcion="Consulta y administra los análisis clínicos."
-                fondo="#CFFAFE"
-                color="#0E7490"
-                onClick={() => navegar("analisis")}
-              />
-            )}
-
-            {/* ======================================
-                SOLICITUDES DE ANÁLISIS
-            ====================================== */}
-
-            {esRecepcionista && (
-              <ModuloCard
-                icono="📋"
-                titulo="Solicitudes de análisis"
-                descripcion="Registra y consulta solicitudes de análisis."
-                fondo="#EDE9FE"
-                color="#6D28D9"
-                onClick={() =>
-                  navegar("solicitudes")
-                }
-              />
-            )}
-
-            {/* ======================================
-                VENTAS
-            ====================================== */}
-
-            {tienePermiso("ventas.ver") && (
-              <ModuloCard
-                icono="💳"
-                titulo="Ventas"
-                descripcion="Consulta y administra las ventas registradas."
-                fondo="#FEF3C7"
-                color="#A16207"
-                onClick={() => navegar("ventas")}
-              />
-            )}
-
-            {/* ======================================
-                MUESTRAS - BIOQUÍMICO
-            ====================================== */}
-
-            {esBioquimico && (
-              <ModuloCard
-                icono="🧪"
-                titulo="Muestras"
-                descripcion="Registra, acepta, rechaza y procesa muestras."
-                fondo="#CCFBF1"
-                color="#0F766E"
-                onClick={() => navegar("muestras")}
-              />
-            )}
-
-            {/* ======================================
-                NOTIFICACIONES - RECEPCIONISTA
-            ====================================== */}
-
-            {esRecepcionista && (
-              <ModuloCard
-                icono="🔔"
-                titulo="Notificaciones"
-                descripcion="Consulta muestras rechazadas, contaminadas y procesadas. Coordina nuevas tomas cuando sea necesario."
-                fondo="#FEE2E2"
-                color="#B91C1C"
-                onClick={() =>
-                  navegar(
-                    "notificaciones_recepcion"
-                  )
-                }
-              />
-            )}
-
-            {/* ======================================
-                NUEVO: HISTORIAL DE PACIENTES
-            ====================================== */}
-
-            {esRecepcionista && (
-              <ModuloCard
-                icono="📚"
-                titulo="Historial de pacientes"
-                descripcion="Busca pacientes, consulta su historial de solicitudes, órdenes, muestras, ventas y resultados. Descarga el historial en PDF."
-                fondo="#E0F2FE"
-                color="#0369A1"
-                onClick={() =>
-                  navegar("historial_pacientes")
-                }
-              />
-            )}
-
-            {/* ======================================
-                NUEVO: RESULTADOS DE RECEPCIÓN
-            ====================================== */}
-
-            {esRecepcionista && (
-              <ModuloCard
-                icono="📄"
-                titulo="Resultados y notas de venta"
-                descripcion="Busca pacientes, consulta los resultados clínicos disponibles y descarga sus notas de venta."
-                fondo="#DCFCE7"
-                color="#15803D"
-                onClick={() =>
-                  navegar("resultados_recepcion")
-                }
-              />
-            )}
-
-            {/* ======================================
-                PANEL DEL ADMINISTRADOR
-            ====================================== */}
-
-            {esAdministrador && (
-              <ModuloCard
-                icono="📈"
-                titulo="Panel del laboratorio"
-                descripcion="Dashboard, reportes, notificaciones y auditoría."
-                fondo="#EDE9FE"
-                color="#7C3AED"
-                onClick={() =>
-                  navegar("sprint3Admin")
-                }
-              />
-            )}
-
-            {/* ======================================
-                RESULTADOS ADMINISTRADOR/BIOQUÍMICO
-            ====================================== */}
-
-            {!esRecepcionista &&
-              tienePermiso("resultados.ver") && (
-                <ModuloCard
-                  icono="📊"
-                  titulo="Resultados"
-                  descripcion={
-                    esAdministrador
-                      ? "Consulta los resultados clínicos."
-                      : "Registra, consulta y valida los resultados clínicos."
-                  }
-                  fondo="#DBEAFE"
-                  color="#1D4ED8"
-                  onClick={() =>
-                    navegar("resultados")
-                  }
-                />
-              )}
           </div>
+
+          {modulosDisponibles.length === 0 && (
+
+            <div
+              style={{
+                padding: "40px",
+                marginTop: "15px",
+
+                textAlign: "center",
+
+                background: "#ffffff",
+                border: "1px solid #e2e8f0",
+                borderRadius: "18px",
+              }}
+            >
+
+              <div style={{ fontSize: "40px" }}>
+                🔒
+              </div>
+
+              <h3 style={{ color: "#19385f" }}>
+                No hay módulos disponibles
+              </h3>
+
+              <p style={{ color: "#64748b" }}>
+                Tu usuario no tiene permisos asignados
+                para acceder a los módulos del sistema.
+              </p>
+
+            </div>
+
+          )}
+
         </section>
 
-        {/* ==========================================
-            CERRAR SESIÓN
-        ========================================== */}
+        {/* ================================================
+            PIE DE PÁGINA
+        ================================================ */}
 
-        <section
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            flexWrap: "wrap",
-            gap: "15px",
-            marginTop: "35px",
-            padding: "20px",
-            border: "1px solid #e2e8f0",
-            borderRadius: "16px",
-            background: "#ffffff",
-          }}
-        >
+        <footer className="dashboard-footer">
+
           <div>
+
             <strong>
-              {usuario.email}
+              {usuario.email || "Usuario activo"}
             </strong>
 
-            <p
-              style={{
-                color: "#64748b",
-                fontSize: "12px",
-              }}
-            >
-              Sesión activa
-            </p>
+            <span>
+              Sesión activa · {nombreRol(rol)}
+            </span>
+
           </div>
 
           <button
             type="button"
+            className="dashboard-logout"
             onClick={cerrarSesion}
-            style={{
-              padding: "11px 17px",
-              border: "1px solid #fecaca",
-              borderRadius: "10px",
-              background: "#fff1f2",
-              color: "#dc2626",
-              fontWeight: "900",
-              cursor: "pointer",
-            }}
+            disabled={cerrandoSesion}
           >
-            Cerrar sesión
+
+            {cerrandoSesion
+              ? "Cerrando sesión..."
+              : "↪ Cerrar sesión"}
+
           </button>
-        </section>
+
+        </footer>
+
       </div>
+
     </main>
-  );
-}
-
-// =====================================================
-// BOTÓN VOLVER
-// =====================================================
-
-function BotonVolver({ onClick }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        gap: "8px",
-        padding: "12px 20px",
-        marginBottom: "20px",
-        background: "#2563eb",
-        color: "#ffffff",
-        border: "none",
-        borderRadius: "10px",
-        fontSize: "13px",
-        fontWeight: "700",
-        cursor: "pointer",
-        boxShadow:
-          "0 4px 12px rgba(37,99,235,.15)",
-      }}
-    >
-      ← Volver al Dashboard
-    </button>
   );
 }
 
@@ -1223,82 +1703,48 @@ function BotonVolver({ onClick }) {
 // TARJETA DE MÓDULO
 // =====================================================
 
-function ModuloCard({
-  icono,
-  titulo,
-  descripcion,
-  fondo,
-  color,
-  onClick,
-}) {
+function ModuloCard({ modulo, onClick }) {
+
   return (
-    <article
-      style={{
-        minHeight: "215px",
-        display: "flex",
-        flexDirection: "column",
-        padding: "22px",
-        border: "1px solid #e2e8f0",
-        borderRadius: "18px",
-        background: "#ffffff",
-        boxShadow:
-          "0 7px 24px rgba(15,23,42,.05)",
-        transition:
-          "transform .2s, box-shadow .2s",
-      }}
-    >
-      <div
-        style={{
-          width: "50px",
-          height: "50px",
-          display: "grid",
-          placeItems: "center",
-          borderRadius: "14px",
-          background: fondo,
-          fontSize: "23px",
-        }}
-      >
-        {icono}
+    <article className="dashboard-module">
+
+      <div className="dashboard-module-top">
+
+        <div
+          className="dashboard-module-icon"
+          style={{
+            background: modulo.fondo,
+          }}
+        >
+          {modulo.icono}
+        </div>
+
+        <span className="dashboard-module-category">
+          {modulo.categoria}
+        </span>
+
       </div>
 
-      <h3
-        style={{
-          margin: "18px 0 7px",
-          fontSize: "17px",
-          color: "#0f172a",
-        }}
-      >
-        {titulo}
+      <h3>
+        {modulo.titulo}
       </h3>
 
-      <p
-        style={{
-          margin: "0 0 18px",
-          color: "#64748b",
-          fontSize: "11px",
-          lineHeight: 1.6,
-        }}
-      >
-        {descripcion}
+      <p>
+        {modulo.descripcion}
       </p>
 
       <button
         type="button"
+        className="dashboard-module-button"
         onClick={onClick}
         style={{
-          width: "100%",
-          marginTop: "auto",
-          padding: "11px 12px",
-          border: "none",
-          borderRadius: "10px",
-          background: fondo,
-          color,
-          fontWeight: "900",
-          cursor: "pointer",
+          background: modulo.fondo,
+          color: modulo.color,
         }}
       >
         Abrir módulo →
       </button>
+
     </article>
   );
 }
@@ -1311,67 +1757,87 @@ function InfoCard({
   titulo,
   valor,
   icono,
-  valorColor = "#0f172a",
-  color = "#2563EB",
+  valorColor = "#19385f",
 }) {
+
   return (
-    <article
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: "12px",
-        padding: "17px",
-        border: "1px solid #e2e8f0",
-        borderRadius: "15px",
-        background: "#ffffff",
-        minWidth: 0,
-      }}
-    >
-      <div
-        style={{
-          width: "42px",
-          height: "42px",
-          flexShrink: 0,
-          display: "grid",
-          placeItems: "center",
-          borderRadius: "12px",
-          background: hexToRgba(
-            color,
-            0.1
-          ),
-          fontSize: "18px",
-        }}
-      >
+    <article className="dashboard-info-card">
+
+      <div className="dashboard-info-icon">
         {icono}
       </div>
 
-      <div
-        style={{
-          minWidth: 0,
-        }}
-      >
-        <span
-          style={{
-            color: "#64748b",
-            fontSize: "10px",
-          }}
-        >
+      <div className="dashboard-info-text">
+
+        <span>
           {titulo}
         </span>
 
-        <strong
-          style={{
-            display: "block",
-            marginTop: "3px",
-            color: valorColor,
-            fontSize: "12px",
-            overflowWrap: "anywhere",
-          }}
-        >
+        <strong style={{ color: valorColor }}>
           {valor}
         </strong>
+
       </div>
+
     </article>
+  );
+}
+
+// =====================================================
+// CONTENEDOR DE MÓDULOS
+// =====================================================
+
+function ContenedorModulo({
+  children,
+  onVolver,
+}) {
+
+  return (
+    <main
+      style={{
+        minHeight: "100vh",
+
+        padding: "25px",
+
+        background: "#f1f5f9",
+
+        fontFamily:
+          'Inter, system-ui, "Segoe UI", sans-serif',
+      }}
+    >
+
+      <div
+        style={{
+          maxWidth: "1450px",
+          margin: "0 auto",
+        }}
+      >
+
+        <button
+          type="button"
+          onClick={onVolver}
+          style={{
+            marginBottom: "20px",
+            padding: "12px 20px",
+
+            background: "#19385f",
+            color: "#ffffff",
+
+            border: "none",
+            borderRadius: "11px",
+
+            fontWeight: 700,
+            cursor: "pointer",
+          }}
+        >
+          ← Volver al Dashboard
+        </button>
+
+        {children}
+
+      </div>
+
+    </main>
   );
 }
 
@@ -1384,52 +1850,75 @@ function PantallaEstado({
   titulo,
   texto,
 }) {
+
   return (
     <main
       style={{
         minHeight: "100vh",
+
         display: "grid",
         placeItems: "center",
+
         padding: "20px",
+
         background:
           "linear-gradient(135deg, #0f172a, #172554, #2563eb)",
+
+        fontFamily:
+          'Inter, system-ui, "Segoe UI", sans-serif',
       }}
     >
+
       <section
         style={{
           width: "min(430px, 100%)",
-          padding: "38px",
+
+          padding: "40px",
+
           borderRadius: "22px",
+
           background: "#ffffff",
+
           textAlign: "center",
         }}
       >
+
         <div
           style={{
-            fontSize: "40px",
+            fontSize: "45px",
+            marginBottom: "15px",
           }}
         >
           {icono}
         </div>
 
-        <h2>
+        <h2 style={{ color: "#19385f" }}>
           {titulo}
         </h2>
 
-        <p>
+        <p
+          style={{
+            color: "#64748b",
+            lineHeight: 1.8,
+          }}
+        >
           {texto}
         </p>
+
       </section>
+
     </main>
   );
 }
 
 // =====================================================
-// NOMBRE DEL ROL
+// OBTENER NOMBRE DEL ROL
 // =====================================================
 
 function nombreRol(rol) {
+
   switch (rol) {
+
     case "super_admin":
       return "Super Administrador";
 
@@ -1451,10 +1940,11 @@ function nombreRol(rol) {
 }
 
 // =====================================================
-// VALIDAR COLOR
+// VALIDAR COLOR HEXADECIMAL
 // =====================================================
 
 function validarColor(color) {
+
   return (
     typeof color === "string" &&
     /^#[0-9A-Fa-f]{6}$/.test(color)
@@ -1462,28 +1952,18 @@ function validarColor(color) {
 }
 
 // =====================================================
-// CONVERTIR HEX A RGBA
+// CONVERTIR COLOR A RGBA
 // =====================================================
 
 function hexToRgba(hex, alpha = 1) {
+
   if (!validarColor(hex)) {
     return `rgba(37, 99, 235, ${alpha})`;
   }
 
-  const r = parseInt(
-    hex.slice(1, 3),
-    16
-  );
-
-  const g = parseInt(
-    hex.slice(3, 5),
-    16
-  );
-
-  const b = parseInt(
-    hex.slice(5, 7),
-    16
-  );
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
 
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }

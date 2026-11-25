@@ -30,15 +30,9 @@ import {
   type User,
 } from "firebase/auth";
 
-import {
-  doc,
-  getDoc,
-} from "firebase/firestore";
+import { doc, getDoc } from "firebase/firestore";
 
-import {
-  auth,
-  db,
-} from "../firebase/firebase";
+import { auth, db } from "../firebase/firebase";
 
 import {
   obtenerPermisosRol,
@@ -218,7 +212,7 @@ function Modulo({
 }
 
 // ======================================================
-// PANTALLA PRINCIPAL
+// COMPONENTE PRINCIPAL
 // ======================================================
 
 export default function Index() {
@@ -939,24 +933,16 @@ export default function Index() {
     }
 
     // ==================================================
-    // HISTORIAL DE PACIENTES
-    // RECEPCIONISTA Y ADMINISTRADOR
+    // HISTORIAL DE PACIENTES ELIMINADO
     // ==================================================
-
-    if (
-      usuario.rol === "recepcionista" ||
-      usuario.rol === "administrador"
-    ) {
-      agregar({
-        icono: "📁",
-        titulo: "Historial de pacientes",
-        descripcion:
-          "Consulta las atenciones, análisis, ventas, muestras y resultados de cada paciente. Genera su historial en PDF.",
-        fondo: "#DBEAFE",
-        color: "#1D4ED8",
-        ruta: "/historial-paciente",
-      });
-    }
+    //
+    // Se ha retirado el módulo independiente
+    // "Historial de pacientes" del Dashboard.
+    //
+    // No se elimina la pantalla de historial
+    // individual ni los datos de Firestore.
+    //
+    // ==================================================
 
     // ==================================================
     // ANÁLISIS CLÍNICOS
@@ -1048,7 +1034,7 @@ export default function Index() {
       });
 
       // ================================================
-      // NUEVO MÓDULO: RESULTADOS Y NOTAS DE VENTA
+      // RESULTADOS Y NOTAS DE VENTA
       // ================================================
 
       agregar({
